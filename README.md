@@ -15,7 +15,7 @@ banker-simulation/
 └── tsconfig.base.json
 ```
 
-`packages/core` is the authoritative economic engine. `packages/web` imports it through pnpm's workspace protocol and runs a local in-browser session. The browser lets a human-controlled cooperative advance time, inspect assets and repayment reputation, publish a fixed-term advance, fund an eligible borrower, transfer its repayment claim, fork its terms, and publish a basic public audit.
+`packages/core` is the authoritative economic engine. `packages/web` imports it through pnpm's workspace protocol and runs a local in-browser session. The browser lets a human-controlled cooperative advance time, inspect assets and repayment reputation, publish a fixed-term advance, fund a borrower who applied for it, respond to inbound barter proposals, trade against standing market offers, transfer its repayment claim, fork its terms, and publish a basic public audit. See `PLAN.md` for the improvement roadmap.
 
 ## Setup with mise
 
@@ -33,7 +33,7 @@ The project pins Node.js and pnpm in `mise.toml`; pnpm is also declared in the r
 pnpm dev
 ```
 
-Open the local URL printed by Vite. The prototype session currently resets when the page reloads; durable multiplayer state belongs in the later game-server phase.
+Open the local URL printed by Vite. The browser session persists its append-only event log in localStorage and rebuilds the world on reload; use the in-game reset to start over. Durable multiplayer state belongs in the later game-server phase.
 
 ## Other commands
 
@@ -73,14 +73,16 @@ State is rebuilt by replaying events. Existing events are never edited. SQLite w
 2. Direct transfers require authorization from the current owner.
 3. Balances cannot go below zero.
 4. Every agreement is composed from ordinary timed transfers.
-5. All parties must sign before an agreement activates.
+5. All parties must sign before an agreement activates, and any party may decline an open proposal.
 6. Due promises settle if funded and default otherwise.
 7. Production consumes scarce inputs and has explicit outcome risk.
-8. A published product can require repayment history, set fixed interest and fees, and lock collateral.
-9. A repayment claim is transferable; enforcement follows its current holder.
-10. Collateral cannot be transferred while locked, releases after resolution, and liquidates to the claim holder on default.
-11. Reputation is derived from delayed-promise settlement history, not assigned by the game.
-12. World history is append-only and deterministic given its events and random inputs.
+8. A standing offer is a posted price; filling it settles both legs as ordinary transfers.
+9. A published product can require repayment history, set fixed interest and fees, and lock collateral.
+10. Funding requires three-way consent: publication (creator), application (borrower), and capital (funder).
+11. A repayment claim is transferable; enforcement follows its current holder.
+12. Collateral cannot be transferred while locked, releases after resolution, and liquidates to the claim holder on default.
+13. Reputation is derived from delayed-promise settlement history, not assigned by the game.
+14. World history is append-only and deterministic given its events and random inputs.
 
 ## Deliberate PoC boundaries
 

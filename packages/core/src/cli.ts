@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { runAgents } from "./domain/agents.ts";
+import { advanceWithAgents, runAgents } from "./domain/agents.ts";
 import { worldReport } from "./reporting.ts";
 import { createDefaultScenario } from "./scenario.ts";
 import { SqliteEventStore } from "./infrastructure/sqlite-event-store.ts";
@@ -46,9 +46,7 @@ try {
         }
       } else if (command === "advance") {
         const ticks = Number(args[0]);
-        const current = engine.inspect().time;
-        engine.advanceTo(current + ticks);
-        runAgents(engine, agents);
+        advanceWithAgents(engine, agents, ticks);
         console.log(worldReport(engine.inspect()));
       } else if (command === "transfer") {
         const [to, asset, rawAmount] = args;

@@ -9,6 +9,7 @@ import {
 } from "./state.ts";
 import type {
   AgreementDefinition,
+  AgreementState,
   AssetAmount,
   AssetDefinition,
   AuditReport,
@@ -19,11 +20,14 @@ import type {
   EventType,
   FinancialProduct,
   IdGenerator,
+  OfferSide,
+  ProductApplication,
   ProductFunding,
   ProductionRule,
   RandomSource,
   RepaymentClaim,
   Reputation,
+  StandingOffer,
   TransferObligation,
   WorldState,
 } from "./types.ts";
@@ -55,6 +59,26 @@ export interface FinancialProductInput {
 export interface ProductFundingInput {
   productId: string;
   funder: string;
+  borrower: string;
+}
+
+export interface OfferInput {
+  actor: string;
+  side: OfferSide;
+  asset: string;
+  amount: number;
+  priceAsset: string;
+  pricePerUnit: number;
+}
+
+export interface OfferFillInput {
+  actor: string;
+  offerId: string;
+  amount: number;
+}
+
+export interface ProductApplicationInput {
+  productId: string;
   borrower: string;
 }
 
@@ -151,6 +175,90 @@ export class EconomicEngine {
     ]);
   }
 
+  postOffer(input: OfferInput): string {
+    const state = this.inspect();
+    this.requireEntity(state, input.actor);
+    this.requireAsset(state, input.asset);
+    this.requireAsset(state, input.priceAsset);
+    this.require(input.asset !== input.priceAsset, "An offer must trade two different assets");
+    this.requireAmount(input.amount);
+    this.require(
+      Number.isFinite(input.pricePerUnit) && input.pricePerUnit > 0,
+      "Offer price must be positive and finite",
+    );
+    const offer: StandingOffer = {
+      id: this.ids.next("offer"),
+      poster: input.actor,
+      side: input.side,
+      asset: input.asset,
+      priceAsset: input.priceAsset,
+      pricePerUnit: input.pricePerUnit,
+      remaining: input.amount,
+      status: "open",
+      postedAt: state.time,
+    };
+    this.commit(state, [this.event("OfferPosted", state.time, { offer })]);
+    return offer.id;
+  }
+
+  fillOffer(input: OfferFillInput): void {
+    const state = this.inspect();
+    const offer = state.offers.get(input.offerId);
+    this.require(offer !== undefined, `Offer ${input.offerId} does not exist`);
+    this.require(offer.status === "open", `Offer ${input.offerId} is not open`);
+    this.requireEntity(state, input.actor);
+    this.require(input.actor !== offer.poster, "An offer cannot be filled by its poster");
+    this.requireAmount(input.amount);
+    this.require(input.amount <= offer.remaining, `Offer ${input.offerId} has only ${offer.remaining} left`);
+
+    const seller = offer.side === "buy" ? input.actor : offer.poster;
+    const buyer = offer.side === "buy" ? offer.poster : input.actor;
+    const cost = this.roundMoney(input.amount * offer.pricePerUnit);
+    this.require(cost > 0, "Fill amount is too small to price");
+    this.require(
+      this.availableBalance(state, seller, offer.asset) >= input.amount,
+      `${seller} has insufficient ${offer.asset} to fill this offer`,
+    );
+    this.require(
+      this.availableBalance(state, buyer, offer.priceAsset) >= cost,
+      `${buyer} has insufficient ${offer.priceAsset} to fill this offer`,
+    );
+
+    this.commit(state, [
+      this.event("AssetTransferred", state.time, {
+        from: seller,
+        to: buyer,
+        asset: offer.asset,
+        amount: input.amount,
+        reason: "offer",
+        offerId: offer.id,
+      }),
+      this.event("AssetTransferred", state.time, {
+        from: buyer,
+        to: seller,
+        asset: offer.priceAsset,
+        amount: cost,
+        reason: "offer",
+        offerId: offer.id,
+      }),
+      this.event("OfferFilled", state.time, {
+        offerId: offer.id,
+        filler: input.actor,
+        amount: input.amount,
+        cost,
+      }),
+    ]);
+  }
+
+  withdrawOffer(input: { actor: string; offerId: string }): void {
+    const state = this.inspect();
+    const offer = state.offers.get(input.offerId);
+    this.require(offer !== undefined, `Offer ${input.offerId} does not exist`);
+    this.require(offer.status === "open", `Offer ${input.offerId} is not open`);
+    this.require(input.actor === offer.poster, "Only the poster may withdraw an offer");
+    this.commit(state, [this.event("OfferWithdrawn", state.time, { offerId: offer.id })]);
+  }
+
   registerProductionRule(input: ProductionRuleInput): string {
     const state = this.inspect();
     const rule: ProductionRule = { ...structuredClone(input), id: input.id ?? this.ids.next("production") };
@@ -232,6 +340,44 @@ export class EconomicEngine {
     return forkId;
   }
 
+  applyForProduct(input: ProductApplicationInput): string {
+    const state = this.inspect();
+    const product = state.products.get(input.productId);
+    this.require(product !== undefined, `Product ${input.productId} does not exist`);
+    this.requireEntity(state, input.borrower);
+    const duplicate = [...state.applications.values()].some(
+      (application) =>
+        application.productId === input.productId &&
+        application.borrower === input.borrower &&
+        application.status === "open",
+    );
+    this.require(!duplicate, `${input.borrower} already has an open application for this product`);
+    this.requireBorrowerEligible(state, product, input.borrower);
+
+    const application: ProductApplication = {
+      id: this.ids.next("application"),
+      productId: input.productId,
+      borrower: input.borrower,
+      status: "open",
+      appliedAt: state.time,
+    };
+    this.commit(state, [
+      this.event("ProductApplicationSubmitted", state.time, { application }),
+    ]);
+    return application.id;
+  }
+
+  withdrawApplication(input: { actor: string; applicationId: string }): void {
+    const state = this.inspect();
+    const application = state.applications.get(input.applicationId);
+    this.require(application !== undefined, `Application ${input.applicationId} does not exist`);
+    this.require(application.status === "open", `Application ${input.applicationId} is not open`);
+    this.require(input.actor === application.borrower, "Only the applicant may withdraw an application");
+    this.commit(state, [
+      this.event("ProductApplicationWithdrawn", state.time, { applicationId: application.id }),
+    ]);
+  }
+
   fundProduct(input: ProductFundingInput): ProductFundingResult {
     const state = this.inspect();
     const product = state.products.get(input.productId);
@@ -239,22 +385,21 @@ export class EconomicEngine {
     this.requireEntity(state, input.funder);
     this.requireEntity(state, input.borrower);
     this.require(input.funder !== input.borrower, "A product needs distinct funder and borrower");
+    const application = [...state.applications.values()].find(
+      (candidate) =>
+        candidate.productId === input.productId &&
+        candidate.borrower === input.borrower &&
+        candidate.status === "open",
+    );
+    this.require(
+      application !== undefined,
+      `${input.borrower} has not applied for this product; a borrower must consent before funding`,
+    );
     this.require(
       this.availableBalance(state, input.funder, product.fundingAsset) >= product.principalAmount,
       `${input.funder} has insufficient ${product.fundingAsset} to fund this product`,
     );
-
-    const borrowerReputation = reputationOf(state, input.borrower).score ?? 0.5;
-    this.require(
-      borrowerReputation >= product.minimumRepaymentReputation,
-      `${input.borrower} does not meet the product's repayment-reputation condition`,
-    );
-    if (product.collateral) {
-      this.require(
-        this.availableBalance(state, input.borrower, product.collateral.asset) >= product.collateral.amount,
-        `${input.borrower} cannot lock the required collateral`,
-      );
-    }
+    this.requireBorrowerEligible(state, product, input.borrower);
 
     const totalRepayment = this.roundMoney(
       product.principalAmount * (1 + product.fixedInterestRate),
@@ -312,6 +457,7 @@ export class EconomicEngine {
     const funding: ProductFunding = {
       id: this.ids.next("funding"),
       productId: product.id,
+      applicationId: application.id,
       agreementId,
       funder: input.funder,
       borrower: input.borrower,
@@ -335,7 +481,7 @@ export class EconomicEngine {
     }
     this.commit(current, pending);
 
-    // Publication is the creator's standing consent; an eligible borrower accepts this safe template.
+    // Three-way consent already exists: publication (creator), application (borrower), funding (funder).
     for (const party of proposed.parties) {
       if (party !== input.funder) this.acceptAgreement(agreementId, party);
     }
@@ -355,6 +501,105 @@ export class EconomicEngine {
         claimId: claim.id,
         from: claim.holder,
         to: input.to,
+      }),
+    ]);
+  }
+
+  /** The obligation's recipient (claim holder, or the plain payee if no claim exists) sells it. */
+  sellRepaymentClaim(input: { actor: string; claimId: string; to: string; price: number }): void {
+    const state = this.inspect();
+    const claim = state.repaymentClaims.get(input.claimId);
+    this.require(claim !== undefined, `Repayment claim ${input.claimId} does not exist`);
+    this.require(claim.status === "active", `Repayment claim ${input.claimId} is not active`);
+    this.require(input.actor === claim.holder, "Only the current claim holder may sell it");
+    this.requireEntity(state, input.to);
+    this.require(input.to !== claim.holder, "A claim must be sold to a different holder");
+    this.requireAmount(input.price);
+    this.require(
+      this.availableBalance(state, input.to, claim.asset) >= input.price,
+      `${input.to} has insufficient ${claim.asset} to buy this claim`,
+    );
+    this.commit(state, [
+      this.event("AssetTransferred", state.time, {
+        from: input.to,
+        to: input.actor,
+        asset: claim.asset,
+        amount: input.price,
+        reason: "claim-sale",
+        claimId: claim.id,
+      }),
+      this.event("RepaymentClaimTransferred", state.time, {
+        claimId: claim.id,
+        from: claim.holder,
+        to: input.to,
+      }),
+    ]);
+  }
+
+  /** The recipient forces early resolution of a still-pending obligation instead of waiting for its due date. */
+  callInObligation(input: { actor: string; agreementId: string; obligationId: string }): void {
+    const state = this.inspect();
+    const agreement = state.agreements.get(input.agreementId);
+    this.require(agreement !== undefined, `Agreement ${input.agreementId} does not exist`);
+    this.require(agreement.status === "active", `Agreement ${input.agreementId} is not active`);
+    const obligation = agreement.obligations.find((candidate) => candidate.id === input.obligationId);
+    this.require(obligation !== undefined, `Obligation ${input.obligationId} does not exist`);
+    this.require(
+      agreement.obligationStatuses.get(obligation.id) === "pending",
+      `Obligation ${input.obligationId} is not pending`,
+    );
+    const claim = [...state.repaymentClaims.values()].find(
+      (candidate) => candidate.agreementId === agreement.id && candidate.obligationId === obligation.id,
+    );
+    const recipient = claim?.holder ?? obligation.to;
+    this.require(input.actor === recipient, "Only the obligation's recipient may call it in early");
+
+    const pending: DomainEvent[] = [];
+    const working = this.project(state, []);
+    const workingAgreement = working.agreements.get(agreement.id);
+    const workingObligation = workingAgreement?.obligations.find(
+      (candidate) => candidate.id === obligation.id,
+    );
+    this.require(
+      workingAgreement !== undefined && workingObligation !== undefined,
+      "Obligation could not be resolved",
+    );
+    this.resolveObligation(working, workingAgreement, workingObligation, state.time, pending);
+    this.commit(state, pending);
+  }
+
+  /** The recipient pushes a still-pending obligation's due date out, buying the borrower more time. */
+  extendObligation(input: {
+    actor: string;
+    agreementId: string;
+    obligationId: string;
+    newDueAt: number;
+  }): void {
+    const state = this.inspect();
+    const agreement = state.agreements.get(input.agreementId);
+    this.require(agreement !== undefined, `Agreement ${input.agreementId} does not exist`);
+    this.require(agreement.status === "active", `Agreement ${input.agreementId} is not active`);
+    const obligation = agreement.obligations.find((candidate) => candidate.id === input.obligationId);
+    this.require(obligation !== undefined, `Obligation ${input.obligationId} does not exist`);
+    this.require(
+      agreement.obligationStatuses.get(obligation.id) === "pending",
+      `Obligation ${input.obligationId} is not pending`,
+    );
+    const claim = [...state.repaymentClaims.values()].find(
+      (candidate) => candidate.agreementId === agreement.id && candidate.obligationId === obligation.id,
+    );
+    const recipient = claim?.holder ?? obligation.to;
+    this.require(input.actor === recipient, "Only the obligation's recipient may extend its term");
+    this.require(
+      Number.isInteger(input.newDueAt) && input.newDueAt > obligation.dueAt,
+      "A new due date must be a later integer tick",
+    );
+    this.commit(state, [
+      this.event("ObligationRescheduled", state.time, {
+        agreementId: agreement.id,
+        obligationId: obligation.id,
+        previousDueAt: obligation.dueAt,
+        newDueAt: input.newDueAt,
       }),
     ]);
   }
@@ -452,6 +697,17 @@ export class EconomicEngine {
     this.commit(state, pending);
   }
 
+  declineAgreement(agreementId: string, decliner: string): void {
+    const state = this.inspect();
+    const agreement = state.agreements.get(agreementId);
+    this.require(agreement !== undefined, `Agreement ${agreementId} does not exist`);
+    this.require(agreement.status === "proposed", `Agreement ${agreementId} is not open`);
+    this.require(agreement.parties.includes(decliner), `${decliner} is not a party`);
+    this.commit(state, [
+      this.event("AgreementDeclined", state.time, { agreementId, decliner }),
+    ]);
+  }
+
   advanceTo(target: number): void {
     const state = this.inspect();
     this.require(Number.isInteger(target) && target > state.time, "Target time must be a future integer");
@@ -503,7 +759,7 @@ export class EconomicEngine {
     pending: DomainEvent[],
   ): void {
     const due = [...state.agreements.values()]
-      .filter((agreement) => agreement.status !== "proposed" && agreement.status !== "completed")
+      .filter((agreement) => agreement.status === "active" || agreement.status === "defaulted")
       .flatMap((agreement) =>
         agreement.obligations
           .filter(
@@ -520,41 +776,52 @@ export class EconomicEngine {
       );
 
     for (const { agreement, obligation } of due) {
-      const claim = [...state.repaymentClaims.values()].find(
-        (candidate) =>
-          candidate.agreementId === agreement.id && candidate.obligationId === obligation.id,
-      );
-      const recipient = claim?.holder ?? obligation.to;
-      if (balanceOf(state, obligation.from, obligation.asset) >= obligation.amount) {
-        const transferred = this.event("AssetTransferred", time, {
-          from: obligation.from,
-          to: recipient,
-          asset: obligation.asset,
-          amount: obligation.amount,
-          reason: "agreement",
-          agreementId: agreement.id,
-          obligationId: obligation.id,
-        });
-        const settled = this.event("ObligationSettled", time, {
-          agreementId: agreement.id,
-          obligationId: obligation.id,
-        });
-        pending.push(transferred, settled);
-        applyEvent(state, transferred);
-        applyEvent(state, settled);
-      } else {
-        if (claim) this.liquidateCollateral(state, agreement.id, recipient, time, pending);
-        const defaulted = this.event("ObligationDefaulted", time, {
-          agreementId: agreement.id,
-          obligationId: obligation.id,
-          debtor: obligation.from,
-          shortfall: obligation.amount - balanceOf(state, obligation.from, obligation.asset),
-        });
-        pending.push(defaulted);
-        applyEvent(state, defaulted);
-      }
-      this.releaseResolvedCollateral(state, agreement.id, time, pending);
+      this.resolveObligation(state, agreement, obligation, time, pending);
     }
+  }
+
+  /** Settles an obligation now if affordable, else defaults it and liquidates any collateral. */
+  private resolveObligation(
+    state: WorldState,
+    agreement: AgreementState,
+    obligation: TransferObligation,
+    time: number,
+    pending: DomainEvent[],
+  ): void {
+    const claim = [...state.repaymentClaims.values()].find(
+      (candidate) =>
+        candidate.agreementId === agreement.id && candidate.obligationId === obligation.id,
+    );
+    const recipient = claim?.holder ?? obligation.to;
+    if (balanceOf(state, obligation.from, obligation.asset) >= obligation.amount) {
+      const transferred = this.event("AssetTransferred", time, {
+        from: obligation.from,
+        to: recipient,
+        asset: obligation.asset,
+        amount: obligation.amount,
+        reason: "agreement",
+        agreementId: agreement.id,
+        obligationId: obligation.id,
+      });
+      const settled = this.event("ObligationSettled", time, {
+        agreementId: agreement.id,
+        obligationId: obligation.id,
+      });
+      pending.push(transferred, settled);
+      applyEvent(state, transferred);
+      applyEvent(state, settled);
+    } else {
+      if (claim) this.liquidateCollateral(state, agreement.id, recipient, time, pending);
+      const defaulted = this.event("ObligationDefaulted", time, {
+        agreementId: agreement.id,
+        obligationId: obligation.id,
+        debtor: obligation.from,
+        shortfall: obligation.amount - balanceOf(state, obligation.from, obligation.asset),
+      });
+      pending.push(defaulted);
+      applyEvent(state, defaulted);
+    }
+    this.releaseResolvedCollateral(state, agreement.id, time, pending);
   }
 
   private liquidateCollateral(
@@ -603,6 +870,24 @@ export class EconomicEngine {
 
   private event<T>(type: EventType, at: number, data: T): DomainEvent<T> {
     return { id: this.ids.next("event"), type, at, data };
+  }
+
+  private requireBorrowerEligible(
+    state: WorldState,
+    product: FinancialProduct,
+    borrower: string,
+  ): void {
+    const borrowerReputation = reputationOf(state, borrower).score ?? 0.5;
+    this.require(
+      borrowerReputation >= product.minimumRepaymentReputation,
+      `${borrower} does not meet the product's repayment-reputation condition`,
+    );
+    if (product.collateral) {
+      this.require(
+        this.availableBalance(state, borrower, product.collateral.asset) >= product.collateral.amount,
+        `${borrower} cannot lock the required collateral`,
+      );
+    }
   }
 
   private requireEntity(state: WorldState, entity: string): void {

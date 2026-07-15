@@ -9,10 +9,13 @@ import type {
   DomainEvent,
   Entity,
   FinancialProduct,
+  OfferSide,
+  ProductApplication,
   ProductFunding,
   ProductionRule,
   RepaymentClaim,
   Reputation,
+  StandingOffer,
   StoredEvent,
   WorldState,
 } from "./types.ts";
@@ -26,7 +29,9 @@ export function emptyWorld(): WorldState {
     balances: new Map(),
     agreements: new Map(),
     productionRules: new Map(),
+    offers: new Map(),
     products: new Map(),
+    applications: new Map(),
     productFundings: new Map(),
     repaymentClaims: new Map(),
     collateralLocks: new Map(),
@@ -111,6 +116,15 @@ export function applyEvent(state: WorldState, event: DomainEvent | StoredEvent):
       state.agreements.get(agreementId)?.signatures.add(signer);
       break;
     }
+    case "AgreementDeclined": {
+      const { agreementId, decliner } = event.data as { agreementId: string; decliner: string };
+      const agreement = state.agreements.get(agreementId);
+      if (agreement && agreement.status === "proposed") {
+        agreement.status = "declined";
+        agreement.declinedBy = decliner;
+      }
+      break;
+    }
     case "AgreementActivated": {
       const { agreementId } = event.data as { agreementId: string };
       const agreement = state.agreements.get(agreementId);
@@ -173,14 +187,52 @@ export function applyEvent(state: WorldState, event: DomainEvent | StoredEvent):
     }
     case "ProductionSkipped":
       break;
+    case "OfferPosted": {
+      const { offer } = event.data as { offer: StandingOffer };
+      state.offers.set(offer.id, structuredClone(offer));
+      break;
+    }
+    case "OfferFilled": {
+      const { offerId, amount } = event.data as {
+        offerId: string;
+        filler: string;
+        amount: number;
+        cost: number;
+      };
+      const offer = state.offers.get(offerId);
+      if (offer) {
+        offer.remaining -= amount;
+        if (offer.remaining <= 0) offer.status = "filled";
+      }
+      break;
+    }
+    case "OfferWithdrawn": {
+      const { offerId } = event.data as { offerId: string };
+      const offer = state.offers.get(offerId);
+      if (offer && offer.status === "open") offer.status = "withdrawn";
+      break;
+    }
     case "ProductPublished": {
       const { product } = event.data as { product: FinancialProduct };
       state.products.set(product.id, structuredClone(product));
       break;
     }
+    case "ProductApplicationSubmitted": {
+      const { application } = event.data as { application: ProductApplication };
+      state.applications.set(application.id, structuredClone(application));
+      break;
+    }
+    case "ProductApplicationWithdrawn": {
+      const { applicationId } = event.data as { applicationId: string };
+      const application = state.applications.get(applicationId);
+      if (application && application.status === "open") application.status = "withdrawn";
+      break;
+    }
     case "ProductFunded": {
       const { funding } = event.data as { funding: ProductFunding };
       state.productFundings.set(funding.id, structuredClone(funding));
+      const application = state.applications.get(funding.applicationId);
+      if (application) application.status = "funded";
       break;
     }
     case "RepaymentClaimCreated": {
@@ -215,6 +267,23 @@ export function applyEvent(state: WorldState, event: DomainEvent | StoredEvent):
       }
       break;
     }
+    case "ObligationRescheduled": {
+      const { agreementId, obligationId, newDueAt } = event.data as {
+        agreementId: string;
+        obligationId: string;
+        previousDueAt: number;
+        newDueAt: number;
+      };
+      const agreement = state.agreements.get(agreementId);
+      const obligation = agreement?.obligations.find((candidate) => candidate.id === obligationId);
+      if (obligation) obligation.dueAt = newDueAt;
+      for (const claim of state.repaymentClaims.values()) {
+        if (claim.agreementId === agreementId && claim.obligationId === obligationId) {
+          claim.dueAt = newDueAt;
+        }
+      }
+      break;
+    }
     case "AuditPublished": {
       const { audit } = event.data as { audit: AuditReport };
       state.audits.set(audit.id, structuredClone(audit));
@@ -243,6 +312,28 @@ export function lockedAmount(state: WorldState, entity: string, asset: string): 
   return [...state.collateralLocks.values()]
     .filter((lock) => lock.status === "locked" && lock.owner === entity && lock.asset === asset)
     .reduce((total, lock) => total + lock.amount, 0);
+}
+
+/** Open offers matching the filter, best price first (highest bid / lowest ask). */
+export function openOffers(
+  state: WorldState,
+  filter: { side?: OfferSide; asset?: string; priceAsset?: string; poster?: string } = {},
+): StandingOffer[] {
+  return [...state.offers.values()]
+    .filter(
+      (offer) =>
+        offer.status === "open" &&
+        offer.remaining > 0 &&
+        (filter.side === undefined || offer.side === filter.side) &&
+        (filter.asset === undefined || offer.asset === filter.asset) &&
+        (filter.priceAsset === undefined || offer.priceAsset === filter.priceAsset) &&
+        (filter.poster === undefined || offer.poster === filter.poster),
+    )
+    .sort((left, right) =>
+      left.side === "buy"
+        ? right.pricePerUnit - left.pricePerUnit || left.id.localeCompare(right.id)
+        : left.pricePerUnit - right.pricePerUnit || left.id.localeCompare(right.id),
+    );
 }
 
 export function reputationOf(state: WorldState, entity: string): Reputation {
