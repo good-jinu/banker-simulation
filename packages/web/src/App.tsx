@@ -97,6 +97,26 @@ const entityIcons: Record<string, LucideIcon> = {
   player: Landmark,
 };
 
+const entityArtwork: Record<string, { avatar: string; frame: string }> = {
+  farmer: { avatar: "/assets/avatars/mina-neutral.webp", frame: "/assets/stakeholders/node-business.webp" },
+  merchant: { avatar: "/assets/avatars/jun-neutral.webp", frame: "/assets/stakeholders/node-business.webp" },
+  player: { avatar: "/assets/avatars/player-coop-neutral.webp", frame: "/assets/stakeholders/node-financial.webp" },
+};
+
+const assetArtwork: Record<string, { token: string; icon: string }> = {
+  coin: { token: "/assets/tokens/token-circle.webp", icon: "/assets/assets/coin.svg" },
+  seed: { token: "/assets/tokens/token-hex.webp", icon: "/assets/assets/seed.svg" },
+  grain: { token: "/assets/tokens/token-hex.webp", icon: "/assets/assets/grain.svg" },
+  land: { token: "/assets/tokens/token-tile.webp", icon: "/assets/assets/farm-plot.svg" },
+  claim: { token: "/assets/tokens/token-ribbon.webp", icon: "/assets/assets/repayment-claim.svg" },
+};
+
+const entityRole: Record<string, string> = {
+  farmer: "Borrower · Farm",
+  merchant: "Buyer · Distribution",
+  player: "Your cooperative bank",
+};
+
 const eventLabels: Record<string, string> = {
   AgreementProposed: "New agreement",
   AgreementSigned: "Terms signed",
@@ -437,6 +457,7 @@ export function App() {
         </aside>
 
         <section className={`network-board filter-${assetFilter}`} aria-label="Financial network board">
+          <img className="board-art" src="/assets/board/network-grid-light.webp" alt="" aria-hidden="true" />
           <div className="board-glow" aria-hidden="true" />
           <div className="board-grid" aria-hidden="true" />
 
@@ -446,6 +467,20 @@ export function App() {
             <span className="network-count"><FileText size={14} /> {state.agreements.size} contracts</span>
             <span className="signal-pill"><Activity size={14} /> {worldSignal}</span>
           </div>
+
+          <section className="new-player-guide" aria-label="Your first objective">
+            <span className="guide-step">Your first move</span>
+            <h2>Fund Mina’s farm</h2>
+            <p>Set a loan, publish it, then watch Mina use capital to produce grain and repay you.</p>
+            <ol>
+              <li><b>1</b> Choose loan terms</li>
+              <li><b>2</b> Publish the offer</li>
+              <li><b>3</b> Fund Mina and advance time</li>
+            </ol>
+            <button type="button" onClick={() => document.getElementById("loan-composer")?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+              Create Mina’s loan <ArrowRight size={15} />
+            </button>
+          </section>
 
           <svg className="network-lines" viewBox="0 0 1000 620" preserveAspectRatio="none" aria-hidden="true">
             <path className="flow-line flow-line--cash" d="M500 420 C420 365 335 280 250 185" />
@@ -457,10 +492,12 @@ export function App() {
             <circle className="flow-junction" cx="750" cy="185" r="5" />
           </svg>
 
-          <div className="floating-token token--coin token--one" aria-hidden="true"><Coins size={18} /></div>
-          <div className="floating-token token--seed token--two" aria-hidden="true"><Leaf size={18} /></div>
-          <div className="floating-token token--claim token--three" aria-hidden="true"><Ticket size={18} /></div>
-          <div className="floating-token token--land token--four" aria-hidden="true"><Building2 size={18} /></div>
+          {(["coin", "seed", "claim", "land"] as const).map((asset, index) => (
+            <div className={`floating-token token--${asset} token--${["one", "two", "three", "four"][index]}`} aria-hidden="true" key={asset}>
+              <img src={assetArtwork[asset].token} alt="" />
+              <img src={assetArtwork[asset].icon} alt="" />
+            </div>
+          ))}
 
           <button
             type="button"
@@ -468,14 +505,13 @@ export function App() {
             onClick={() => setInspectorMode("market")}
             aria-label="Open product market"
           >
-            <span className="contract-core__ring" />
-            <FileCheck2 size={24} />
+            <img className="contract-core__art" src={products.length ? "/assets/contracts/contract-approved.webp" : "/assets/contracts/contract-core.webp"} alt="" />
             <b>{products.length}</b>
             <small>offers</small>
           </button>
 
           {entities.map((entity, index) => {
-            const Icon = entityIcons[entity.id] ?? UserRound;
+            const artwork = entityArtwork[entity.id] ?? { avatar: "/assets/avatars/auditor-neutral.webp", frame: "/assets/stakeholders/node-person.webp" };
             const holdings = [...state.assets.values()].filter(
               (asset) => balanceOf(state, entity.id, asset.id) > 0 &&
                 (assetFilter === "all" || asset.kind === assetFilter),
@@ -498,11 +534,11 @@ export function App() {
                 onClick={() => chooseEntity(entity.id)}
                 aria-label={`Inspect ${entity.name}`}
               >
-                <span className="node-rings" aria-hidden="true" />
+                <img className="node-ring-art" src={selectedEntityId === entity.id ? "/assets/stakeholders/ring-selected.webp" : "/assets/stakeholders/ring-active.webp"} alt="" aria-hidden="true" />
                 <span className="node-platform">
-                  <span className="node-visual"><Icon size={40} strokeWidth={1.7} /></span>
+                  <span className="node-visual"><img className="node-frame-art" src={artwork.frame} alt="" /><img className="node-avatar-art" src={artwork.avatar} alt="" /></span>
                   <span className="node-copy">
-                    <small>{entity.id === "player" ? "Your cooperative" : entity.controller}</small>
+                    <small>{entityRole[entity.id] ?? "Network participant"}</small>
                     <strong>{entity.name}</strong>
                   </span>
                   <span className="node-trust">{reputation.score === null ? "NEW" : `${Math.round(reputation.score * 100)}%`}</span>
@@ -511,7 +547,7 @@ export function App() {
                       const AssetIcon = assetIcons[asset.id] ?? Gem;
                       return (
                         <span className={`mini-asset asset-${asset.id}`} key={asset.id} title={asset.name}>
-                          <AssetIcon size={12} /> {formatNumber(balanceOf(state, entity.id, asset.id))}
+                          <img src={assetArtwork[asset.id]?.icon ?? "/assets/assets/class-information.svg"} alt="" /> {formatNumber(balanceOf(state, entity.id, asset.id))}
                         </span>
                       );
                     })}
@@ -537,7 +573,7 @@ export function App() {
           {inspectorMode === "entity" && selectedEntity && (
             <div className="inspector-content entity-view">
               <div className={`entity-portrait portrait--${selectedEntity.id}`}>
-                {(() => { const Icon = entityIcons[selectedEntity.id] ?? UserRound; return <Icon size={48} strokeWidth={1.6} />; })()}
+                <img src={(entityArtwork[selectedEntity.id] ?? entityArtwork.player).avatar} alt="" />
                 <span className="portrait-badge">{selectedEntity.controller === "human" ? <Landmark size={14} /> : <Activity size={14} />}</span>
               </div>
               <p className="section-kicker">{selectedEntity.controller === "human" ? "Portfolio owner" : "Network participant"}</p>
@@ -563,7 +599,7 @@ export function App() {
                     const AssetIcon = assetIcons[asset.id] ?? Gem;
                     return (
                       <div className={`holding-card asset-${asset.id}`} key={asset.id}>
-                        <AssetIcon size={19} />
+                        <img src={assetArtwork[asset.id]?.icon ?? "/assets/assets/class-information.svg"} alt="" />
                         <span><strong>{formatNumber(balanceOf(state, selectedEntity.id, asset.id))}</strong><small>{asset.name}</small></span>
                       </div>
                     );
@@ -676,7 +712,8 @@ export function App() {
           )}
         </aside>
 
-        <section className="contract-composer">
+        <section className="contract-composer" id="loan-composer">
+          <img className="composer-tray-art" src="/assets/composer/tray-surface.webp" alt="" aria-hidden="true" />
           <form onSubmit={publishProduct}>
             <div className="composer-brand">
               <span className="composer-icon"><FileCheck2 size={22} /></span>
@@ -684,8 +721,8 @@ export function App() {
             </div>
 
             <div className="composer-track">
-              <label className="composer-module module-funding">
-                <span><Coins size={16} /> Funding</span>
+              <label className="composer-module module-funding"><img src="/assets/composer/module-funding.webp" alt="" aria-hidden="true" />
+                <span><b>1</b><Coins size={16} /> Give cash</span>
                 <div className="module-controls">
                   <select aria-label="Funding asset" value={product.fundingAsset} onChange={(event) => setProduct({ ...product, fundingAsset: event.target.value })}>
                     {[...state.assets.values()].filter((asset) => asset.divisible).map((asset) => <option value={asset.id} key={asset.id}>{asset.name}</option>)}
@@ -695,20 +732,20 @@ export function App() {
               </label>
               <ArrowRight className="module-arrow" size={18} />
 
-              <label className="composer-module module-time">
-                <span><Clock3 size={16} /> Duration</span>
+              <label className="composer-module module-time"><img src="/assets/composer/module-time.webp" alt="" aria-hidden="true" />
+                <span><b>2</b><Clock3 size={16} /> Repay in</span>
                 <div className="single-control"><input aria-label="Term in ticks" type="number" min="1" step="1" value={product.term} onChange={(event) => setProduct({ ...product, term: event.target.value })} /><small>ticks</small></div>
               </label>
               <ArrowRight className="module-arrow" size={18} />
 
-              <label className="composer-module module-return">
-                <span><TrendingUp size={16} /> Return</span>
+              <label className="composer-module module-return"><img src="/assets/composer/module-return.webp" alt="" aria-hidden="true" />
+                <span><b>3</b><TrendingUp size={16} /> Earn back</span>
                 <div className="single-control"><input aria-label="Fixed interest" type="number" min="0" max="0.99" step="0.01" value={product.fixedInterestRate} onChange={(event) => setProduct({ ...product, fixedInterestRate: event.target.value })} /><small>{repaymentPreview}</small></div>
               </label>
               <ArrowRight className="module-arrow" size={18} />
 
-              <label className="composer-module module-rules">
-                <span><Scale size={16} /> Rules</span>
+              <label className="composer-module module-rules"><img src="/assets/composer/module-condition.webp" alt="" aria-hidden="true" />
+                <span><b>4</b><Scale size={16} /> Safety rules</span>
                 <div className="module-controls">
                   <input aria-label="Repayment reputation threshold" title="Reputation threshold" type="number" min="0" max="1" step="0.05" value={product.minimumRepaymentReputation} onChange={(event) => setProduct({ ...product, minimumRepaymentReputation: event.target.value })} />
                   <input aria-label="Creator fee" title="Creator fee" type="number" min="0" max="0.99" step="0.01" value={product.creatorFeeRate} onChange={(event) => setProduct({ ...product, creatorFeeRate: event.target.value })} />
@@ -716,8 +753,8 @@ export function App() {
               </label>
               <ArrowRight className="module-arrow" size={18} />
 
-              <label className="composer-module module-collateral">
-                <span><LockKeyhole size={16} /> Collateral</span>
+              <label className="composer-module module-collateral"><img src="/assets/composer/module-collateral.webp" alt="" aria-hidden="true" />
+                <span><b>5</b><LockKeyhole size={16} /> Backup asset</span>
                 <div className="module-controls">
                   <select aria-label="Collateral asset" value={product.collateralAsset} onChange={(event) => setProduct({ ...product, collateralAsset: event.target.value })}>
                     <option value="none">None</option>
