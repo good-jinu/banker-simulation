@@ -5,12 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/prepare-sites.mjs",
     "typecheck": "tsc --noEmit",
     "check": "pnpm run typecheck && pnpm run build"
   },
   "dependencies": {
     "@banker-simulation/core": "workspace:*",
+    "lucide-react": "^1.24.0",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },
