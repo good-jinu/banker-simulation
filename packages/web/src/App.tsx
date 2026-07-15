@@ -376,8 +376,8 @@ export function App() {
         <div className="brand">
           <div className="brand-orb"><Landmark size={24} strokeWidth={2.2} /></div>
           <div>
-            <strong>Aurora</strong>
-            <span>Banker Simulation</span>
+            <strong>Banker Simulation</strong>
+            <span>Financial Network Sandbox</span>
           </div>
         </div>
 
@@ -437,7 +437,7 @@ export function App() {
         </aside>
 
         <section className={`network-board filter-${assetFilter}`} aria-label="Financial network board">
-          <div className="board-aurora" aria-hidden="true" />
+          <div className="board-glow" aria-hidden="true" />
           <div className="board-grid" aria-hidden="true" />
 
           <div className="board-head">

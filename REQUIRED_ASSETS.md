@@ -4,8 +4,8 @@
 
 ### 선택된 기준 시안
 
-- 방향명: **Aurora Financial Network**
-- 기준 이미지: `packages/web/public/assets/reference/aurora-network-ui-concept.png`
+- 방향명: **Modern Financial Network**
+- 기준 이미지: `packages/web/public/assets/reference/financial-network-ui-concept.png`
 - 기본 톤: 밝은 펄 화이트 보드, 반투명 글래스 패널, 민트·시안·바이올렛 굴절광
 - 오브젝트: 선명한 2.5D 자산 토큰과 미니어처형 이해관계자 노드
 - 상호작용 강조: 선택된 노드에는 시안 글로우, 자산 이동에는 클래스 색상의 빛나는 경로 사용
