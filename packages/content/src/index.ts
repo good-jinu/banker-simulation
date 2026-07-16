@@ -1,4 +1,8 @@
 export {
+  affordableTermsStage,
+  affordableTermsWinningProgram,
+  collateralRecoveryStage,
+  collateralRecoveryWinningProgram,
   firstYieldStage,
   firstYieldWinningProgram,
   getStage,

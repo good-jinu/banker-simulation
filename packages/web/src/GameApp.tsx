@@ -13,6 +13,7 @@ import {
   Clock3,
   Coins,
   Copy,
+  GitBranch,
   HandCoins,
   Home,
   Landmark,
@@ -23,6 +24,7 @@ import {
   RefreshCcw,
   RotateCcw,
   Save,
+  Shield,
   ShieldCheck,
   Sparkles,
   Target,
@@ -34,20 +36,28 @@ import {
 } from "lucide-react";
 import {
   compileContract,
+  countContractSteps,
+  createDefaultCollateralAction,
   createDefaultStep,
+  flattenContractSteps,
   formatMoney,
   hasValidationErrors,
   projectCashFlows,
+  projectOutcomeCashFlows,
   summarizeProgram,
   validateProgram,
   type ContractProgram,
   type ContractStep,
   type ContractStepType,
+  type IfStep,
+  type OutcomeCashFlowProjection,
 } from "@banker-simulation/contracts";
 import {
   firstYieldStage,
   getStage,
   scoreRun,
+  stageCatalog,
+  type StageDefinition,
   type StageScore,
 } from "@banker-simulation/content";
 import {
@@ -76,8 +86,12 @@ interface Feedback {
 }
 
 interface PickerState {
+  path: SequencePath;
   insertAt: number;
 }
+
+type BranchName = "then" | "else";
+type SequencePath = Array<{ ifId: string; branch: BranchName }>;
 
 const blockCatalog: Record<
   ContractStepType,
@@ -99,59 +113,181 @@ const blockCatalog: Record<
     purpose: "Finish after obligations resolve",
     icon: Check,
   },
+  collateral: {
+    title: "Collateral",
+    purpose: "Pledge, release, or recover a named asset",
+    icon: Shield,
+  },
+  if: {
+    title: "If / Else",
+    purpose: "Choose a bounded path from a visible fact",
+    icon: GitBranch,
+  },
 };
 
-function createEmptyDraft(contractNumber = 1): ContractProgram {
+function createEmptyDraft(
+  stage: StageDefinition = firstYieldStage,
+  contractNumber = 1,
+): ContractProgram {
   return {
     schemaVersion: 1,
     id: `player-contract-${contractNumber}`,
-    name: "Mina working-capital contract",
+    name: `${stage.simulation.borrower.name} contract`,
     steps: [],
   };
 }
 
 function nextBlockId(program: ContractProgram, type: ContractStepType): string {
-  const number = program.steps.reduce((largest, step) => {
+  const number = flattenContractSteps(program.steps).reduce((largest, step) => {
     const parsed = Number(step.id.split("-").at(-1));
     return Number.isFinite(parsed) ? Math.max(largest, parsed) : largest;
   }, 0);
   return `${type}-${number + 1}`;
 }
 
+function sequenceAtPath(
+  steps: readonly ContractStep[],
+  path: SequencePath,
+): readonly ContractStep[] {
+  let sequence = steps;
+  for (const segment of path) {
+    const branch = sequence.find(
+      (step): step is IfStep => step.type === "if" && step.id === segment.ifId,
+    );
+    if (!branch) return [];
+    sequence = segment.branch === "then" ? branch.thenSteps : branch.elseSteps;
+  }
+  return sequence;
+}
+
+function transformSequence(
+  steps: readonly ContractStep[],
+  path: SequencePath,
+  transform: (steps: ContractStep[]) => ContractStep[],
+): ContractStep[] {
+  if (path.length === 0) return transform([...steps]);
+  const [segment, ...rest] = path;
+  if (!segment) return [...steps];
+  return steps.map((step) => {
+    if (step.type !== "if" || step.id !== segment.ifId) return step;
+    if (segment.branch === "then")
+      return {
+        ...step,
+        thenSteps: transformSequence(step.thenSteps, rest, transform),
+      };
+    return {
+      ...step,
+      elseSteps: transformSequence(step.elseSteps, rest, transform),
+    };
+  });
+}
+
+function updateStepInSequence(
+  steps: readonly ContractStep[],
+  updated: ContractStep,
+): ContractStep[] {
+  return steps.map((step) => {
+    if (step.id === updated.id) return updated;
+    if (step.type !== "if") return step;
+    return {
+      ...step,
+      thenSteps: updateStepInSequence(step.thenSteps, updated),
+      elseSteps: updateStepInSequence(step.elseSteps, updated),
+    };
+  });
+}
+
+function deleteStepInSequence(
+  steps: readonly ContractStep[],
+  blockId: string,
+): ContractStep[] {
+  return steps
+    .filter((step) => step.id !== blockId)
+    .map((step) =>
+      step.type === "if"
+        ? {
+            ...step,
+            thenSteps: deleteStepInSequence(step.thenSteps, blockId),
+            elseSteps: deleteStepInSequence(step.elseSteps, blockId),
+          }
+        : step,
+    );
+}
+
+function retargetStep(step: ContractStep, borrowerId: string): ContractStep {
+  if (step.type === "lend") return { ...step, borrowerId };
+  if (step.type === "collect") return { ...step, fromId: borrowerId };
+  if (step.type === "collateral" && step.action === "require")
+    return { ...step, borrowerId };
+  if (step.type === "if")
+    return {
+      ...step,
+      thenSteps: step.thenSteps.map((child) => retargetStep(child, borrowerId)),
+      elseSteps: step.elseSteps.map((child) => retargetStep(child, borrowerId)),
+    };
+  return step;
+}
+
 function usd(amount: number): string {
   return formatMoney(amount, "USD");
 }
 
-function eventExplanation(event: StageEvent): string {
+function factLabel(fact: string): string {
+  if (fact === "payment-outcome") return "Payment outcome";
+  if (fact === "borrower-risk-rating") return "Public risk rating";
+  return "Revenue certainty";
+}
+
+function eventExplanation(
+  event: StageEvent,
+  borrowerName = "the borrower",
+): string {
   if (event.type === "RunStarted")
     return `Treasury opened with ${usd(event.data.playerCash)}.`;
   if (event.type === "ContractPublished")
-    return `Published “${event.data.contract.name}” for Mina to review.`;
+    return `Published “${event.data.contract.name}” for ${borrowerName} to review.`;
   if (event.type === "ContractRejected") return event.data.reasons.join(" ");
   if (event.type === "ContractFunded")
-    return "Mina accepted the terms and the contract became active.";
+    return `${borrowerName} accepted the terms and the contract became active.`;
   if (event.type === "CashTransferred") {
     if (event.data.reason === "contract-funding") {
-      return `Lend moved ${usd(event.data.amount)} from your treasury to Mina.`;
+      return `Lend moved ${usd(event.data.amount)} from your treasury to ${borrowerName}.`;
     }
     if (event.data.reason === "business-expense") {
-      return `Mina used ${usd(event.data.amount)} to buy materials for the confirmed order.`;
+      return `${borrowerName} used ${usd(event.data.amount)} for the financed work.`;
     }
     if (event.data.reason === "business-revenue") {
-      return `Mina's completed order produced ${usd(event.data.amount)} of payment capacity.`;
+      return `${borrowerName}'s work produced ${usd(event.data.amount)} of payment capacity.`;
     }
-    return `Collect moved ${usd(event.data.amount)} from Mina back to your treasury.`;
+    if (event.data.reason === "collateral-recovery")
+      return `Liquidate recovered ${usd(event.data.amount)} from the pledged asset.`;
+    if (event.data.reason === "default-payment")
+      return `${borrowerName} paid ${usd(event.data.amount)} before the remaining shortfall defaulted.`;
+    return `Collect moved ${usd(event.data.amount)} from ${borrowerName} back to your treasury.`;
   }
+  if (event.type === "CollateralLocked")
+    return `Collateral locked ${usd(event.data.amount)} of pledged asset value because block ${event.data.sourceBlockId} ran.`;
+  if (event.type === "CollateralReleased")
+    return `The settled branch released ${usd(event.data.amount)} of collateral.`;
+  if (event.type === "CollateralLiquidated")
+    return `The default branch liquidated collateral for ${usd(event.data.recoveredAmount)}; ${usd(event.data.shortfallRemaining)} remains unpaid.`;
   if (event.type === "TimeAdvanced")
     return `The calendar advanced to month ${event.data.to}.`;
-  if (event.type === "BorrowerRevenueRealized") return event.data.rule;
+  if (event.type === "BorrowerRevenueRealized")
+    return `${borrowerName}'s revenue realized at ${usd(event.data.amount)}.`;
   if (event.type === "PaymentRequested")
-    return `Collect requested ${usd(event.data.amount)} from Mina.`;
+    return `Collect requested ${usd(event.data.amount)} from ${borrowerName}.`;
+  if (event.type === "PaymentPartiallySettled")
+    return `${borrowerName} paid ${usd(event.data.paid)}; ${usd(event.data.shortfall)} remained.`;
   if (event.type === "PaymentSettled")
-    return `Mina paid ${usd(event.data.amount)} in full.`;
+    return `${borrowerName} paid ${usd(event.data.amount)} in full.`;
   if (event.type === "PaymentDefaulted") {
-    return `Mina defaulted: the payment was ${usd(event.data.shortfall)} above her available cash.`;
+    return `${borrowerName} defaulted with a ${usd(event.data.shortfall)} shortfall.`;
   }
+  if (event.type === "ConditionEvaluated")
+    return `${factLabel(event.data.fact)} was “${event.data.observed}”; block ${event.data.sourceBlockId} ${event.data.matched ? "matched" : "did not match"}.`;
+  if (event.type === "BranchExecuted")
+    return `${event.data.branch === "then" ? "Then" : "Else"} ran because ${event.data.reason}`;
   if (event.type === "ContractClosed")
     return "Close completed the contract after settlement.";
   if (event.type === "StageWon")
@@ -163,6 +299,7 @@ function eventTone(event: StageEvent): FeedbackTone {
   if (
     event.type === "StageWon" ||
     event.type === "PaymentSettled" ||
+    event.type === "CollateralReleased" ||
     event.type === "ContractClosed"
   ) {
     return "success";
@@ -176,6 +313,10 @@ function eventTone(event: StageEvent): FeedbackTone {
   }
   if (
     event.type === "PaymentRequested" ||
+    event.type === "PaymentPartiallySettled" ||
+    event.type === "ConditionEvaluated" ||
+    event.type === "BranchExecuted" ||
+    event.type === "CollateralLiquidated" ||
     event.type === "BorrowerRevenueRealized"
   )
     return "warning";
@@ -195,6 +336,7 @@ function bestScore(
 export function GameApp() {
   const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
+  const [selectedStageId, setSelectedStageId] = useState(firstYieldStage.id);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("workshop");
   const [campaign, setCampaign] = useState<CampaignProgress>(
     () => emptySave().campaign,
@@ -227,7 +369,12 @@ export function GameApp() {
         setCampaign(save.campaign);
         setSettings(save.settings);
         setRun(save.activeRun);
-        setDraft(save.draft ?? createEmptyDraft());
+        const restoredStageId =
+          save.activeRun?.stageId ??
+          save.campaign.mostRecentStageId ??
+          firstYieldStage.id;
+        setSelectedStageId(restoredStageId);
+        setDraft(save.draft ?? createEmptyDraft(getStage(restoredStageId)));
         setSaveStatus("saved");
         setHydrated(true);
       })
@@ -262,7 +409,8 @@ export function GameApp() {
     };
   }, [campaign, draft, hydrated, run, settings]);
 
-  const stage = run ? getStage(run.stageId) : firstYieldStage;
+  const selectedStage = getStage(selectedStageId);
+  const stage = run ? getStage(run.stageId) : selectedStage;
   const engine = useMemo(
     () => (run ? new StageEngine(stage.simulation, run.events) : null),
     [run, stage.simulation],
@@ -288,20 +436,43 @@ export function GameApp() {
       }),
     [draft, stage.simulation.borrower.id, stage.simulation.borrower.name],
   );
-  const assessment = previewAssessment(draft, state);
+  const outcomeProjection = useMemo<OutcomeCashFlowProjection | null>(() => {
+    if (hasValidationErrors(issues)) return null;
+    const borrower = stage.simulation.borrower;
+    return projectOutcomeCashFlows(draft, {
+      startMonth: publishedAt,
+      startingCash:
+        state?.balances[PLAYER_ID] ?? stage.simulation.startingPlayerCash,
+      borrowerId: borrower.id,
+      borrowerRiskRating: borrower.riskRating ?? "low",
+      revenueCertainty: borrower.revenueCertainty ?? "confirmed",
+      bestRevenue: borrower.bestCaseRevenue ?? borrower.expectedRevenue,
+      expectedRevenue: borrower.expectedRevenue,
+      adverseRevenue: borrower.adverseCaseRevenue ?? borrower.expectedRevenue,
+      ...(borrower.collateral
+        ? { collateralLiquidationValue: borrower.collateral.liquidationValue }
+        : {}),
+      ...(stage.simulation.partialPaymentOnDefault === undefined
+        ? {}
+        : {
+            partialPaymentOnDefault: stage.simulation.partialPaymentOnDefault,
+          }),
+    });
+  }, [draft, issues, publishedAt, stage, state?.balances]);
 
-  function beginStage(): void {
-    const freshEngine = new StageEngine(firstYieldStage.simulation);
+  function beginStage(stageToStart: StageDefinition = selectedStage): void {
+    const freshEngine = new StageEngine(stageToStart.simulation);
     setRun({
       schemaVersion: 1,
-      stageId: firstYieldStage.id,
+      stageId: stageToStart.id,
       events: freshEngine.events(),
     });
-    setDraft(createEmptyDraft());
+    setSelectedStageId(stageToStart.id);
+    setDraft(createEmptyDraft(stageToStart));
     setDraftHistory([]);
     setCampaign((current) => ({
       ...current,
-      mostRecentStageId: firstYieldStage.id,
+      mostRecentStageId: stageToStart.id,
     }));
     setFeedback({ tone: "info", message: "Tap + to place the first block." });
     setMobilePanel("workshop");
@@ -322,9 +493,35 @@ export function GameApp() {
 
   function insertBlock(type: ContractStepType): void {
     if (!picker) return;
-    const step = createDefaultStep(type, nextBlockId(draft, type));
-    const steps = [...draft.steps];
-    steps.splice(picker.insertAt, 0, step);
+    const id = nextBlockId(draft, type);
+    let step: ContractStep;
+    if (type === "collateral" && picker.path.length > 0) {
+      const finalSegment = picker.path.at(-1);
+      const parent = flattenContractSteps(draft.steps).find(
+        (candidate): candidate is IfStep =>
+          candidate.type === "if" && candidate.id === finalSegment?.ifId,
+      );
+      const defaultBranch =
+        parent?.condition.fact === "payment-outcome" &&
+        ((parent.condition.equals === "defaulted" &&
+          finalSegment?.branch === "then") ||
+          (parent.condition.equals === "settled" &&
+            finalSegment?.branch === "else"));
+      step = createDefaultCollateralAction(
+        defaultBranch ? "liquidate" : "release",
+        id,
+      );
+    } else {
+      step = retargetStep(
+        createDefaultStep(type, id),
+        stage.simulation.borrower.id,
+      );
+    }
+    const steps = transformSequence(draft.steps, picker.path, (sequence) => {
+      const next = [...sequence];
+      next.splice(picker.insertAt, 0, step);
+      return next;
+    });
     replaceDraft({ ...draft, steps });
     setPicker(null);
     setEditingBlockId(step.id);
@@ -333,16 +530,14 @@ export function GameApp() {
   function updateBlock(updated: ContractStep): void {
     replaceDraft({
       ...draft,
-      steps: draft.steps.map((step) =>
-        step.id === updated.id ? updated : step,
-      ),
+      steps: updateStepInSequence(draft.steps, updated),
     });
   }
 
   function deleteBlock(blockId: string): void {
     replaceDraft({
       ...draft,
-      steps: draft.steps.filter((step) => step.id !== blockId),
+      steps: deleteStepInSequence(draft.steps, blockId),
     });
     setEditingBlockId(null);
     setFeedback({
@@ -369,7 +564,7 @@ export function GameApp() {
         result.accepted
           ? {
               tone: "success",
-              message: "Mina accepted. Your Lend block funded the contract.",
+              message: `${stage.simulation.borrower.name} accepted. Your Lend block funded the contract.`,
             }
           : { tone: "danger", message: result.reasons.join(" ") },
       );
@@ -393,7 +588,7 @@ export function GameApp() {
       const nextState = engine.inspect();
       setRun({ schemaVersion: 1, stageId: stage.id, events: engine.events() });
       if (nextState.status === "won") {
-        const score = scoreRun(nextState, draft.steps.length);
+        const score = scoreRun(nextState, countContractSteps(draft));
         setCampaign((current) => ({
           ...current,
           completedStageIds: current.completedStageIds.includes(stage.id)
@@ -410,7 +605,7 @@ export function GameApp() {
         }));
         setFeedback({
           tone: "success",
-          message: "Objective complete. The Founder's Contract Stamp is yours.",
+          message: `Objective complete. ${stage.reward.name} is yours.`,
         });
       } else if (nextState.status === "lost") {
         const loss = engine
@@ -452,7 +647,7 @@ export function GameApp() {
 
   function discardDraft(): void {
     if (!window.confirm("Discard every block in this draft?")) return;
-    replaceDraft({ ...createEmptyDraft(), id: draft.id });
+    replaceDraft({ ...createEmptyDraft(stage), id: draft.id });
     setFeedback({ tone: "info", message: "Draft cleared." });
   }
 
@@ -467,7 +662,8 @@ export function GameApp() {
     setCampaign(fresh.campaign);
     setSettings(fresh.settings);
     setRun(null);
-    setDraft(createEmptyDraft());
+    setSelectedStageId(firstYieldStage.id);
+    setDraft(createEmptyDraft(firstYieldStage));
     setDraftHistory([]);
     setScreen("stage");
   }
@@ -499,11 +695,17 @@ export function GameApp() {
   if (screen === "stage") {
     return (
       <StageScreen
+        selectedStage={selectedStage}
         campaign={campaign}
-        canContinue={Boolean(run)}
+        canContinue={run?.stageId === selectedStage.id}
         onBack={() => setScreen("home")}
-        onPlay={run ? continueStage : beginStage}
-        onRestart={beginStage}
+        onSelect={setSelectedStageId}
+        onPlay={() =>
+          run?.stageId === selectedStage.id
+            ? continueStage()
+            : beginStage(selectedStage)
+        }
+        onRestart={() => beginStage(selectedStage)}
       />
     );
   }
@@ -512,7 +714,7 @@ export function GameApp() {
     return (
       <main className="loading-screen">
         <h1>No active run</h1>
-        <button className="primary-button" onClick={beginStage}>
+        <button className="primary-button" onClick={() => beginStage()}>
           Start Stage 1
         </button>
       </main>
@@ -526,7 +728,9 @@ export function GameApp() {
   const activeLocked =
     state.contract?.status === "active" || state.status !== "playing";
   const editingStep =
-    draft.steps.find((step) => step.id === editingBlockId) ?? null;
+    flattenContractSteps(draft.steps).find(
+      (step) => step.id === editingBlockId,
+    ) ?? null;
   const progress = Math.min(
     100,
     ((state.balances[PLAYER_ID] ?? 0) / stage.primaryObjective.amount) * 100,
@@ -545,7 +749,9 @@ export function GameApp() {
           <ArrowLeft aria-hidden="true" />
         </button>
         <div className="status-goal">
-          <span className="eyebrow">Stage 01 · {stage.title}</span>
+          <span className="eyebrow">
+            Stage {String(stage.number).padStart(2, "0")} · {stage.title}
+          </span>
           <strong>
             {usd(state.balances[PLAYER_ID] ?? 0)} /{" "}
             {usd(stage.primaryObjective.amount)}
@@ -634,6 +840,12 @@ export function GameApp() {
                   {usd(state.contract.principal)} out ·{" "}
                   {usd(state.contract.repayment)} due M{state.contract.dueMonth}
                 </p>
+                {state.collateral && (
+                  <small>
+                    {usd(state.collateral.amount)} collateral ·{" "}
+                    {state.collateral.status}
+                  </small>
+                )}
                 {state.contract.rejectionReasons.map((reason) => (
                   <small key={reason}>{reason}</small>
                 ))}
@@ -657,7 +869,9 @@ export function GameApp() {
                   <small>
                     M{event.at} · {event.type.replace(/([A-Z])/g, " $1").trim()}
                   </small>
-                  <p>{eventExplanation(event)}</p>
+                  <p>
+                    {eventExplanation(event, stage.simulation.borrower.name)}
+                  </p>
                 </div>
               </li>
             ))}
@@ -670,22 +884,30 @@ export function GameApp() {
           <PanelHeader
             icon={Landmark}
             eyebrow="Open market"
-            title="One visible need"
+            title="Visible need & facts"
           />
           <article className="borrower-card">
             <div className="borrower-topline">
               <div className="borrower-avatar">
-                <img src="/assets/avatars/mina-neutral.webp" alt="" />
+                <img
+                  src={`/assets/avatars/${stage.simulation.borrower.id}-neutral.webp`}
+                  alt=""
+                />
                 <span className="online-dot" />
               </div>
               <div>
                 <span className="eyebrow">Verified business</span>
                 <h3>{stage.simulation.borrower.name}</h3>
-                <p>Municipal furniture order</p>
+                <p>
+                  {stage.simulation.borrower.revenueCertainty === "variable"
+                    ? "Variable-revenue business order"
+                    : "Confirmed business order"}
+                </p>
               </div>
             </div>
             <blockquote>
-              “Fund the materials now. My invoice clears at month 24.”
+              “Fund the work now. I can pay when revenue arrives in month{" "}
+              {stage.simulation.borrower.fundsAvailableAt}.”
             </blockquote>
             <dl className="need-grid">
               <div>
@@ -693,7 +915,7 @@ export function GameApp() {
                 <dd>{usd(stage.simulation.borrower.needAmount)}</dd>
               </div>
               <div>
-                <dt>Invoice at M24</dt>
+                <dt>Expected revenue</dt>
                 <dd>{usd(stage.simulation.borrower.expectedRevenue)}</dd>
               </div>
               <div>
@@ -706,6 +928,16 @@ export function GameApp() {
                   {usd(stage.simulation.borrower.maximumAcceptedRepayment)}
                 </dd>
               </div>
+              <div>
+                <dt>Risk rating</dt>
+                <dd>{stage.simulation.borrower.riskRating ?? "low"}</dd>
+              </div>
+              <div>
+                <dt>Revenue</dt>
+                <dd>
+                  {stage.simulation.borrower.revenueCertainty ?? "confirmed"}
+                </dd>
+              </div>
             </dl>
           </article>
 
@@ -714,35 +946,42 @@ export function GameApp() {
             <div>
               <strong>What you know</strong>
               <p>
-                The order is confirmed. Mina will consider up to $1,250, but the
-                visible invoice only provides $1,200. A larger promise can
-                default.
+                Best{" "}
+                {usd(
+                  stage.simulation.borrower.bestCaseRevenue ??
+                    stage.simulation.borrower.expectedRevenue,
+                )}
+                , expected {usd(stage.simulation.borrower.expectedRevenue)},
+                adverse{" "}
+                {usd(
+                  stage.simulation.borrower.adverseCaseRevenue ??
+                    stage.simulation.borrower.expectedRevenue,
+                )}
+                .
+                {stage.simulation.borrower.collateral
+                  ? ` ${stage.simulation.borrower.collateral.label} is appraised at ${usd(stage.simulation.borrower.collateral.appraisedValue)} and can liquidate for ${usd(stage.simulation.borrower.collateral.liquidationValue)}.`
+                  : " No eligible collateral is listed."}
               </p>
             </div>
           </div>
 
-          <div className="preview-outcome">
+          <div className="preview-outcome scenario-preview">
             <div className="section-heading">
-              <h3>Draft outcome</h3>
-              <span className={`status-pill ${assessment.tone}`}>
-                {assessment.label}
-              </span>
+              <h3>Three-case preview</h3>
+              <span>public facts</span>
             </div>
-            <p>{assessment.detail}</p>
-            <div className="capacity-bar">
-              <span className="capacity-label">Mina's M24 capacity</span>
-              <div>
-                <i
-                  style={{
-                    width: `${Math.min(100, (assessment.repayment / stage.simulation.borrower.expectedRevenue) * 100)}%`,
-                  }}
-                />
+            {outcomeProjection ? (
+              <div className="scenario-grid">
+                {(["best", "expected", "adverse"] as const).map((key) => (
+                  <ScenarioCard key={key} projection={outcomeProjection[key]} />
+                ))}
               </div>
-              <strong>
-                {usd(assessment.repayment)} /{" "}
-                {usd(stage.simulation.borrower.expectedRevenue)}
-              </strong>
-            </div>
+            ) : (
+              <p>
+                Complete every path to compare best, expected, and adverse cash
+                flows.
+              </p>
+            )}
           </div>
         </section>
 
@@ -786,8 +1025,9 @@ export function GameApp() {
           {state.status !== "playing" && (
             <OutcomeCard
               state={state}
-              score={scoreRun(state, draft.steps.length)}
-              onReplay={beginStage}
+              stage={stage}
+              score={scoreRun(state, countContractSteps(draft))}
+              onReplay={() => beginStage(stage)}
             />
           )}
 
@@ -802,34 +1042,21 @@ export function GameApp() {
                 <span>Add Lend, then follow the flow.</span>
               </div>
             )}
-            {draft.steps.map((step, index) => {
-              const stepIssues = issues.filter(
-                (candidate) => candidate.blockId === step.id,
-              );
-              return (
-                <Fragment key={step.id}>
-                  <InsertButton
-                    disabled={activeLocked}
-                    onClick={() => setPicker({ insertAt: index })}
-                  />
-                  <ContractBlock
-                    step={step}
-                    issues={stepIssues}
-                    onClick={() => !activeLocked && setEditingBlockId(step.id)}
-                  />
-                </Fragment>
-              );
-            })}
-            <InsertButton
+            <ProgramSequence
+              steps={draft.steps}
+              path={[]}
+              issues={issues}
               disabled={activeLocked}
-              onClick={() => setPicker({ insertAt: draft.steps.length })}
+              partyName={stage.simulation.borrower.name}
+              onInsert={(path, insertAt) => setPicker({ path, insertAt })}
+              onEdit={(blockId) => setEditingBlockId(blockId)}
             />
           </div>
 
           <div className="contract-preview">
             <div className="section-heading">
               <h3>Readable contract</h3>
-              <span>{draft.steps.length}/4 blocks</span>
+              <span>{countContractSteps(draft)} executable blocks</span>
             </div>
             <p className="plain-summary">{summary}</p>
             {issues.length > 0 && (
@@ -937,10 +1164,16 @@ export function GameApp() {
           onClose={() => setPicker(null)}
         >
           <div className="block-picker">
-            {stage.availableBlocks.map((type) => {
+            {(picker.path.length > 0
+              ? stage.availableBlocks.filter((type) =>
+                  ["collateral", "close"].includes(type),
+                )
+              : stage.availableBlocks
+            ).map((type) => {
               const definition = blockCatalog[type];
               const Icon = definition.icon;
-              const alreadyUsed = draft.steps.some(
+              const currentSequence = sequenceAtPath(draft.steps, picker.path);
+              const alreadyUsed = currentSequence.some(
                 (step) => step.type === type,
               );
               return (
@@ -975,6 +1208,10 @@ export function GameApp() {
         >
           <BlockEditor
             step={editingStep}
+            borrowerName={stage.simulation.borrower.name}
+            collateralMaximum={
+              stage.simulation.borrower.collateral?.appraisedValue
+            }
             onChange={updateBlock}
             onDelete={() => deleteBlock(editingStep.id)}
           />
@@ -997,7 +1234,9 @@ function HomeScreen({
   onNewCampaign: () => void;
   onStages: () => void;
 }) {
-  const earned = campaign.rewards.includes(firstYieldStage.reward.id);
+  const latestReward = [...stageCatalog]
+    .reverse()
+    .find((stage) => campaign.rewards.includes(stage.reward.id))?.reward;
   return (
     <main className="home-screen">
       <div className="home-orb orb-one" />
@@ -1077,11 +1316,9 @@ function HomeScreen({
       <footer className="home-footer">
         <div>
           <small>Latest stage object</small>
-          <strong>
-            {earned ? firstYieldStage.reward.name : "No object earned yet"}
-          </strong>
+          <strong>{latestReward?.name ?? "No object earned yet"}</strong>
         </div>
-        {earned ? (
+        {latestReward ? (
           <span className="reward-mini">
             <Award aria-hidden="true" />
           </span>
@@ -1096,20 +1333,29 @@ function HomeScreen({
 }
 
 function StageScreen({
+  selectedStage,
   campaign,
   canContinue,
   onBack,
+  onSelect,
   onPlay,
   onRestart,
 }: {
+  selectedStage: StageDefinition;
   campaign: CampaignProgress;
   canContinue: boolean;
   onBack: () => void;
+  onSelect: (stageId: string) => void;
   onPlay: () => void;
   onRestart: () => void;
 }) {
-  const complete = campaign.completedStageIds.includes(firstYieldStage.id);
-  const score = campaign.bestScores[firstYieldStage.id];
+  const complete = campaign.completedStageIds.includes(selectedStage.id);
+  const score = campaign.bestScores[selectedStage.id];
+  const unlocked =
+    selectedStage.number === 1 ||
+    campaign.completedStageIds.includes(
+      stageCatalog[selectedStage.number - 2]?.id ?? "",
+    );
   return (
     <main className="stage-screen">
       <header className="stage-header">
@@ -1121,31 +1367,81 @@ function StageScreen({
           <ArrowLeft />
         </button>
         <span>Stage selection</span>
-        <strong>1 / 1</strong>
+        <strong>
+          {selectedStage.number} / {stageCatalog.length}
+        </strong>
       </header>
+      <nav className="stage-rail" aria-label="Campaign stages">
+        {stageCatalog.map((stage) => {
+          const stageUnlocked =
+            stage.number === 1 ||
+            campaign.completedStageIds.includes(
+              stageCatalog[stage.number - 2]?.id ?? "",
+            );
+          const stageComplete = campaign.completedStageIds.includes(stage.id);
+          return (
+            <button
+              key={stage.id}
+              className={stage.id === selectedStage.id ? "selected" : ""}
+              onClick={() => onSelect(stage.id)}
+              aria-current={stage.id === selectedStage.id ? "step" : undefined}
+            >
+              <span>
+                {stageComplete ? (
+                  <Check aria-hidden="true" />
+                ) : (
+                  String(stage.number).padStart(2, "0")
+                )}
+              </span>
+              <div>
+                <strong>{stage.title}</strong>
+                <small>
+                  {stageUnlocked ? stage.subtitle : "Complete the prior lesson"}
+                </small>
+              </div>
+              {!stageUnlocked && <Shield aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </nav>
       <section className="stage-layout">
         <div className="stage-story">
-          <span className="stage-number">01</span>
-          <p className="eyebrow">Foundations · available now</p>
-          <h1>{firstYieldStage.title}</h1>
-          <h2>{firstYieldStage.subtitle}</h2>
-          <p className="stage-briefing">{firstYieldStage.briefing}</p>
+          <span className="stage-number">
+            {String(selectedStage.number).padStart(2, "0")}
+          </span>
+          <p className="eyebrow">
+            {selectedStage.number === 1 ? "Foundations" : "Risk desk"} ·{" "}
+            {unlocked ? "available now" : "locked"}
+          </p>
+          <h1>{selectedStage.title}</h1>
+          <h2>{selectedStage.subtitle}</h2>
+          <p className="stage-briefing">{selectedStage.briefing}</p>
           <div className="objective-card">
             <Target aria-hidden="true" />
             <div>
               <span>Primary objective</span>
-              <strong>{firstYieldStage.primaryObjective.label}</strong>
-              <small>Starting treasury: $1,000 · deterministic seed</small>
+              <strong>{selectedStage.primaryObjective.label}</strong>
+              <small>
+                Starting treasury:{" "}
+                {usd(selectedStage.simulation.startingPlayerCash)} ·
+                deterministic seed
+              </small>
             </div>
           </div>
           <div className="stage-actions">
-            <button className="primary-button hero-button" onClick={onPlay}>
+            <button
+              className="primary-button hero-button"
+              onClick={onPlay}
+              disabled={!unlocked}
+            >
               <Play aria-hidden="true" />{" "}
-              {canContinue
-                ? "Continue stage"
-                : complete
-                  ? "Play again"
-                  : "Enter workshop"}
+              {!unlocked
+                ? "Complete prior stage"
+                : canContinue
+                  ? "Continue stage"
+                  : complete
+                    ? "Play again"
+                    : "Enter workshop"}
             </button>
             {canContinue && (
               <button className="secondary-button" onClick={onRestart}>
@@ -1158,7 +1454,7 @@ function StageScreen({
           <div className="detail-section">
             <span className="eyebrow">Available blocks</span>
             <div className="available-blocks">
-              {firstYieldStage.availableBlocks.map((type) => {
+              {selectedStage.availableBlocks.map((type) => {
                 const Icon = blockCatalog[type].icon;
                 return (
                   <span key={type}>
@@ -1176,8 +1472,8 @@ function StageScreen({
                 <Award aria-hidden="true" />
               </span>
               <div>
-                <strong>{firstYieldStage.reward.name}</strong>
-                <p>{firstYieldStage.reward.description}</p>
+                <strong>{selectedStage.reward.name}</strong>
+                <p>{selectedStage.reward.description}</p>
               </div>
             </div>
           </div>
@@ -1257,36 +1553,114 @@ function InsertButton({
   );
 }
 
+function ProgramSequence({
+  steps,
+  path,
+  issues,
+  disabled,
+  partyName,
+  onInsert,
+  onEdit,
+}: {
+  steps: readonly ContractStep[];
+  path: SequencePath;
+  issues: ReturnType<typeof validateProgram>;
+  disabled: boolean;
+  partyName: string;
+  onInsert: (path: SequencePath, insertAt: number) => void;
+  onEdit: (blockId: string) => void;
+}) {
+  return (
+    <div className={path.length > 0 ? "nested-sequence" : "root-sequence"}>
+      {steps.map((step, index) => {
+        const stepIssues = issues.filter(
+          (candidate) => candidate.blockId === step.id,
+        );
+        return (
+          <Fragment key={step.id}>
+            <InsertButton
+              disabled={disabled}
+              onClick={() => onInsert(path, index)}
+            />
+            <ContractBlock
+              step={step}
+              issues={stepIssues}
+              partyName={partyName}
+              onClick={() => !disabled && onEdit(step.id)}
+            />
+            {step.type === "if" && (
+              <div className="branch-grid">
+                {(["then", "else"] as const).map((branch) => {
+                  const branchPath = [...path, { ifId: step.id, branch }];
+                  return (
+                    <section className={`branch-lane ${branch}`} key={branch}>
+                      <header>
+                        <span>{branch === "then" ? "Then" : "Else"}</span>
+                        <small>
+                          {branch === "then" ? "fact matches" : "otherwise"}
+                        </small>
+                      </header>
+                      <ProgramSequence
+                        steps={
+                          branch === "then" ? step.thenSteps : step.elseSteps
+                        }
+                        path={branchPath}
+                        issues={issues}
+                        disabled={disabled}
+                        partyName={partyName}
+                        onInsert={onInsert}
+                        onEdit={onEdit}
+                      />
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </Fragment>
+        );
+      })}
+      <InsertButton
+        disabled={disabled}
+        onClick={() => onInsert(path, steps.length)}
+      />
+    </div>
+  );
+}
+
 function ContractBlock({
   step,
   issues,
+  partyName,
   onClick,
 }: {
   step: ContractStep;
   issues: ReturnType<typeof validateProgram>;
+  partyName: string;
   onClick: () => void;
 }) {
   const definition = blockCatalog[step.type];
   const Icon = definition.icon;
   let detail: string;
-  if (step.type === "lend") detail = `${usd(step.amount)} → Mina`;
+  if (step.type === "lend") detail = `${usd(step.amount)} → ${partyName}`;
   else if (step.type === "wait") detail = `${step.months} months`;
-  else if (step.type === "collect") detail = `${usd(step.amount)} ← Mina`;
-  else detail = "After payment resolves";
+  else if (step.type === "collect")
+    detail = `${usd(step.amount)} ← ${partyName}`;
+  else if (step.type === "collateral")
+    detail =
+      step.action === "require"
+        ? `Require ${usd(step.amount)}`
+        : step.action === "release"
+          ? "Return pledged asset"
+          : "Sell asset for recovery";
+  else if (step.type === "if")
+    detail = `${factLabel(step.condition.fact)} = ${step.condition.equals}`;
+  else detail = "After obligations resolve";
   return (
     <button
       className={`contract-block ${step.type} ${issues.some((issue) => issue.severity === "error") ? "has-error" : ""}`}
       onClick={onClick}
     >
-      <span className="block-index">
-        {step.type === "lend"
-          ? "01"
-          : step.type === "wait"
-            ? "02"
-            : step.type === "collect"
-              ? "03"
-              : "04"}
-      </span>
+      <span className="block-index">{step.id.split("-").at(-1)}</span>
       <span className="block-icon">
         <Icon aria-hidden="true" />
       </span>
@@ -1302,10 +1676,14 @@ function ContractBlock({
 
 function BlockEditor({
   step,
+  borrowerName,
+  collateralMaximum,
   onChange,
   onDelete,
 }: {
   step: ContractStep;
+  borrowerName: string;
+  collateralMaximum?: number | undefined;
   onChange: (step: ContractStep) => void;
   onDelete: () => void;
 }) {
@@ -1340,6 +1718,39 @@ function BlockEditor({
         onChange={(amount) => onChange({ ...step, amount })}
       />
     );
+  } else if (step.type === "collateral") {
+    controls =
+      step.action === "require" ? (
+        <ChoiceGroup
+          label={`${borrowerName} pledge value`}
+          value={step.amount}
+          choices={Array.from(
+            new Set(
+              [25_000, 35_000, collateralMaximum ?? 45_000].filter(
+                (amount) => !collateralMaximum || amount <= collateralMaximum,
+              ),
+            ),
+          )}
+          format={usd}
+          onChange={(amount) => onChange({ ...step, amount })}
+        />
+      ) : (
+        <div className="close-explainer">
+          <Shield aria-hidden="true" />
+          <p>
+            {step.action === "liquidate"
+              ? "This runs only on the default path and recovery is capped by the pledge, appraisal, and unpaid shortfall."
+              : "This returns the pledged asset after full settlement; it creates no cash."}
+          </p>
+        </div>
+      );
+  } else if (step.type === "if") {
+    controls = (
+      <ConditionEditor
+        step={step}
+        onChange={(condition) => onChange({ ...step, condition })}
+      />
+    );
   } else {
     controls = (
       <div className="close-explainer">
@@ -1359,6 +1770,67 @@ function BlockEditor({
         <Trash2 aria-hidden="true" /> Delete block
       </button>
     </div>
+  );
+}
+
+function ConditionEditor({
+  step,
+  onChange,
+}: {
+  step: IfStep;
+  onChange: (condition: IfStep["condition"]) => void;
+}) {
+  const choices: Array<{
+    label: string;
+    condition: IfStep["condition"];
+    detail: string;
+  }> = [
+    {
+      label: "Payment defaulted",
+      condition: { fact: "payment-outcome", equals: "defaulted" },
+      detail: "Known after Collect runs",
+    },
+    {
+      label: "Payment settled",
+      condition: { fact: "payment-outcome", equals: "settled" },
+      detail: "Known after Collect runs",
+    },
+    {
+      label: "Risk is medium",
+      condition: { fact: "borrower-risk-rating", equals: "medium" },
+      detail: "Public before publishing",
+    },
+    {
+      label: "Revenue is variable",
+      condition: { fact: "revenue-certainty", equals: "variable" },
+      detail: "Public before publishing",
+    },
+  ];
+  return (
+    <fieldset className="choice-group condition-picker">
+      <legend>Condition picker</legend>
+      <div>
+        {choices.map((choice) => {
+          const selected =
+            choice.condition.fact === step.condition.fact &&
+            choice.condition.equals === step.condition.equals;
+          return (
+            <button
+              type="button"
+              className={selected ? "selected" : ""}
+              key={`${choice.condition.fact}-${choice.condition.equals}`}
+              onClick={() => onChange(choice.condition)}
+            >
+              <span>
+                <strong>{choice.label}</strong>
+                <small>{choice.detail}</small>
+              </span>
+              {selected && <Check aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 
@@ -1447,10 +1919,12 @@ function MobileNavButton({
 
 function OutcomeCard({
   state,
+  stage,
   score,
   onReplay,
 }: {
   state: StageRunState;
+  stage: StageDefinition;
   score: StageScore;
   onReplay: () => void;
 }) {
@@ -1468,7 +1942,7 @@ function OutcomeCard({
         <small>{won ? "Stage complete" : "Run ended"}</small>
         <h3>
           {won
-            ? "Founder's Contract Stamp earned"
+            ? `${stage.reward.name} earned`
             : "The machine missed its objective"}
         </h3>
         <p>
@@ -1479,6 +1953,38 @@ function OutcomeCard({
       <button onClick={onReplay}>
         <RotateCcw aria-hidden="true" /> Replay
       </button>
+    </article>
+  );
+}
+
+function ScenarioCard({
+  projection,
+}: {
+  projection: OutcomeCashFlowProjection["best"];
+}) {
+  const tone =
+    projection.paymentOutcome === "settled"
+      ? "success"
+      : projection.collateralRecovery > 0
+        ? "warning"
+        : "danger";
+  return (
+    <article className={`scenario-card ${tone}`}>
+      <header>
+        <span>{projection.scenario}</span>
+        <strong>{usd(projection.endingCash)}</strong>
+      </header>
+      <p>
+        Revenue {usd(projection.borrowerRevenue)} · {projection.paymentOutcome}
+      </p>
+      <small>
+        {projection.branch
+          ? `${projection.branch === "then" ? "Then" : "Else"} branch`
+          : "Linear path"}
+        {projection.collateralRecovery > 0
+          ? ` · ${usd(projection.collateralRecovery)} recovered`
+          : ""}
+      </small>
     </article>
   );
 }
@@ -1506,80 +2012,4 @@ function MachineNode({
       </div>
     </div>
   );
-}
-
-function previewAssessment(
-  program: ContractProgram,
-  state: StageRunState | null,
-): { tone: FeedbackTone; label: string; detail: string; repayment: number } {
-  const errors = validateProgram(program).filter(
-    (issue) => issue.severity === "error",
-  );
-  const collect = program.steps.find((step) => step.type === "collect");
-  const repayment = collect?.type === "collect" ? collect.amount : 0;
-  if (errors.length > 0)
-    return {
-      tone: "info",
-      label: "Incomplete",
-      detail: "Complete the four-block sequence to test Mina's response.",
-      repayment,
-    };
-  const lend = program.steps.find((step) => step.type === "lend");
-  const wait = program.steps.find((step) => step.type === "wait");
-  if (
-    lend?.type !== "lend" ||
-    wait?.type !== "wait" ||
-    collect?.type !== "collect"
-  )
-    return {
-      tone: "info",
-      label: "Incomplete",
-      detail: "Add the missing financial instructions.",
-      repayment,
-    };
-  const dueMonth = (state?.time ?? 0) + wait.months;
-  const borrower = firstYieldStage.simulation.borrower;
-  if (lend.amount < borrower.minimumFunding)
-    return {
-      tone: "danger",
-      label: "Rejected",
-      detail: "The amount cannot fund Mina's confirmed order.",
-      repayment,
-    };
-  if (dueMonth < borrower.fundsAvailableAt)
-    return {
-      tone: "danger",
-      label: "Rejected",
-      detail: `Collection arrives before Mina has revenue in month ${borrower.fundsAvailableAt}.`,
-      repayment,
-    };
-  if (repayment > borrower.maximumAcceptedRepayment)
-    return {
-      tone: "danger",
-      label: "Rejected",
-      detail: "The requested return is above Mina's published limit.",
-      repayment,
-    };
-  if (repayment > borrower.expectedRevenue)
-    return {
-      tone: "danger",
-      label: "Default risk",
-      detail: `${usd(repayment - borrower.expectedRevenue)} is not covered by the visible invoice. Mina accepts, but cannot settle in this scenario.`,
-      repayment,
-    };
-  if (repayment < firstYieldStage.primaryObjective.amount)
-    return {
-      tone: "warning",
-      label: "Below target",
-      detail:
-        "Mina can settle this contract, but the ending cash misses the stage objective.",
-      repayment,
-    };
-  return {
-    tone: "success",
-    label: "Viable",
-    detail:
-      "Mina can accept, the invoice covers payment, and your treasury reaches the objective.",
-    repayment,
-  };
 }

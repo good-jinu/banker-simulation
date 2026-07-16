@@ -1,5 +1,23 @@
 export type CurrencyCode = "USD";
 
+export type PaymentOutcome = "settled" | "defaulted";
+export type BorrowerRiskRating = "low" | "medium" | "high";
+export type RevenueCertainty = "confirmed" | "variable";
+
+export type ContractCondition =
+  | {
+      fact: "payment-outcome";
+      equals: PaymentOutcome;
+    }
+  | {
+      fact: "borrower-risk-rating";
+      equals: BorrowerRiskRating;
+    }
+  | {
+      fact: "revenue-certainty";
+      equals: RevenueCertainty;
+    };
+
 export interface ContractProgram {
   schemaVersion: 1;
   id: string;
@@ -34,7 +52,40 @@ export interface CloseStep {
   type: "close";
 }
 
-export type ContractStep = LendStep | WaitStep | CollectStep | CloseStep;
+export interface RequireCollateralStep {
+  id: string;
+  type: "collateral";
+  action: "require";
+  borrowerId: string;
+  currency: CurrencyCode;
+  amount: number;
+}
+
+export interface ReleaseCollateralStep {
+  id: string;
+  type: "collateral";
+  action: "release";
+}
+
+export interface LiquidateCollateralStep {
+  id: string;
+  type: "collateral";
+  action: "liquidate";
+}
+
+export type CollateralStep =
+  RequireCollateralStep | ReleaseCollateralStep | LiquidateCollateralStep;
+
+export interface IfStep {
+  id: string;
+  type: "if";
+  condition: ContractCondition;
+  thenSteps: ContractStep[];
+  elseSteps: ContractStep[];
+}
+
+export type ContractStep =
+  LendStep | WaitStep | CollectStep | CloseStep | CollateralStep | IfStep;
 export type ContractStepType = ContractStep["type"];
 
 export type ValidationSeverity = "error" | "warning";
@@ -60,4 +111,34 @@ export interface CashFlowProjection {
   totalInflow: number;
   netChange: number;
   finalMonth: number;
+}
+
+export type OutcomeScenario = "best" | "expected" | "adverse";
+
+export interface OutcomeProjectionInput {
+  startMonth?: number;
+  startingCash: number;
+  borrowerId: string;
+  borrowerRiskRating: BorrowerRiskRating;
+  revenueCertainty: RevenueCertainty;
+  bestRevenue: number;
+  expectedRevenue: number;
+  adverseRevenue: number;
+  collateralLiquidationValue?: number;
+  partialPaymentOnDefault?: boolean;
+}
+
+export interface ScenarioCashFlowProjection extends CashFlowProjection {
+  scenario: OutcomeScenario;
+  borrowerRevenue: number;
+  paymentOutcome: PaymentOutcome;
+  branch: "then" | "else" | null;
+  endingCash: number;
+  collateralRecovery: number;
+}
+
+export interface OutcomeCashFlowProjection {
+  best: ScenarioCashFlowProjection;
+  expected: ScenarioCashFlowProjection;
+  adverse: ScenarioCashFlowProjection;
 }

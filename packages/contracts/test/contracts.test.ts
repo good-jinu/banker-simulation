@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   compileContract,
   projectCashFlows,
+  projectOutcomeCashFlows,
   summarizeProgram,
   validateProgram,
   type ContractProgram,
@@ -108,4 +109,120 @@ test("a contract that returns less than it lends is valid but warns the player",
     ["warning"],
   );
   assert.doesNotThrow(() => compileContract(conservative));
+});
+
+const securedProgram: ContractProgram = {
+  schemaVersion: 1,
+  id: "secured-contract",
+  name: "Secured bridge",
+  steps: [
+    {
+      id: "lend-secured",
+      type: "lend",
+      borrowerId: "mina",
+      currency: "USD",
+      amount: 100_000,
+    },
+    {
+      id: "require",
+      type: "collateral",
+      action: "require",
+      borrowerId: "mina",
+      currency: "USD",
+      amount: 35_000,
+    },
+    { id: "wait-secured", type: "wait", months: 24 },
+    {
+      id: "collect-secured",
+      type: "collect",
+      fromId: "mina",
+      currency: "USD",
+      amount: 120_000,
+    },
+    {
+      id: "if-default",
+      type: "if",
+      condition: { fact: "payment-outcome", equals: "defaulted" },
+      thenSteps: [
+        { id: "liquidate", type: "collateral", action: "liquidate" },
+        { id: "close-default", type: "close" },
+      ],
+      elseSteps: [
+        { id: "release", type: "collateral", action: "release" },
+        { id: "close-paid", type: "close" },
+      ],
+    },
+  ],
+};
+
+test("collateral and If / Else compile into bounded executable branches", () => {
+  assert.deepEqual(validateProgram(securedProgram), []);
+  const compiled = compileContract(securedProgram);
+  assert.deepEqual(compiled.terms.collateral, {
+    borrowerId: "mina",
+    amount: 35_000,
+    sourceBlockId: "require",
+  });
+  assert.deepEqual(compiled.terms.execution, [
+    {
+      type: "if",
+      sourceBlockId: "if-default",
+      condition: { fact: "payment-outcome", equals: "defaulted" },
+      thenActions: [
+        { type: "liquidate-collateral", sourceBlockId: "liquidate" },
+        { type: "close", sourceBlockId: "close-default" },
+      ],
+      elseActions: [
+        { type: "release-collateral", sourceBlockId: "release" },
+        { type: "close", sourceBlockId: "close-paid" },
+      ],
+    },
+  ]);
+  assert.equal(Object.isFrozen(compiled.terms.execution), true);
+});
+
+test("three-case projection exposes branch choice and capped collateral recovery", () => {
+  const projection = projectOutcomeCashFlows(securedProgram, {
+    startingCash: 100_000,
+    borrowerId: "mina",
+    borrowerRiskRating: "medium",
+    revenueCertainty: "variable",
+    bestRevenue: 130_000,
+    expectedRevenue: 110_000,
+    adverseRevenue: 85_000,
+    collateralLiquidationValue: 45_000,
+    partialPaymentOnDefault: true,
+  });
+
+  assert.equal(projection.best.paymentOutcome, "settled");
+  assert.equal(projection.best.branch, "else");
+  assert.equal(projection.best.endingCash, 120_000);
+  assert.equal(projection.expected.paymentOutcome, "defaulted");
+  assert.equal(projection.expected.collateralRecovery, 10_000);
+  assert.equal(projection.expected.endingCash, 120_000);
+  assert.equal(projection.adverse.collateralRecovery, 35_000);
+  assert.equal(projection.adverse.endingCash, 120_000);
+});
+
+test("unsafe, unreachable, and value-creating collateral branches are rejected", () => {
+  const invalid = structuredClone(securedProgram);
+  const branch = invalid.steps.find((step) => step.type === "if");
+  assert.ok(branch?.type === "if");
+  branch.thenSteps = [
+    { id: "release-on-default", type: "collateral", action: "release" },
+    { id: "close-bad", type: "close" },
+    {
+      id: "collect-after-close",
+      type: "collect",
+      fromId: "mina",
+      currency: "USD",
+      amount: 999_999,
+    },
+  ];
+  const codes = validateProgram(invalid).map((candidate) => candidate.code);
+  assert.ok(codes.includes("unreachable"));
+  assert.ok(codes.includes("nested-value-flow"));
+  assert.ok(codes.includes("missing-liquidation"));
+  assert.ok(codes.includes("release-on-default"));
+  assert.throws(() => compileContract(invalid));
 });

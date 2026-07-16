@@ -4,16 +4,21 @@ A mobile-first financial automation puzzle. Players assemble readable contract
 blocks, publish them into a deterministic market, advance time, and learn from
 every transfer, payment, rejection, and default.
 
-The current build is the first end-to-end stage from [`PLAN.md`](PLAN.md):
+The current build contains the first three end-to-end stages from
+[`PLAN.md`](PLAN.md):
 
 ```text
 Lend $1,000 -> Wait 24 months -> Collect $1,200 -> Close
+
+Require collateral -> Lend -> Wait -> Collect
+  If payment defaulted: liquidate collateral -> Close
+  Else: release collateral -> Close
 ```
 
-Mina needs working capital for a confirmed order. The player must turn a $1,000
-treasury into $1,200 by month 24. Conservative terms settle but miss the goal,
-impossible terms are rejected with a reason, and an aggressive accepted promise
-can visibly default against Mina's known payment capacity.
+The curriculum now moves from a confirmed invoice, through affordable borrower
+terms, to a variable-revenue secured loan. The third stage makes default,
+partial payment, collateral recovery, and the executed `If / Else` branch
+visible as separate, block-linked events.
 
 ## Run it
 
@@ -36,9 +41,9 @@ pnpm test           # every headless domain, contract, and content test
 pnpm format         # format the rebuild surface
 ```
 
-The stage suite includes a machine-verified winning contract, a lower-return
-settlement that loses the objective, an unaffordable rejected contract, a
-visible default, replay equality, and cash conservation.
+The stage suite includes machine-verified solutions for all three stages, a
+lower-return loss, unaffordable rejections, secured and unsecured defaults,
+bounded branch validation, replay equality, and cash conservation.
 
 ## Workspace
 
@@ -55,23 +60,27 @@ package imports React, DOM, browser storage, wall-clock time, or unseeded
 randomness. See [`docs/architecture.md`](docs/architecture.md) for the boundary,
 event flow, state ownership, and save model.
 
-## First playable
+## Current playable
 
 - Main, stage-selection, and gameplay screens
+- Three sequential stages with persistent unlocks, objects, and scores
 - Touch-first insert, configure, delete, duplicate, discard, and undo actions
+- Nested `If / Else` paths with a typed public-fact condition picker
+- Collateral requirements, settlement release, and capped default liquidation
 - Plain-language validation and a block-linked cash-flow timeline
+- Best, expected, and adverse cash-flow previews with visible branch choices
 - Visible borrower need, acceptance limits, revenue timing, and default capacity
 - Publish/fund, advance one month, and advance to next event commands
 - Append-only explanations for every important state change
-- Functional target, deadline, win, loss, reward object, and score breakdown
+- Event-to-block explanations for conditions, branches, and recovery actions
+- Functional target, deadline, win, loss, reward objects, and score breakdowns
 - IndexedDB autosave with identical event replay after reload
 - Responsive desktop and mobile layouts with no required drag, hover, or keyboard
 - Manifest, service worker, safe-area layout, and reduced-motion support
 
 The earlier free-market proof of concept remains available in the legacy core
-modules and unmounted `packages/web/src/App.tsx`. It is intentionally isolated
-from the structured workshop until later phases reintroduce its useful behavior
-behind contract blocks and authored stages.
+modules and unmounted `packages/web/src/App.tsx`. It stays isolated until later
+phases reintroduce its useful market behavior behind authored stages.
 
 ## Legacy tools
 

@@ -12,9 +12,11 @@ packages/web -> packages/content -> packages/contracts -> packages/core
 ```
 
 - `core` owns deterministic commands, append-only stage events, replay, balances,
-  time, settlement, default, and objective resolution.
-- `contracts` owns the versioned contract AST, static validation, readable
-  summaries, cash-flow projection, and compilation into immutable funding terms.
+  time, settlement, partial default, collateral recovery, condition execution,
+  and objective resolution.
+- `contracts` owns the versioned contract AST, bounded nested sequences, static
+  validation, readable summaries, three-case cash-flow projection, and
+  compilation into immutable funding terms.
 - `content` owns authored stage data, public borrower facts, objectives, rewards,
   scoring, and machine-verified solution fixtures.
 - `web` owns React screens, draft editing, navigation, IndexedDB persistence,
@@ -33,7 +35,7 @@ direction:
 ```text
 editable ContractProgram
   -> validateProgram
-  -> summarizeProgram + projectCashFlows
+  -> summarizeProgram + projectCashFlows + projectOutcomeCashFlows
   -> compileContract
   -> StageEngine.publishAndFund(command)
   -> ContractPublished / ContractRejected / ContractFunded / CashTransferred
@@ -43,9 +45,10 @@ Advancing time is also a command. The engine emits a `TimeAdvanced` event for
 each discrete month, then scheduled revenue and payment events in stable order.
 Objective evaluation runs only after that month's settlements or defaults.
 
-Every consequential event contains a reason or source block id. The interface
-can therefore say which block moved value and why an outcome occurred without
-reconstructing hidden control flow.
+Every consequential event contains a reason or source block id. Conditions emit
+`ConditionEvaluated` followed by `BranchExecuted`, and collateral emits distinct
+lock, release, or liquidation events. The interface can therefore say which
+block moved value and why a path ran without reconstructing hidden control flow.
 
 ## Determinism and money
 
@@ -87,15 +90,17 @@ boundary. Contract edits and committed simulation commands autosave. A bad or
 unknown envelope falls back to a fresh local campaign without changing domain
 rules.
 
-## First-playable scope
+## Current contract scope
 
-Stage 1 supports exactly one ordered sequence:
+Stages 1–2 support one ordered sequence:
 
 ```text
 Lend -> Wait -> Collect -> Close
 ```
 
-This deliberate limit lets the project verify the compose-observe-improve loop,
-replay, explanation, mobile editing, and stage progression before adding nested
-control flow. `If / Else`, collateral, schedules, rivals, and production chains
-remain later phase work.
+Stage 3 extends the same sequence with one collateral requirement and bounded
+`If / Else` sequences. Branch conditions can inspect the observed payment
+outcome or typed public borrower facts. Static validation limits total blocks
+and nesting depth, requires every path to close, rejects value-moving blocks in
+branches, and pairs default liquidation with settlement release. `Schedule`,
+`Switch`, rivals, and production chains remain later phase work.

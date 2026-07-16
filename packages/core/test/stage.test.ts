@@ -117,3 +117,103 @@ test("all cash is conserved across funding, revenue, and repayment", () => {
 
   assert.equal(totalAfter, totalBefore);
 });
+
+test("a default branch liquidates only the pledged value and traces its cause", () => {
+  const securedDefinition: StageSimulationDefinition = {
+    ...definition,
+    stageId: "secured",
+    partialPaymentOnDefault: true,
+    borrower: {
+      ...definition.borrower,
+      expectedRevenue: 110_000,
+      realizedRevenue: 85_000,
+      maximumSecuredRepayment: 120_000,
+      riskRating: "medium",
+      revenueCertainty: "variable",
+      collateral: {
+        assetId: "cutting-rig",
+        label: "Cutting rig",
+        appraisedValue: 45_000,
+        liquidationValue: 45_000,
+      },
+    },
+  };
+  const engine = new StageEngine(securedDefinition);
+  const securedTerms: FundableContractTerms = {
+    ...terms(120_000),
+    collateral: {
+      borrowerId: "mina",
+      amount: 35_000,
+      sourceBlockId: "require",
+    },
+    execution: [
+      {
+        type: "if",
+        sourceBlockId: "if-default",
+        condition: { fact: "payment-outcome", equals: "defaulted" },
+        thenActions: [
+          { type: "liquidate-collateral", sourceBlockId: "liquidate" },
+          { type: "close", sourceBlockId: "close-default" },
+        ],
+        elseActions: [
+          { type: "release-collateral", sourceBlockId: "release" },
+          { type: "close", sourceBlockId: "close-paid" },
+        ],
+      },
+    ],
+  };
+
+  assert.equal(engine.publishAndFund(securedTerms).accepted, true);
+  engine.advanceToNextEvent();
+  const state = engine.inspect();
+  assert.equal(state.status, "won");
+  assert.equal(state.contract?.status, "recovered");
+  assert.equal(state.collateral?.status, "liquidated");
+  assert.equal(state.collateral?.recoveredAmount, 35_000);
+  assert.equal(state.balances.player, 120_000);
+
+  const condition = engine
+    .events()
+    .find((event) => event.type === "ConditionEvaluated");
+  const branch = engine
+    .events()
+    .find((event) => event.type === "BranchExecuted");
+  assert.deepEqual(condition?.data, {
+    contractId: "contract-1",
+    fact: "payment-outcome",
+    expected: "defaulted",
+    observed: "defaulted",
+    matched: true,
+    sourceBlockId: "if-default",
+  });
+  assert.equal(branch?.data.branch, "then");
+  assert.equal(branch?.data.sourceBlockId, "if-default");
+});
+
+test("collateral requirements above the public appraisal are rejected", () => {
+  const securedDefinition: StageSimulationDefinition = {
+    ...definition,
+    borrower: {
+      ...definition.borrower,
+      collateral: {
+        assetId: "small-tool",
+        label: "Small tool",
+        appraisedValue: 20_000,
+        liquidationValue: 15_000,
+      },
+    },
+  };
+  const engine = new StageEngine(securedDefinition);
+  const result = engine.publishAndFund({
+    ...terms(),
+    collateral: {
+      borrowerId: "mina",
+      amount: 30_000,
+      sourceBlockId: "require",
+    },
+  });
+  assert.equal(result.accepted, false);
+  assert.match(result.reasons.join(" "), /appraised below/);
+  assert.equal(engine.inspect().collateral, null);
+  assert.equal(engine.inspect().balances.player, 100_000);
+});

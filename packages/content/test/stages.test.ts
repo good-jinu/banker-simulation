@@ -3,6 +3,10 @@ import test from "node:test";
 import { compileContract } from "@banker-simulation/contracts";
 import { StageEngine } from "@banker-simulation/core";
 import {
+  affordableTermsStage,
+  affordableTermsWinningProgram,
+  collateralRecoveryStage,
+  collateralRecoveryWinningProgram,
   firstYieldStage,
   firstYieldWinningProgram,
   scoreRun,
@@ -55,4 +59,41 @@ test("an over-priced contract is rejected before funds move", () => {
 
   assert.equal(result.accepted, false);
   assert.equal(engine.inspect().balances.player, 100_000);
+});
+
+for (const [stage, program] of [
+  [affordableTermsStage, affordableTermsWinningProgram],
+  [collateralRecoveryStage, collateralRecoveryWinningProgram],
+] as const) {
+  test(`the supplied Stage ${stage.number} contract reaches its authored objective`, () => {
+    const engine = new StageEngine(stage.simulation);
+    const compiled = compileContract(program);
+    assert.equal(engine.publishAndFund(compiled.terms).accepted, true);
+    engine.advanceToNextEvent();
+    assert.equal(engine.inspect().status, "won");
+    assert.ok(
+      (engine.inspect().balances.player ?? 0) >= stage.primaryObjective.amount,
+    );
+  });
+}
+
+test("Stage 3's unsecured strategy defaults below the objective", () => {
+  const unsecured = structuredClone(collateralRecoveryWinningProgram);
+  unsecured.steps = unsecured.steps.filter(
+    (step) => step.type !== "collateral" && step.type !== "if",
+  );
+  unsecured.steps.push({ id: "close-unsecured", type: "close" });
+  const collect = unsecured.steps.find((step) => step.type === "collect");
+  assert.ok(collect?.type === "collect");
+  collect.amount = 110_000;
+
+  const engine = new StageEngine(collateralRecoveryStage.simulation);
+  assert.equal(
+    engine.publishAndFund(compileContract(unsecured).terms).accepted,
+    true,
+  );
+  engine.advanceToNextEvent();
+  assert.equal(engine.inspect().contract?.status, "defaulted");
+  assert.equal(engine.inspect().balances.player, 85_000);
+  assert.equal(engine.inspect().status, "lost");
 });
