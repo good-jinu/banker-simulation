@@ -1,92 +1,81 @@
 # Banker Simulation
 
-A pnpm monorepo for a web-based economic sandbox where financial behavior emerges from generic rules. There is no `Bank` class: players publish safe product templates composed from ownership, transfer, time, conditions, claims, collateral, fees, and audit reports.
+A mobile-first financial automation puzzle. Players assemble readable contract
+blocks, publish them into a deterministic market, advance time, and learn from
+every transfer, payment, rejection, and default.
 
-## Workspace
+The current build is the first end-to-end stage from [`PLAN.md`](PLAN.md):
 
 ```text
-banker-simulation/
-├── mise.toml
-├── package.json
-├── pnpm-workspace.yaml
-├── packages/
-│   ├── core/    event-sourced simulation, SQLite CLI, and tests
-│   └── web/     browser game powered by @banker-simulation/core
-└── tsconfig.base.json
+Lend $1,000 -> Wait 24 months -> Collect $1,200 -> Close
 ```
 
-`packages/core` is the authoritative economic engine. `packages/web` imports it through pnpm's workspace protocol and runs a local in-browser session. The browser lets a human-controlled cooperative advance time, inspect assets and repayment reputation, publish a fixed-term advance, fund an eligible borrower, transfer its repayment claim, fork its terms, and publish a basic public audit.
+Mina needs working capital for a confirmed order. The player must turn a $1,000
+treasury into $1,200 by month 24. Conservative terms settle but miss the goal,
+impossible terms are rejected with a reason, and an aggressive accepted promise
+can visibly default against Mina's known payment capacity.
 
-## Setup with mise
+## Run it
+
+The repository pins Node.js and pnpm in `mise.toml`.
 
 ```sh
 mise install
 pnpm install
-pnpm check
-```
-
-The project pins Node.js and pnpm in `mise.toml`; pnpm is also declared in the root `packageManager` field.
-
-## Run the web game
-
-```sh
 pnpm dev
 ```
 
-Open the local URL printed by Vite. The prototype session currently resets when the page reloads; durable multiplayer state belongs in the later game-server phase.
+Vite prints the local browser URL. The production build is an installable,
+offline-capable PWA.
 
-## Other commands
+## Checks
 
 ```sh
-pnpm build    # production web build
-pnpm test     # core behavioral tests
-pnpm demo     # deterministic headless scenario
-pnpm play     # persistent SQLite terminal game
+pnpm check          # boundaries, types, formatting, tests, production build
+pnpm test           # every headless domain, contract, and content test
+pnpm format         # format the rebuild surface
 ```
 
-The terminal game stores its append-only ledger in `packages/core/data/game.sqlite`.
+The stage suite includes a machine-verified winning contract, a lower-return
+settlement that loses the objective, an unaffordable rejected contract, a
+visible default, replay equality, and cash conservation.
 
-## Architecture
+## Workspace
 
 ```text
-Browser player                       Terminal player
-      |                                    |
-packages/web                         packages/core CLI
-      |                                    |
-      +------ @banker-simulation/core ------+
-                         |
-                 EconomicEngine
-                         |
-             validates economic invariants
-                         |
-                  EventStore interface
-                    /            \
-              in-memory          SQLite
-              browser/tests    persistent CLI
+packages/
+  core/       deterministic commands, events, replay, balances, and settlement
+  contracts/  contract AST, validation, summaries, projection, and compiler
+  content/    stage definitions, objectives, rewards, scoring, and fixtures
+  web/        React screens, tap-first workshop, IndexedDB saves, and PWA shell
 ```
 
-State is rebuilt by replaying events. Existing events are never edited. SQLite writes use an expected stream version so two writers cannot silently overwrite each other's decisions. A later Postgres game server can implement the same event-store boundary.
+The dependency direction is `web -> content -> contracts -> core`. No domain
+package imports React, DOM, browser storage, wall-clock time, or unseeded
+randomness. See [`docs/architecture.md`](docs/architecture.md) for the boundary,
+event flow, state ownership, and save model.
 
-## Current economic laws
+## First playable
 
-1. Only defined assets can be held or transferred.
-2. Direct transfers require authorization from the current owner.
-3. Balances cannot go below zero.
-4. Every agreement is composed from ordinary timed transfers.
-5. All parties must sign before an agreement activates.
-6. Due promises settle if funded and default otherwise.
-7. Production consumes scarce inputs and has explicit outcome risk.
-8. A published product can require repayment history, set fixed interest and fees, and lock collateral.
-9. A repayment claim is transferable; enforcement follows its current holder.
-10. Collateral cannot be transferred while locked, releases after resolution, and liquidates to the claim holder on default.
-11. Reputation is derived from delayed-promise settlement history, not assigned by the game.
-12. World history is append-only and deterministic given its events and random inputs.
+- Main, stage-selection, and gameplay screens
+- Touch-first insert, configure, delete, duplicate, discard, and undo actions
+- Plain-language validation and a block-linked cash-flow timeline
+- Visible borrower need, acceptance limits, revenue timing, and default capacity
+- Publish/fund, advance one month, and advance to next event commands
+- Append-only explanations for every important state change
+- Functional target, deadline, win, loss, reward object, and score breakdown
+- IndexedDB autosave with identical event replay after reload
+- Responsive desktop and mobile layouts with no required drag, hover, or keyboard
+- Manifest, service worker, safe-area layout, and reduced-motion support
 
-## Deliberate PoC boundaries
+The earlier free-market proof of concept remains available in the legacy core
+modules and unmounted `packages/web/src/App.tsx`. It is intentionally isolated
+from the structured workshop until later phases reintroduce its useful behavior
+behind contract blocks and authored stages.
 
-- The product builder currently supports fixed-term advances rather than arbitrary player code.
-- Revenue shares, pooled funding, insurance triggers, markets, and multi-dimensional trust are the next product modules.
-- Production outcomes are public once they occur; private information is not implemented yet.
-- Collateral is a deterministic asset lock; courts, external oracles, and dispute resolution do not exist yet.
-- The browser session is local and single-player; SQLite persistence is available through the terminal package.
-- The studio-controlled random source represents the future world oracle. Its trust model should eventually become gameplay.
+## Legacy tools
+
+```sh
+pnpm demo    # deterministic legacy headless scenario
+pnpm play    # legacy SQLite terminal sandbox
+```

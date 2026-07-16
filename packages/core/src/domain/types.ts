@@ -37,11 +37,12 @@ export interface AgreementDefinition {
 }
 
 export type ObligationStatus = "pending" | "settled" | "defaulted";
-export type AgreementStatus = "proposed" | "active" | "completed" | "defaulted";
+export type AgreementStatus = "proposed" | "declined" | "active" | "completed" | "defaulted";
 
 export interface AgreementState extends AgreementDefinition {
   signatures: Set<string>;
   status: AgreementStatus;
+  declinedBy?: string;
   obligationStatuses: Map<string, ObligationStatus>;
 }
 
@@ -54,6 +55,22 @@ export interface ProductionRule {
   successChance: number;
   successOutputs: AssetAmount[];
   failureOutputs: AssetAmount[];
+}
+
+export type OfferSide = "buy" | "sell";
+export type OfferStatus = "open" | "filled" | "withdrawn";
+
+/** A posted standing price: the poster buys or sells `asset` for `priceAsset` until exhausted. */
+export interface StandingOffer {
+  id: string;
+  poster: string;
+  side: OfferSide;
+  asset: string;
+  priceAsset: string;
+  pricePerUnit: number;
+  remaining: number;
+  status: OfferStatus;
+  postedAt: number;
 }
 
 /** A safe, configurable financial product. It composes existing transfers through time. */
@@ -72,9 +89,21 @@ export interface FinancialProduct {
   publishedAt: number;
 }
 
+export type ApplicationStatus = "open" | "funded" | "withdrawn";
+
+/** A borrower's standing consent to be funded under a published product's terms. */
+export interface ProductApplication {
+  id: string;
+  productId: string;
+  borrower: string;
+  status: ApplicationStatus;
+  appliedAt: number;
+}
+
 export interface ProductFunding {
   id: string;
   productId: string;
+  applicationId: string;
   agreementId: string;
   funder: string;
   borrower: string;
@@ -130,6 +159,7 @@ export type EventType =
   | "AssetTransferred"
   | "AgreementProposed"
   | "AgreementSigned"
+  | "AgreementDeclined"
   | "AgreementActivated"
   | "ObligationSettled"
   | "ObligationDefaulted"
@@ -137,13 +167,19 @@ export type EventType =
   | "ProductionRuleRegistered"
   | "ProductionCompleted"
   | "ProductionSkipped"
+  | "OfferPosted"
+  | "OfferFilled"
+  | "OfferWithdrawn"
   | "ProductPublished"
+  | "ProductApplicationSubmitted"
+  | "ProductApplicationWithdrawn"
   | "ProductFunded"
   | "RepaymentClaimCreated"
   | "RepaymentClaimTransferred"
   | "CollateralLocked"
   | "CollateralReleased"
   | "CollateralLiquidated"
+  | "ObligationRescheduled"
   | "AuditPublished";
 
 export interface DomainEvent<T = unknown> {
@@ -178,7 +214,9 @@ export interface WorldState {
   balances: Map<string, Map<string, number>>;
   agreements: Map<string, AgreementState>;
   productionRules: Map<string, ProductionRule>;
+  offers: Map<string, StandingOffer>;
   products: Map<string, FinancialProduct>;
+  applications: Map<string, ProductApplication>;
   productFundings: Map<string, ProductFunding>;
   repaymentClaims: Map<string, RepaymentClaim>;
   collateralLocks: Map<string, CollateralLock>;

@@ -3,13 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.2.2",
-  "description": "A monorepo for an emergent economic sandbox and its web game.",
+  "description": "A mobile-first financial automation puzzle with deterministic contract simulation.",
   "scripts": {
     "dev": "pnpm --filter @banker-simulation/web dev",
     "build": "pnpm --filter @banker-simulation/web build",
-    "check": "pnpm -r check",
-    "test": "pnpm --filter @banker-simulation/core test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "node scripts/lint-boundaries.mjs && pnpm typecheck",
+    "format": "prettier --write package.json README.md PLAN.md docs packages/contracts packages/content packages/core/src/stage.ts packages/core/test/stage.test.ts packages/web/src/GameApp.tsx packages/web/src/game.css packages/web/src/persistence.ts packages/web/src/main.tsx packages/web/index.html packages/web/public/sw.js",
+    "format:check": "prettier --check package.json README.md PLAN.md docs packages/contracts packages/content packages/core/src/stage.ts packages/core/test/stage.test.ts packages/web/src/GameApp.tsx packages/web/src/game.css packages/web/src/persistence.ts packages/web/src/main.tsx packages/web/index.html packages/web/public/sw.js",
+    "check": "pnpm lint && pnpm format:check && pnpm -r check",
+    "test": "pnpm -r --if-present test",
     "demo": "pnpm --filter @banker-simulation/core demo",
     "play": "pnpm --filter @banker-simulation/core play"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.5"
   }
 }

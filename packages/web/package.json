@@ -10,6 +10,8 @@
     "check": "pnpm run typecheck && pnpm run build"
   },
   "dependencies": {
+    "@banker-simulation/content": "workspace:*",
+    "@banker-simulation/contracts": "workspace:*",
     "@banker-simulation/core": "workspace:*",
     "lucide-react": "^1.24.0",
     "react": "19.2.7",
