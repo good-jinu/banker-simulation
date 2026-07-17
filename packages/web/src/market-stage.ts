@@ -89,6 +89,7 @@ export class MarketStage {
   private ready = false;
   private destroyed = false;
   private readonly gridLayer = new Graphics();
+  private readonly contractLayer = new Container();
   private readonly nodeLayer = new Container();
   private readonly fxLayer = new Container();
   private readonly demandNodes = new Map<string, DemandNode>();
@@ -113,7 +114,15 @@ export class MarketStage {
       return;
     }
     host.appendChild(this.app.canvas);
-    this.app.stage.addChild(this.gridLayer, this.nodeLayer, this.fxLayer);
+    // Contract markers must not share a Pixi batch with masked portraits.
+    // Adding a contract to the portrait layer corrupts WebGL rendering on
+    // some devices and blanks the entire map.
+    this.app.stage.addChild(
+      this.gridLayer,
+      this.contractLayer,
+      this.nodeLayer,
+      this.fxLayer,
+    );
 
     // The whole stage tracks pointer movement so drags survive fast swipes
     // that leave the node's own hit area.
@@ -147,6 +156,7 @@ export class MarketStage {
     // Destroy display objects while the renderer still lives: Text unload
     // returns pooled textures, which crashes once the pool itself is gone.
     this.app.stage.removeChildren();
+    this.contractLayer.destroy({ children: true });
     this.nodeLayer.destroy({ children: true });
     this.fxLayer.destroy({ children: true });
     this.gridLayer.destroy();
@@ -182,18 +192,9 @@ export class MarketStage {
       this.contractNodes.delete(id);
     }
 
-    for (const contract of world.contracts) {
-      let node = this.contractNodes.get(contract.id);
-      if (!node) {
-        node = this.buildContractNode(contract.id);
-        this.contractNodes.set(contract.id, node);
-        this.nodeLayer.addChildAt(node.root, 0);
-      }
-      const pending = pendingRequestCount(contract);
-      node.badge.visible = pending > 0;
-      node.badgeText.text = pending > 9 ? "9+" : String(pending);
-      node.termsText.text = contractMapLabel(contract);
-    }
+    // Contract controls are rendered by React above the canvas. Keeping
+    // them out of Pixi avoids a WebGL batching bug triggered when a contract
+    // container is added after masked customer portraits.
 
     for (const demand of world.demands) {
       if (demand.status !== "open") continue;
@@ -308,47 +309,13 @@ export class MarketStage {
     root.eventMode = "static";
     root.cursor = "pointer";
 
-    const body = new Graphics()
-      .roundRect(
-        -CONTRACT_HALF,
-        -CONTRACT_HALF,
-        CONTRACT_HALF * 2,
-        CONTRACT_HALF * 2,
-        12,
-      )
-      .fill(NIGHT)
-      .stroke({ width: 2, color: GOLD });
-    root.addChild(body);
-
-    const dollar = new Text({
-      text: "$",
-      style: { ...LABEL_STYLE, fontSize: 22, fill: GOLD_BRIGHT },
-    });
-    dollar.anchor.set(0.5);
-    root.addChild(dollar);
-
-    const termsText = new Text({
-      text: "",
-      style: { ...LABEL_STYLE, fontSize: 10, fontWeight: "700", fill: MIST },
-    });
-    termsText.anchor.set(0.5, 0);
-    termsText.y = CONTRACT_HALF + 5;
-    root.addChild(termsText);
-
+    // Contract contents are added after the marker has joined the stage.
+    // This keeps Pixi from compiling a partially-built render group.
+    const termsText = new Text({ text: "", style: LABEL_STYLE });
     const badge = new Container();
     badge.position.set(CONTRACT_HALF - 3, -CONTRACT_HALF + 3);
-    const badgeBack = new Graphics()
-      .circle(0, 0, 11)
-      .fill(RED)
-      .stroke({ width: 2, color: 0x071328 });
-    const badgeText = new Text({
-      text: "0",
-      style: { ...LABEL_STYLE, fill: 0xffffff },
-    });
-    badgeText.anchor.set(0.5);
-    badge.addChild(badgeBack, badgeText);
+    const badgeText = new Text({ text: "0", style: LABEL_STYLE });
     badge.visible = false;
-    root.addChild(badge);
 
     root.on("pointertap", () => {
       // A drag that started on a demand never taps the contract: the tap

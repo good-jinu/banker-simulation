@@ -242,7 +242,7 @@ export const en = {
     eyebrow: "Banker Simulation",
     title: "Open Market",
     mapHint:
-      "Circles are people who need money; squares are your posted contracts. Drag a person onto a contract — if it fits their need they file a request, and a badge means requests are waiting.",
+      "Tap a person to inspect their need, then post a contract. Matching people apply automatically; tap your contract to review and decide on requests.",
     postContract: "Post a new contract",
     deployed: "Deployed",
     demandTitle: "Borrower Demand",

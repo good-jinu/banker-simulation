@@ -1,16 +1,21 @@
 import {
-  ArrowLeft,
   CalendarDays,
   Check,
+  CircleDollarSign,
   GripVertical,
   Info,
+  Landmark,
+  LogOut,
+  Menu,
   Pause,
   Pencil,
   Play,
   Plus,
   Send,
+  Settings,
   SkipForward,
   Trash2,
+  Target,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -18,7 +23,10 @@ import { formatGameDate } from "./campaign-run.ts";
 import { localize, playerLabel } from "./campaign-stages.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "./game-clock.ts";
 import type { Locale } from "./i18n.tsx";
-import { MarketStage } from "./market-stage.ts";
+import {
+  MarketBuilderCanvas,
+  type BuilderInsertTarget,
+} from "./MarketBuilderCanvas.tsx";
 import {
   constant,
   humanizeValue,
@@ -26,7 +34,6 @@ import {
   recipeAtPath,
   recipeLabel,
   replaceRecipeAtPath,
-  RECIPE_CONSTANTS,
   value,
   VARIABLE_NAME_CARDS,
   type RecipeOperator,
@@ -36,6 +43,7 @@ import {
 import {
   acceptRequest,
   advanceWorldDay,
+  BUILDER_VARIABLES,
   contractFitsDemand,
   decideRequestOutcome,
   emptyWorld,
@@ -43,9 +51,9 @@ import {
   fileRequest,
   MARKET_START_DATE,
   outstandingPrincipal,
+  pendingRequestCount,
   postContract,
   rejectRequest,
-  REQUESTER_VARIABLES,
   staticContractTerms,
   updateContract,
   withdrawContract,
@@ -58,6 +66,7 @@ import {
   type WorldEvent,
 } from "./market-world.ts";
 import { messagesFor, type Messages } from "./messages/index.ts";
+import type { MarketCampaignStage } from "./market-campaign.ts";
 import "./campaign-stage.css";
 import "./market.css";
 
@@ -105,6 +114,7 @@ const SAMPLE_REQUESTER: Record<string, number> = {
   days: 90,
   income: 3000,
   age: 40,
+  cash: 1000,
 };
 
 /** Formulas each summary column shows, joined across the stack. */
@@ -142,7 +152,7 @@ function namesBeforeIndex(
   nodes: readonly MarketBuilderNode[],
   index: number,
 ): string[] {
-  const names: string[] = [...REQUESTER_VARIABLES];
+  const names: string[] = [...BUILDER_VARIABLES];
   for (const node of nodes.slice(0, index))
     if (node.kind === "variable" && node.variableName)
       names.push(node.variableName);
@@ -232,7 +242,7 @@ function validateDraft(
     }
     return null;
   };
-  const recipeIssue = validatePath(nodes, REQUESTER_VARIABLES);
+  const recipeIssue = validatePath(nodes, BUILDER_VARIABLES);
   if (recipeIssue) return recipeIssue;
   if (!evaluateTermsWithVariables(nodes, SAMPLE_REQUESTER))
     return t.brokenPreview;
@@ -263,7 +273,6 @@ function defaultDraftNodes(demand?: Demand): MarketBuilderNode[] {
         recipientId: "player",
         amount: constant(demand.maxRepayment),
       },
-      { id: "end-fixed", kind: "end" },
     ];
   // A fresh contract showcases dynamic terms: lend whatever is asked and
   // price the margin by how long the requester needs.
@@ -314,21 +323,40 @@ function defaultDraftNodes(demand?: Demand): MarketBuilderNode[] {
         },
       ],
     },
-    { id: "end-fixed", kind: "end" },
   ];
+}
+
+function withoutEndNodes(
+  nodes: readonly MarketBuilderNode[],
+): MarketBuilderNode[] {
+  return nodes
+    .filter((node) => node.kind !== "end")
+    .map((node) =>
+      node.kind === "condition"
+        ? {
+            ...node,
+            thenSteps: withoutEndNodes(node.thenSteps ?? []),
+            elseSteps: withoutEndNodes(node.elseSteps ?? []),
+          }
+        : node,
+    );
 }
 
 export function MarketApp({
   locale,
   onBack,
+  stage,
+  onComplete,
 }: {
   locale: Locale;
   onBack: () => void;
+  stage?: MarketCampaignStage;
+  onComplete?: () => void;
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
   const [world, setWorld] = useState<MarketWorld>(() =>
-    emptyWorld(newWorldSeed()),
+    emptyWorld(stage?.seed ?? newWorldSeed(), stage?.startingCash),
   );
   const [view, setView] = useState<View>("map");
   const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null);
@@ -344,6 +372,7 @@ export function MarketApp({
   );
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hudPanel, setHudPanel] = useState<"menu" | "objective" | null>(null);
   const [clockView, setClockView] = useState<{
     paused: boolean;
     speed: ClockSpeed;
@@ -411,6 +440,10 @@ export function MarketApp({
   const deployed = outstandingPrincipal(world);
   const ticker = world.log[world.log.length - 1] ?? null;
   const nextDueExists = world.loans.some((loan) => loan.status === "active");
+  const repaidLoans = world.loans.filter((loan) => loan.status === "repaid").length;
+  const stageComplete = Boolean(
+    stage && repaidLoans >= stage.repaidLoans && world.cash >= stage.cashTarget,
+  );
 
   const openDemandDetail = useCallback(
     (demandId: string, origin: "map" | "contract") => {
@@ -434,20 +467,10 @@ export function MarketApp({
   }
 
   function openBuilderForContract(contract: ContractOffer): void {
-    setBuilderNodes(contract.builderNodes.map((node) => ({ ...node })));
+    setBuilderNodes(withoutEndNodes(contract.builderNodes));
     setEditingContractId(contract.id);
     setSelectedNodeId(null);
     setView("builder");
-  }
-
-  function goBack(): void {
-    if (view === "builder") setView(editingContractId ? "contract" : "map");
-    else if (view === "demand")
-      setView(
-        demandOrigin === "contract" && selectedContract ? "contract" : "map",
-      );
-    else if (view === "contract") setView("map");
-    else onBack();
   }
 
   function submitDraft(): void {
@@ -489,8 +512,12 @@ export function MarketApp({
       (candidate) => candidate.id === contractId,
     );
     if (!demand || !contract || demand.status !== "open") return false;
-    if (!contractFitsDemand(contract, demand)) return false;
-    const outcome = decideRequestOutcome(contract.builderNodes, demand);
+    if (!contractFitsDemand(contract, demand, world.cash)) return false;
+    const outcome = decideRequestOutcome(
+      contract.builderNodes,
+      demand,
+      world.cash,
+    );
     setWorld((current) => fileRequest(current, demandId, contractId));
     // An automated rejection reads as a mismatch to the player: same X.
     return outcome !== "reject";
@@ -517,52 +544,52 @@ export function MarketApp({
     }
   }
 
-  const headerTitle =
-    view === "builder"
-      ? editingContractId
-        ? t.builderTitleEdit
-        : t.builderTitleNew
-      : view === "demand"
-        ? t.demandTitle
-        : view === "contract"
-          ? t.contractTitle
-          : t.title;
-
   return (
     <main className="cs-shell mk-shell">
-      <header className="cs-header">
-        <button
-          className="cs-icon-button"
-          onClick={goBack}
-          aria-label={m.header.back}
-        >
-          <ArrowLeft aria-hidden="true" />
-        </button>
-        <div>
-          <small>{t.eyebrow}</small>
-          <strong>{headerTitle}</strong>
+      <div className="mk-hud">
+        <div className="mk-hud-actions">
+          <button
+            className="mk-hud-icon"
+            onClick={() => setHudPanel((current) => current === "menu" ? null : "menu")}
+            aria-label="Menu"
+          >
+            <Menu aria-hidden="true" />
+          </button>
+          <button
+            className="mk-hud-icon"
+            onClick={() => setHudPanel((current) => current === "objective" ? null : "objective")}
+            aria-label="Objective"
+          >
+            <Target aria-hidden="true" />
+          </button>
         </div>
-        <span className="cs-stage-chip">
-          {world.contracts.length}
-          {" · "}
-          {world.loans.filter((loan) => loan.status === "active").length}
-        </span>
-      </header>
+        <div className="mk-mini-balance" aria-label={m.balance.assetValues}>
+          <span title={m.balance.cash}><CircleDollarSign aria-hidden="true" />${world.cash.toLocaleString()}</span>
+          <span title={m.balance.totalAssets}><Landmark aria-hidden="true" />${(world.cash + deployed).toLocaleString()}</span>
+        </div>
+      </div>
 
-      <section className="cs-balance-strip" aria-label={m.balance.assetValues}>
-        <div>
-          <small>{m.balance.cash}</small>
-          <strong>${world.cash.toLocaleString()}</strong>
+      {hudPanel === "menu" && (
+        <div className="mk-hud-panel mk-menu-panel" role="menu" aria-label="Menu">
+          <button onClick={onBack} aria-label="Quit" role="menuitem"><LogOut aria-hidden="true" /></button>
+          <button onClick={() => setHudPanel("objective")} aria-label="Information" role="menuitem"><Info aria-hidden="true" /></button>
+          <button onClick={() => setHudPanel(null)} aria-label="Settings" role="menuitem"><Settings aria-hidden="true" /></button>
         </div>
-        <div>
-          <small>{t.deployed}</small>
-          <strong>${deployed.toLocaleString()}</strong>
-        </div>
-        <div className="total">
-          <small>{m.balance.totalAssets}</small>
-          <strong>${(world.cash + deployed).toLocaleString()}</strong>
-        </div>
-      </section>
+      )}
+
+      {hudPanel === "objective" && stage && (
+        <section className="mk-objective-panel" aria-label="Stage objective">
+          <button className="mk-objective-close" onClick={() => setHudPanel(null)} aria-label="Close"><X aria-hidden="true" /></button>
+          <strong>{localize(stage.subtitle, locale)}</strong>
+          <p>{localize(stage.briefing, locale)}</p>
+          <small>{localize(stage.focus, locale)} · {repaidLoans}/{stage.repaidLoans}</small>
+          {stageComplete && onComplete && (
+            <button className="mk-stage-complete" onClick={onComplete}>
+              <Check aria-hidden="true" /> {m.mine.completeStage(String(stage.number).padStart(2, "0"))}
+            </button>
+          )}
+        </section>
+      )}
 
       <section className="cs-timebar" aria-label={m.timebar.gameCalendar}>
         <div className="cs-timebar-date">
@@ -620,9 +647,7 @@ export function MarketApp({
             world={world}
             onTapDemand={(id) => openDemandDetail(id, "map")}
             onTapContract={openContractDetail}
-            onDropDemand={dropDemand}
           />
-          <p className="mk-map-hint">{t.mapHint}</p>
           <button
             className="mk-fab"
             onClick={() => openBuilder()}
@@ -691,50 +716,45 @@ function MarketStageView({
   world,
   onTapDemand,
   onTapContract,
-  onDropDemand,
 }: {
   world: MarketWorld;
   onTapDemand: (demandId: string) => void;
   onTapContract: (contractId: string) => void;
-  onDropDemand: (demandId: string, contractId: string) => boolean;
 }) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const stageRef = useRef<MarketStage | null>(null);
-  // Callbacks live in a ref so the Pixi app never re-initializes just
-  // because a render produced fresh closures.
-  const callbacksRef = useRef({ onTapDemand, onTapContract, onDropDemand });
-  callbacksRef.current = { onTapDemand, onTapContract, onDropDemand };
-  const worldRef = useRef(world);
-  worldRef.current = world;
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const stage = new MarketStage();
-    stageRef.current = stage;
-    void stage
-      .init(host, {
-        onTapDemand: (id) => callbacksRef.current.onTapDemand(id),
-        onTapContract: (id) => callbacksRef.current.onTapContract(id),
-        onDropDemand: (demandId, contractId) =>
-          callbacksRef.current.onDropDemand(demandId, contractId),
-      })
-      .then(() => stage.syncWorld(worldRef.current));
-    return () => {
-      stageRef.current = null;
-      stage.destroy();
-    };
-  }, []);
-
-  useEffect(() => {
-    stageRef.current?.syncWorld(world);
-  }, [world]);
-
   return (
-    <div
-      ref={hostRef}
-      style={{ position: "absolute", inset: 0, overflow: "hidden" }}
-    />
+    <div className="mk-market-map" aria-label="Market demands">
+      {world.demands
+        .filter((demand) => demand.status === "open")
+        .map((demand) => (
+          <button
+            key={demand.id}
+            className="mk-demand-pin"
+            style={{ left: `${demand.x * 100}%`, top: `${demand.y * 100}%` }}
+            onClick={() => onTapDemand(demand.id)}
+          >
+            <img src={demand.actor.image} alt="" />
+            <small>${demand.amount}</small>
+          </button>
+        ))}
+      {world.contracts.map((contract) => (
+        <button
+          key={contract.id}
+          className="mk-contract-pin"
+          style={{ left: `${contract.x * 100}%`, top: `${contract.y * 100}%` }}
+          onClick={() => onTapContract(contract.id)}
+          aria-label="Open contract"
+        >
+          <b>$</b>
+          {pendingRequestCount(contract) > 0 && (
+            <span className="mk-contract-request-count">
+              {pendingRequestCount(contract) > 9
+                ? "9+"
+                : pendingRequestCount(contract)}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -926,6 +946,42 @@ function ContractDetail({
 /* Node-graph contract builder for market offers                       */
 /* ------------------------------------------------------------------ */
 
+interface BuilderNodeContext {
+  node: MarketBuilderNode;
+  names: string[];
+}
+
+function findBuilderNodeContext(
+  path: readonly MarketBuilderNode[],
+  id: string | null,
+  inherited: readonly string[] = BUILDER_VARIABLES,
+): BuilderNodeContext | null {
+  if (!id) return null;
+  const names = [...inherited];
+  for (const node of path) {
+    if (node.id === id) return { node, names: [...names] };
+    if (node.kind === "condition") {
+      const thenMatch = findBuilderNodeContext(node.thenSteps ?? [], id, names);
+      if (thenMatch) return thenMatch;
+      const elseMatch = findBuilderNodeContext(node.elseSteps ?? [], id, names);
+      if (elseMatch) return elseMatch;
+    }
+    if (node.kind === "variable" && node.variableName)
+      names.push(node.variableName);
+  }
+  return null;
+}
+
+function descendantCount(node: MarketBuilderNode): number {
+  if (node.kind !== "condition") return 0;
+  const countPath = (path: readonly MarketBuilderNode[]): number =>
+    path.reduce(
+      (total, child) => total + 1 + descendantCount(child),
+      0,
+    );
+  return countPath(node.thenSteps ?? []) + countPath(node.elseSteps ?? []);
+}
+
 function MarketBuilder({
   nodes,
   locale,
@@ -952,6 +1008,15 @@ function MarketBuilder({
     [nodes],
   );
   const issue = validateDraft(nodes, m);
+  const [insertMenu, setInsertMenu] = useState<{
+    target: BuilderInsertTarget;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<MarketBuilderNode | null>(
+    null,
+  );
+  const selectedContext = findBuilderNodeContext(nodes, selectedNodeId);
   const partyName = (id: string | undefined): string =>
     id === "player" ? playerLabel(locale) : t.borrower;
 
@@ -992,16 +1057,52 @@ function MarketBuilder({
     };
   }
 
-  function addNode(kind: BuilderAddableNode): void {
-    const node = makeNode(kind, String(nodes.length));
-    const endIndex = nodes.findIndex((candidate) => candidate.kind === "end");
-    const insertAt = endIndex >= 0 ? endIndex : nodes.length;
-    onChangeNodes([
-      ...nodes.slice(0, insertAt),
-      node,
-      ...nodes.slice(insertAt),
-    ]);
+  function insertNode(
+    target: BuilderInsertTarget,
+    kind: BuilderAddableNode,
+  ): void {
+    const node = makeNode(kind, `${target.ownerId ?? "root"}-${target.index}`);
+    const insertAt = (
+      path: readonly MarketBuilderNode[],
+    ): MarketBuilderNode[] => {
+      if (target.ownerId === null)
+        return [
+          ...path.slice(0, target.index),
+          node,
+          ...path.slice(target.index),
+        ];
+      return path.map((candidate) => {
+        if (candidate.id === target.ownerId && candidate.kind === "condition") {
+          const branch = target.branch ?? "thenSteps";
+          const branchPath = candidate[branch] ?? [];
+          return {
+            ...candidate,
+            [branch]: [
+              ...branchPath.slice(0, target.index),
+              node,
+              ...branchPath.slice(target.index),
+            ],
+          };
+        }
+        if (candidate.kind !== "condition") return candidate;
+        return {
+          ...candidate,
+          thenSteps: insertAt(candidate.thenSteps ?? []),
+          elseSteps: insertAt(candidate.elseSteps ?? []),
+        };
+      });
+    };
+    onChangeNodes(insertAt(nodes));
     onSelectNode(node.id);
+    setInsertMenu(null);
+  }
+
+  // Kept for the hidden semantic fallback while the canvas is mounted.
+  function addNode(kind: BuilderAddableNode): void {
+    insertNode(
+      { ownerId: null, branch: null, index: nodes.length, terminal: true },
+      kind,
+    );
   }
 
   function updateNode(id: string, patch: Partial<MarketBuilderNode>): void {
@@ -1037,6 +1138,11 @@ function MarketBuilder({
         );
     onChangeNodes(deleteFromPath(nodes));
     onSelectNode(null);
+  }
+
+  function requestDelete(node: MarketBuilderNode): void {
+    if (descendantCount(node) > 0) setPendingDelete(node);
+    else deleteNode(node.id);
   }
 
   function addToBranch(
@@ -1099,8 +1205,86 @@ function MarketBuilder({
         </div>
       </div>
 
+      <div className="mk-graph-builder">
+        <MarketBuilderCanvas
+          nodes={nodes}
+          selectedNodeId={selectedNodeId}
+          labels={{
+            start: m.nodes.start.title,
+            transfer: m.nodes.transfer.title,
+            wait: m.nodes.wait.title,
+            variable: m.nodes.variable.title,
+            condition: m.nodes.condition.title,
+            decision: m.nodes.decision.title,
+            end: m.nodes.end.title,
+            true: t.conditionThen,
+            false: t.conditionElse,
+            fit: "Fit graph",
+          }}
+          nodeLabel={nodeLabel}
+          onSelectNode={onSelectNode}
+          onRequestInsert={(target, position) =>
+            setInsertMenu({ target, ...position })
+          }
+        />
+        {insertMenu && (
+          <div
+            className="mk-node-picker"
+            style={{ left: insertMenu.x, top: insertMenu.y }}
+            role="dialog"
+            aria-label="Choose a node to insert"
+          >
+            <header>
+              <strong>Add node</strong>
+              <button type="button" onClick={() => setInsertMenu(null)}>
+                <X aria-hidden="true" />
+              </button>
+            </header>
+            <div>
+              {(
+                [
+                  "transfer",
+                  "wait",
+                  "variable",
+                  ...(insertMenu.target.terminal
+                    ? (["condition", "decision"] as const)
+                    : []),
+                ] as BuilderAddableNode[]
+              ).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => insertNode(insertMenu.target, kind)}
+                >
+                  <span aria-hidden="true">
+                    {kind === "transfer"
+                      ? "⇄"
+                      : kind === "wait"
+                        ? "◷"
+                        : kind === "variable"
+                          ? "ƒ"
+                          : "◇"}
+                  </span>
+                  {m.nodes[kind].title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {selectedContext && selectedContext.node.kind !== "start" && (
+        <MarketNodeInspector
+          node={selectedContext.node}
+          names={selectedContext.names}
+          locale={locale}
+          onUpdate={updateNode}
+          onDelete={() => requestDelete(selectedContext.node)}
+        />
+      )}
+
       <div
-        className="cs-contract-stack"
+        className="cs-contract-stack mk-legacy-builder"
         role="application"
         aria-label={m.builder.blockStack}
       >
@@ -1380,7 +1564,7 @@ function MarketBuilder({
       {issue && <p className="cs-builder-feedback issue">{issue}</p>}
       {!issue && <p className="cs-builder-feedback ready">{t.builderReady}</p>}
 
-      <div className="cs-node-palette">
+      <div className="cs-node-palette mk-legacy-builder">
         <header>
           <div>
             <small>{m.builder.clauseTray}</small>
@@ -1414,7 +1598,196 @@ function MarketBuilder({
           {t.withdrawContract}
         </button>
       )}
+      {pendingDelete && (
+        <div className="cs-dialog-backdrop">
+          <article role="alertdialog" aria-modal="true">
+            <Trash2 className="failure" aria-hidden="true" />
+            <h2>Remove this entire branch?</h2>
+            <p>
+              This will remove {m.nodes[pendingDelete.kind].title} and all{" "}
+              {descendantCount(pendingDelete)} connected nodes beneath it.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                deleteNode(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+            >
+              Remove node and branches
+            </button>
+            <button
+              type="button"
+              className="mk-dialog-cancel"
+              onClick={() => setPendingDelete(null)}
+            >
+              Cancel
+            </button>
+          </article>
+        </div>
+      )}
     </section>
+  );
+}
+
+function MarketNodeInspector({
+  node,
+  names,
+  locale,
+  onUpdate,
+  onDelete,
+}: {
+  node: MarketBuilderNode;
+  names: readonly string[];
+  locale: Locale;
+  onUpdate: (id: string, patch: Partial<MarketBuilderNode>) => void;
+  onDelete: () => void;
+}) {
+  const m = messagesFor(locale);
+  const t = m.marketSim;
+  return (
+    <aside className="cs-node-inspector mk-canvas-inspector">
+      <header>
+        <div>
+          <small>{m.builder.clause}</small>
+          <strong>{m.nodes[node.kind].title}</strong>
+        </div>
+        <button type="button" onClick={onDelete} aria-label={m.inspector.deleteNode}>
+          <Trash2 aria-hidden="true" />
+        </button>
+      </header>
+      {node.kind === "transfer" && (
+        <div className="cs-parameter-grid">
+          <label>
+            <span>{m.inspector.sender}</span>
+            <select
+              value={node.senderId}
+              onChange={(event) =>
+                onUpdate(node.id, {
+                  senderId: event.target.value,
+                  recipientId: event.target.value === "player" ? "customer" : "player",
+                })
+              }
+            >
+              <option value="player">{playerLabel(locale)}</option>
+              <option value="customer">{t.borrower}</option>
+            </select>
+          </label>
+          <label>
+            <span>{m.inspector.transferRecipient}</span>
+            <select
+              value={node.recipientId}
+              onChange={(event) =>
+                onUpdate(node.id, {
+                  recipientId: event.target.value,
+                  senderId: event.target.value === "player" ? "customer" : "player",
+                })
+              }
+            >
+              <option value="player">{playerLabel(locale)}</option>
+              <option value="customer">{t.borrower}</option>
+            </select>
+          </label>
+          <RecipeField
+            label={m.inspector.amount}
+            value={node.amount ?? value("amount")}
+            names={names}
+            onChange={(amount) => onUpdate(node.id, { amount })}
+          />
+        </div>
+      )}
+      {node.kind === "wait" && (
+        <div className="cs-parameter-grid">
+          <RecipeField
+            label={m.inspector.waitDays}
+            value={node.days ?? value("days")}
+            names={names}
+            onChange={(days) => onUpdate(node.id, { days })}
+          />
+        </div>
+      )}
+      {node.kind === "variable" && (
+        <div className="cs-parameter-grid">
+          <VariableNameCards
+            value={node.variableName ?? "rate"}
+            onChange={(variableName) => onUpdate(node.id, { variableName })}
+          />
+          <RecipeField
+            label="Set value"
+            value={node.amount ?? constant(1)}
+            names={names}
+            onChange={(amount) => onUpdate(node.id, { amount })}
+          />
+        </div>
+      )}
+      {(node.kind === "condition" || node.kind === "decision") && (
+        <div className="cs-parameter-grid">
+          <div className="mk-condition-row wide">
+            <RecipeField
+              label={t.conditionIf}
+              value={node.left ?? value("income")}
+              names={names}
+              onChange={(left) => onUpdate(node.id, { left })}
+            />
+            <label className="mk-comparator">
+              <span aria-hidden="true">·</span>
+              <select
+                value={node.comparator ?? ">"}
+                aria-label={t.conditionIf}
+                onChange={(event) =>
+                  onUpdate(node.id, { comparator: event.target.value as ComparatorOp })
+                }
+              >
+                {[">", ">=", "<", "<=", "=="].map((op) => (
+                  <option key={op} value={op}>{op}</option>
+                ))}
+              </select>
+            </label>
+            <RecipeField
+              label="&nbsp;"
+              value={node.right ?? constant(1)}
+              names={names}
+              onChange={(right) => onUpdate(node.id, { right })}
+            />
+          </div>
+          {node.kind === "condition" && (
+            <p className="mk-decision-help wide">
+              Use the + control on either branch in the canvas to extend it.
+            </p>
+          )}
+          {node.kind === "decision" && (
+            <>
+              <label>
+                <span>{t.conditionThen}</span>
+                <select
+                  value={node.thenOutcome ?? "draft"}
+                  onChange={(event) =>
+                    onUpdate(node.id, { thenOutcome: event.target.value as DecisionOutcome })
+                  }
+                >
+                  <option value="accept">{t.accept}</option>
+                  <option value="reject">{t.reject}</option>
+                  <option value="draft">{t.outcomeDraft}</option>
+                </select>
+              </label>
+              <label>
+                <span>{t.conditionElse}</span>
+                <select
+                  value={node.elseOutcome ?? "draft"}
+                  onChange={(event) =>
+                    onUpdate(node.id, { elseOutcome: event.target.value as DecisionOutcome })
+                  }
+                >
+                  <option value="accept">{t.accept}</option>
+                  <option value="reject">{t.reject}</option>
+                  <option value="draft">{t.outcomeDraft}</option>
+                </select>
+              </label>
+            </>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -1431,6 +1804,7 @@ function RecipeField({
   onChange: (value: ValueRecipe) => void;
 }) {
   const [selectedPath, setSelectedPath] = useState<RecipePath>([]);
+  const [numberEntry, setNumberEntry] = useState<string | null>(null);
   const replaceSelected = (next: ValueRecipe): void =>
     onChange(replaceRecipeAtPath(recipe, selectedPath, next));
   const chooseOperator = (operatorName: RecipeOperator): void => {
@@ -1465,15 +1839,13 @@ function RecipeField({
               {humanizeValue(name)}
             </button>
           ))}
-          {RECIPE_CONSTANTS.map((amount) => (
-            <button
-              key={amount}
-              type="button"
-              onClick={() => replaceSelected(constant(amount))}
-            >
-              {amount}
-            </button>
-          ))}
+          <button
+            type="button"
+            className="mk-number-card"
+            onClick={() => setNumberEntry("")}
+          >
+            # Number
+          </button>
         </div>
         <small>Operator cards</small>
         <div>
@@ -1495,6 +1867,75 @@ function RecipeField({
           ))}
         </div>
       </div>
+      {numberEntry !== null && (
+        <NumberKeypad
+          value={numberEntry}
+          onChange={setNumberEntry}
+          onCancel={() => setNumberEntry(null)}
+          onConfirm={() => {
+            const number = Number(numberEntry);
+            if (!Number.isFinite(number)) return;
+            replaceSelected(constant(number));
+            setNumberEntry(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function NumberKeypad({
+  value: entry,
+  onChange,
+  onCancel,
+  onConfirm,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const push = (key: string): void => {
+    if (key === ".") {
+      if (entry.includes(".")) return;
+      onChange(entry ? `${entry}.` : "0.");
+      return;
+    }
+    onChange(entry === "0" ? key : `${entry}${key}`);
+  };
+  return (
+    <div className="mk-keypad" role="dialog" aria-label="Enter a number">
+      <header>
+        <strong>Number</strong>
+        <output>{entry || "0"}</output>
+      </header>
+      <div className="mk-keypad-grid">
+        {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0"].map((key) => (
+          <button key={key} type="button" onClick={() => push(key)}>
+            {key}
+          </button>
+        ))}
+        <button
+          type="button"
+          aria-label="Delete digit"
+          onClick={() => onChange(entry.slice(0, -1))}
+        >
+          ←
+        </button>
+      </div>
+      <footer>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="confirm"
+          onClick={onConfirm}
+          disabled={!entry || entry.endsWith(".")}
+        >
+          Done
+        </button>
+      </footer>
     </div>
   );
 }

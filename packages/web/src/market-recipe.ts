@@ -15,10 +15,6 @@ export type ValueRecipe =
       right: ValueRecipe;
     };
 
-export const RECIPE_CONSTANTS = [
-  1, 1.05, 1.1, 2, 30, 90, 180, 365, 1000,
-] as const;
-
 /** Names are chosen as cards, never typed. */
 export const VARIABLE_NAME_CARDS = [
   "rate",
@@ -82,6 +78,7 @@ export function humanizeValue(name: string): string {
     days: "Requested days",
     income: "Monthly income",
     age: "Age",
+    cash: "Available cash",
     rate: "Rate",
     margin: "Margin",
     reserve: "Reserve",

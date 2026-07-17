@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Landmark, Play } from "lucide-react";
+import { ArrowLeft, Check, Landmark, LockKeyhole, Play } from "lucide-react";
 import { MarketApp } from "./MarketApp.tsx";
+import { localize } from "./campaign-stages.ts";
+import { marketCampaignStages, marketStageById } from "./market-campaign.ts";
 import { detectLocale, type Locale } from "./i18n.tsx";
 import { messagesFor } from "./messages/index.ts";
 import {
@@ -12,11 +14,12 @@ import {
 } from "./persistence.ts";
 import "./game.css";
 
-type Screen = "home" | "market";
+type Screen = "home" | "stages" | "campaign" | "market";
 
 export function GameApp() {
   const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
+  const [selectedStageId, setSelectedStageId] = useState(marketCampaignStages[0]!.id);
   const [campaign, setCampaign] = useState<CampaignProgress>(
     () => emptySave().campaign,
   );
@@ -74,6 +77,47 @@ export function GameApp() {
   if (screen === "market")
     return <MarketApp locale={locale} onBack={() => setScreen("home")} />;
 
+  if (screen === "campaign") {
+    return (
+      <MarketApp
+        stage={marketStageById(selectedStageId)}
+        locale={locale}
+        onBack={() => setScreen("stages")}
+        onComplete={() => {
+          setCampaign((current) => {
+            const stage = marketStageById(selectedStageId);
+            return {
+              ...current,
+              completedStageIds: current.completedStageIds.includes(stage.id)
+                ? current.completedStageIds
+                : [...current.completedStageIds, stage.id],
+              rewards: current.rewards.includes(stage.rewardId)
+                ? current.rewards
+                : [...current.rewards, stage.rewardId],
+              mostRecentStageId: stage.id,
+            };
+          });
+          setScreen("stages");
+        }}
+      />
+    );
+  }
+
+  if (screen === "stages") {
+    return (
+      <StageSelection
+        campaign={campaign}
+        locale={locale}
+        onBack={() => setScreen("home")}
+        onChangeLocale={changeLocale}
+        onSelect={(stageId) => {
+          setSelectedStageId(stageId);
+          setScreen("campaign");
+        }}
+      />
+    );
+  }
+
   return (
     <main className="home-screen">
       <div className="home-language">
@@ -89,11 +133,64 @@ export function GameApp() {
         </strong>
         <button
           className="home-play-button"
-          onClick={() => setScreen("market")}
+          onClick={() => setScreen("stages")}
         >
           <Play aria-hidden="true" fill="currentColor" /> Play
         </button>
       </div>
+    </main>
+  );
+}
+
+function StageSelection({
+  campaign,
+  locale,
+  onBack,
+  onChangeLocale,
+  onSelect,
+}: {
+  campaign: CampaignProgress;
+  locale: Locale;
+  onBack: () => void;
+  onChangeLocale: (locale: Locale) => void;
+  onSelect: (stageId: string) => void;
+}) {
+  const m = messagesFor(locale);
+  return (
+    <main className="home-screen">
+      <section className="stage-card-overlay" aria-label={m.gameApp.stageSelection}>
+        <header className="stage-card-header">
+          <button className="stage-card-back" onClick={onBack} aria-label={m.gameApp.backToMainMenu}>
+            <ArrowLeft aria-hidden="true" />
+          </button>
+          <strong>{m.gameApp.campaignStages}</strong>
+          <LanguageSelect locale={locale} onChange={onChangeLocale} />
+        </header>
+        <div className="stage-card-grid">
+          {marketCampaignStages.map((stage, index) => {
+            const complete = campaign.completedStageIds.includes(stage.id);
+            const unlocked = index === 0 || campaign.completedStageIds.includes(marketCampaignStages[index - 1]!.id);
+            return (
+              <button
+                key={stage.id}
+                className={`stage-card${unlocked ? " active" : " locked"}${complete ? " complete" : ""}`}
+                disabled={!unlocked}
+                onClick={() => onSelect(stage.id)}
+              >
+                <span className="stage-card-image">
+                  <img src={stage.image} alt="" />
+                  <b>{String(stage.number).padStart(2, "0")}</b>
+                  {complete ? <Check aria-label={m.gameApp.playAgain} /> : !unlocked ? <LockKeyhole aria-label={m.gameApp.locked} /> : null}
+                </span>
+                <span className="stage-card-copy">
+                  <strong>{localize(stage.title, locale)}</strong>
+                  <small>{complete ? m.gameApp.playAgain : unlocked ? localize(stage.subtitle, locale) : m.gameApp.completePriorStage}</small>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
     </main>
   );
 }

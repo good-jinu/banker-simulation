@@ -114,12 +114,19 @@ export interface MarketBuilderNode {
 /** Requester facts every contract formula can reference. */
 export const REQUESTER_VARIABLES = ["amount", "days", "income", "age"] as const;
 
-export function demandVariables(demand: Demand): Record<string, number> {
+/** Live values exposed as cards in the contract builder. */
+export const BUILDER_VARIABLES = [...REQUESTER_VARIABLES, "cash"] as const;
+
+export function demandVariables(
+  demand: Demand,
+  availableCash: number,
+): Record<string, number> {
   return {
     amount: demand.amount,
     days: demand.payableAfterDays,
     income: demand.actor.monthlyIncome,
     age: demand.actor.age,
+    cash: availableCash,
   };
 }
 
@@ -127,6 +134,26 @@ export interface EvaluatedTerms {
   principal: number;
   termDays: number;
   repayment: number;
+}
+
+/**
+ * The requester's projected state after running a contract in isolation.
+ * This deliberately contains no mutable world or other-actor state: external
+ * facts, such as the bank's available cash, are inputs to the formulas only.
+ */
+export interface RequesterContractState {
+  /** Simulated requester cash, beginning at zero when they apply. */
+  cash: number;
+  /** Funds received from the player at day zero. */
+  fundedAtStart: number;
+  /** All funds received from the player during this contract. */
+  funded: number;
+  /** All funds paid back to the player during this contract. */
+  repaid: number;
+  /** The simulated contract clock. */
+  day: number;
+  /** A payment was requested before this demand says the requester can pay. */
+  paidTooEarly: boolean;
 }
 
 function compareValues(
@@ -153,11 +180,14 @@ function compareValues(
  * path stay in that path, while transfers and waits contribute to the shared
  * contract result.
  */
-function walkContractTerms(
+function walkContract(
   nodes: readonly MarketBuilderNode[],
   variables: Record<string, number>,
-): EvaluatedTerms {
-  const terms: EvaluatedTerms = { principal: 0, termDays: 0, repayment: 0 };
+  execute: {
+    wait(days: number): void;
+    transfer(node: MarketBuilderNode, amount: number): void;
+  },
+): void {
   const walk = (
     path: readonly MarketBuilderNode[],
     scope: Record<string, number>,
@@ -174,23 +204,92 @@ function walkContractTerms(
         if (!node.variableName) throw new Error("Choose a variable name.");
         scope[node.variableName] = evaluateRecipe(node.amount, scope);
       } else if (node.kind === "wait") {
-        terms.termDays += Math.max(
-          0,
-          Math.round(evaluateRecipe(node.days, scope)),
-        );
+        execute.wait(Math.max(0, Math.round(evaluateRecipe(node.days, scope))));
       } else if (node.kind === "transfer") {
-        const value = evaluateRecipe(node.amount, scope);
-        if (node.senderId === "player") terms.principal += value;
-        else if (node.recipientId === "player") terms.repayment += value;
+        execute.transfer(node, evaluateRecipe(node.amount, scope));
       }
     }
   };
   walk(nodes, { ...variables });
+}
+
+function walkContractTerms(
+  nodes: readonly MarketBuilderNode[],
+  variables: Record<string, number>,
+): EvaluatedTerms {
+  const terms: EvaluatedTerms = { principal: 0, termDays: 0, repayment: 0 };
+  walkContract(nodes, variables, {
+    wait: (days) => {
+      terms.termDays += days;
+    },
+    transfer: (node, value) => {
+      if (node.senderId === "player") terms.principal += value;
+      else if (node.recipientId === "player") terms.repayment += value;
+    },
+  });
   return {
     principal: Math.round(terms.principal),
     termDays: terms.termDays,
     repayment: Math.round(terms.repayment),
   };
+}
+
+/**
+ * Execute a contract against only the applying requester's temporary state.
+ * This is the matching runtime: it never copies or mutates the market world.
+ */
+export function simulateContractForDemand(
+  nodes: readonly MarketBuilderNode[],
+  demand: Demand,
+  availableCash: number,
+): RequesterContractState | null {
+  try {
+    const state: RequesterContractState = {
+      cash: 0,
+      fundedAtStart: 0,
+      funded: 0,
+      repaid: 0,
+      day: 0,
+      paidTooEarly: false,
+    };
+    walkContract(nodes, demandVariables(demand, availableCash), {
+      wait: (days) => {
+        state.day += days;
+      },
+      transfer: (node, amount) => {
+        if (!Number.isFinite(amount) || amount < 0)
+          throw new Error("Transfer amount must be a non-negative number.");
+        if (node.senderId === "player") {
+          state.cash += amount;
+          state.funded += amount;
+          if (state.day === 0) state.fundedAtStart += amount;
+        } else if (node.recipientId === "player") {
+          state.cash -= amount;
+          state.repaid += amount;
+          if (state.day < demand.payableAfterDays) state.paidTooEarly = true;
+        }
+      },
+    });
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Demand policy is expressed against the projected requester state, rather
+ * than against a parallel list of contract-term fields. New requester state
+ * and demand rules can be added here without changing the contract runtime.
+ */
+export function requesterStateSatisfiesDemand(
+  state: RequesterContractState,
+  demand: Demand,
+): boolean {
+  return (
+    state.fundedAtStart >= demand.amount &&
+    state.repaid <= demand.maxRepayment &&
+    !state.paidTooEarly
+  );
 }
 
 /**
@@ -202,6 +301,7 @@ function walkContractTerms(
 export function decideRequestOutcome(
   nodes: readonly MarketBuilderNode[],
   demand: Demand,
+  availableCash: number,
 ): DecisionOutcome {
   try {
     const decidePath = (
@@ -232,7 +332,7 @@ export function decideRequestOutcome(
       }
       return "draft";
     };
-    return decidePath(nodes, demandVariables(demand));
+    return decidePath(nodes, demandVariables(demand, availableCash));
   } catch {
     return "draft";
   }
@@ -242,15 +342,16 @@ export function decideRequestOutcome(
 export function evaluateContractForDemand(
   nodes: readonly MarketBuilderNode[],
   demand: Demand,
+  availableCash: number,
 ): EvaluatedTerms | null {
-  try {
-    const terms = walkContractTerms(nodes, demandVariables(demand));
-    if (terms.principal <= 0 || terms.termDays <= 0 || terms.repayment <= 0)
-      return null;
-    return terms;
-  } catch {
+  const state = simulateContractForDemand(nodes, demand, availableCash);
+  if (!state || state.funded <= 0 || state.repaid <= 0 || state.day <= 0)
     return null;
-  }
+  return {
+    principal: Math.round(state.funded),
+    termDays: state.day,
+    repayment: Math.round(state.repaid),
+  };
 }
 
 /** Terms for an arbitrary variable set — the builder's sample preview. */
@@ -340,13 +441,16 @@ const DAILY_SPAWN_CHANCE = 0.3;
 const DAILY_REQUEST_CHANCE = 0.35;
 const MAX_LOG_ENTRIES = 120;
 
-export function emptyWorld(seed: string): MarketWorld {
+export function emptyWorld(
+  seed: string,
+  startingCash = MARKET_STARTING_CASH,
+): MarketWorld {
   let world: MarketWorld = {
     seed,
     cursor: 0,
     day: 0,
-    startingCash: MARKET_STARTING_CASH,
-    cash: MARKET_STARTING_CASH,
+    startingCash,
+    cash: startingCash,
     nextId: 1,
     demands: [],
     contracts: [],
@@ -638,21 +742,28 @@ function spawnDemand(world: MarketWorld): MarketWorld {
 }
 
 /**
- * True when a posted contract satisfies what the demand asks for.  Terms are
- * evaluated for this specific requester, so a dynamic contract lending
- * `amount` fits the $200 needer and the $300 needer alike.
+ * True when executing a posted contract would satisfy the requester's demand.
+ * The execution uses a temporary requester state plus read-only assumptions,
+ * never a clone of (or mutation to) the market world.
  */
 export function contractFitsDemand(
   contract: ContractOffer,
   demand: Demand,
+  availableCash: number,
 ): boolean {
   if (demand.rejectedContractIds.includes(contract.id)) return false;
-  const terms = evaluateContractForDemand(contract.builderNodes, demand);
+  const state = simulateContractForDemand(
+    contract.builderNodes,
+    demand,
+    availableCash,
+  );
   return (
-    terms !== null &&
-    terms.principal >= demand.amount &&
-    terms.repayment <= demand.maxRepayment &&
-    terms.termDays >= demand.payableAfterDays
+    state !== null &&
+    // A match must also be signable by the current loan lifecycle.
+    state.funded > 0 &&
+    state.repaid > 0 &&
+    state.day > 0 &&
+    requesterStateSatisfiesDemand(state, demand)
   );
 }
 
@@ -661,8 +772,13 @@ function buildRequest(
   demand: Demand,
   contract: ContractOffer,
   day: number,
+  availableCash: number,
 ): ContractRequest | null {
-  const terms = evaluateContractForDemand(contract.builderNodes, demand);
+  const terms = evaluateContractForDemand(
+    contract.builderNodes,
+    demand,
+    availableCash,
+  );
   if (!terms) return null;
   return {
     id: `request-${demand.id}-${contract.id}`,
@@ -776,15 +892,15 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
   demands = demands.map((demand) => {
     if (demand.status !== "open") return demand;
     const fitting = contracts.filter((contract) =>
-      contractFitsDemand(contract, demand),
+      contractFitsDemand(contract, demand, cash),
     );
     if (fitting.length === 0) return demand;
     if (!roller.chance(DAILY_REQUEST_CHANCE)) return demand;
     const contract = roller.pick(fitting);
-    const request = buildRequest(demand, contract, day);
+    const request = buildRequest(demand, contract, day, cash);
     if (!request) return demand;
 
-    let outcome = decideRequestOutcome(contract.builderNodes, demand);
+    let outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
     if (outcome === "accept" && cash < request.principal) outcome = "draft";
     if (outcome === "reject")
       return {
@@ -982,11 +1098,11 @@ export function fileRequest(
     (candidate) => candidate.id === contractId,
   );
   if (!demand || !contract || demand.status !== "open") return world;
-  if (!contractFitsDemand(contract, demand)) return world;
-  const request = buildRequest(demand, contract, world.day);
+  if (!contractFitsDemand(contract, demand, world.cash)) return world;
+  const request = buildRequest(demand, contract, world.day, world.cash);
   if (!request) return world;
 
-  let outcome = decideRequestOutcome(contract.builderNodes, demand);
+  let outcome = decideRequestOutcome(contract.builderNodes, demand, world.cash);
   if (outcome === "accept" && world.cash < request.principal) outcome = "draft";
   if (outcome === "reject")
     return {
