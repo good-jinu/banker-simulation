@@ -647,6 +647,7 @@ export function MarketApp({
             world={world}
             onTapDemand={(id) => openDemandDetail(id, "map")}
             onTapContract={openContractDetail}
+            onDropDemand={dropDemand}
           />
           <button
             className="mk-fab"
@@ -709,33 +710,159 @@ export function MarketApp({
 }
 
 /* ------------------------------------------------------------------ */
-/* Pixi market stage                                                   */
+/* Open-market map                                                     */
 /* ------------------------------------------------------------------ */
 
 function MarketStageView({
   world,
   onTapDemand,
   onTapContract,
+  onDropDemand,
 }: {
   world: MarketWorld;
   onTapDemand: (demandId: string) => void;
   onTapContract: (contractId: string) => void;
+  onDropDemand: (demandId: string, contractId: string) => boolean;
 }) {
+  const mapRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    demandId: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+  const ignoreClickRef = useRef<string | null>(null);
+  const [dragPosition, setDragPosition] = useState<{
+    demandId: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [dropFeedback, setDropFeedback] = useState<{
+    id: number;
+    x: number;
+    y: number;
+    matched: boolean;
+  } | null>(null);
+
+  function mapPosition(clientX: number, clientY: number) {
+    const bounds = mapRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    return {
+      x: Math.max(0, Math.min(bounds.width, clientX - bounds.left)),
+      y: Math.max(0, Math.min(bounds.height, clientY - bounds.top)),
+    };
+  }
+
+  function contractAt(x: number, y: number): ContractOffer | null {
+    const bounds = mapRef.current?.getBoundingClientRect();
+    if (!bounds) return null;
+    let closest: { contract: ContractOffer; distance: number } | null = null;
+    for (const contract of world.contracts) {
+      const distance = Math.hypot(
+        contract.x * bounds.width - x,
+        contract.y * bounds.height - y,
+      );
+      if (distance > 56) continue;
+      if (!closest || distance < closest.distance)
+        closest = { contract, distance };
+    }
+    return closest?.contract ?? null;
+  }
+
+  function finishDrag(clientX: number, clientY: number): void {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    setDragPosition(null);
+    if (!drag) return;
+
+    // Pointer-up also produces a click. Handle the map tap only once here,
+    // while leaving keyboard activation available through onClick below.
+    ignoreClickRef.current = drag.demandId;
+    if (!drag.moved) {
+      onTapDemand(drag.demandId);
+      return;
+    }
+
+    const position = mapPosition(clientX, clientY);
+    if (!position) return;
+    const contract = contractAt(position.x, position.y);
+    if (!contract) return;
+
+    const matched = onDropDemand(drag.demandId, contract.id);
+    const bounds = mapRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    setDropFeedback({
+      id: Date.now(),
+      x: contract.x * bounds.width,
+      y: contract.y * bounds.height,
+      matched,
+    });
+  }
+
   return (
-    <div className="mk-market-map" aria-label="Market demands">
+    <div ref={mapRef} className="mk-market-map" aria-label="Market demands">
       {world.demands
         .filter((demand) => demand.status === "open")
-        .map((demand) => (
-          <button
-            key={demand.id}
-            className="mk-demand-pin"
-            style={{ left: `${demand.x * 100}%`, top: `${demand.y * 100}%` }}
-            onClick={() => onTapDemand(demand.id)}
-          >
-            <img src={demand.actor.image} alt="" />
-            <small>${demand.amount}</small>
-          </button>
-        ))}
+        .map((demand) => {
+          const dragging = dragPosition?.demandId === demand.id;
+          const position = dragging
+            ? { left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }
+            : { left: `${demand.x * 100}%`, top: `${demand.y * 100}%` };
+          return (
+            <button
+              key={demand.id}
+              className={`mk-demand-pin${dragging ? " is-dragging" : ""}`}
+              style={position}
+              onPointerDown={(event) => {
+                dragRef.current = {
+                  demandId: demand.id,
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startY: event.clientY,
+                  moved: false,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== event.pointerId) return;
+                if (!drag.moved) {
+                  if (
+                    Math.hypot(
+                      event.clientX - drag.startX,
+                      event.clientY - drag.startY,
+                    ) < 7
+                  )
+                    return;
+                  drag.moved = true;
+                }
+                const position = mapPosition(event.clientX, event.clientY);
+                if (position)
+                  setDragPosition({ demandId: demand.id, ...position });
+              }}
+              onPointerUp={(event) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== event.pointerId) return;
+                finishDrag(event.clientX, event.clientY);
+              }}
+              onPointerCancel={() => {
+                dragRef.current = null;
+                setDragPosition(null);
+              }}
+              onClick={() => {
+                if (ignoreClickRef.current === demand.id) {
+                  ignoreClickRef.current = null;
+                  return;
+                }
+                onTapDemand(demand.id);
+              }}
+            >
+              <img src={demand.actor.image} alt="" />
+              <small>${demand.amount}</small>
+            </button>
+          );
+        })}
       {world.contracts.map((contract) => (
         <button
           key={contract.id}
@@ -754,6 +881,17 @@ function MarketStageView({
           )}
         </button>
       ))}
+      {dropFeedback && (
+        <span
+          key={dropFeedback.id}
+          className={`mk-drop-feedback ${dropFeedback.matched ? "match" : "reject"}`}
+          style={{ left: `${dropFeedback.x}px`, top: `${dropFeedback.y}px` }}
+          onAnimationEnd={() => setDropFeedback(null)}
+          aria-hidden="true"
+        >
+          {dropFeedback.matched ? "✓" : "×"}
+        </span>
+      )}
     </div>
   );
 }
