@@ -128,7 +128,7 @@ class BuilderCanvasScene {
       autoDensity: true,
     });
     if (this.destroyed) {
-      this.app.destroy(true);
+      this.app.destroy({ removeView: true });
       return;
     }
     host.appendChild(this.app.canvas);
@@ -174,7 +174,10 @@ class BuilderCanvasScene {
     this.retiredObjects.length = 0;
     this.world.destroy({ children: true });
     this.grid.destroy();
-    this.app.destroy(true);
+    // `true` also releases Pixi's process-wide pools. React can mount the map
+    // canvas while this canvas is being cleaned up, so releasing those shared
+    // batches corrupts the newly mounted renderer.
+    this.app.destroy({ removeView: true });
   }
 
   fit(): void {

@@ -23,6 +23,7 @@ import { formatGameDate } from "./campaign-run.ts";
 import { localize, playerLabel } from "./campaign-stages.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "./game-clock.ts";
 import type { Locale } from "./i18n.tsx";
+import { MarketStage } from "./market-stage.ts";
 import {
   MarketBuilderCanvas,
   type BuilderInsertTarget,
@@ -724,175 +725,43 @@ function MarketStageView({
   onTapContract: (contractId: string) => void;
   onDropDemand: (demandId: string, contractId: string) => boolean;
 }) {
-  const mapRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{
-    demandId: string;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    moved: boolean;
-  } | null>(null);
-  const ignoreClickRef = useRef<string | null>(null);
-  const [dragPosition, setDragPosition] = useState<{
-    demandId: string;
-    x: number;
-    y: number;
-  } | null>(null);
-  const [dropFeedback, setDropFeedback] = useState<{
-    id: number;
-    x: number;
-    y: number;
-    matched: boolean;
-  } | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const stageRef = useRef<MarketStage | null>(null);
+  // Callbacks live in a ref so the Pixi app never re-initializes just
+  // because a render produced fresh closures.
+  const callbacksRef = useRef({ onTapDemand, onTapContract, onDropDemand });
+  callbacksRef.current = { onTapDemand, onTapContract, onDropDemand };
+  const worldRef = useRef(world);
+  worldRef.current = world;
 
-  function mapPosition(clientX: number, clientY: number) {
-    const bounds = mapRef.current?.getBoundingClientRect();
-    if (!bounds) return null;
-    return {
-      x: Math.max(0, Math.min(bounds.width, clientX - bounds.left)),
-      y: Math.max(0, Math.min(bounds.height, clientY - bounds.top)),
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const stage = new MarketStage();
+    stageRef.current = stage;
+    void stage
+      .init(host, {
+        onTapDemand: (id) => callbacksRef.current.onTapDemand(id),
+        onTapContract: (id) => callbacksRef.current.onTapContract(id),
+        onDropDemand: (demandId, contractId) =>
+          callbacksRef.current.onDropDemand(demandId, contractId),
+      })
+      .then(() => stage.syncWorld(worldRef.current));
+    return () => {
+      stageRef.current = null;
+      stage.destroy();
     };
-  }
+  }, []);
 
-  function contractAt(x: number, y: number): ContractOffer | null {
-    const bounds = mapRef.current?.getBoundingClientRect();
-    if (!bounds) return null;
-    let closest: { contract: ContractOffer; distance: number } | null = null;
-    for (const contract of world.contracts) {
-      const distance = Math.hypot(
-        contract.x * bounds.width - x,
-        contract.y * bounds.height - y,
-      );
-      if (distance > 56) continue;
-      if (!closest || distance < closest.distance)
-        closest = { contract, distance };
-    }
-    return closest?.contract ?? null;
-  }
-
-  function finishDrag(clientX: number, clientY: number): void {
-    const drag = dragRef.current;
-    dragRef.current = null;
-    setDragPosition(null);
-    if (!drag) return;
-
-    // Pointer-up also produces a click. Handle the map tap only once here,
-    // while leaving keyboard activation available through onClick below.
-    ignoreClickRef.current = drag.demandId;
-    if (!drag.moved) {
-      onTapDemand(drag.demandId);
-      return;
-    }
-
-    const position = mapPosition(clientX, clientY);
-    if (!position) return;
-    const contract = contractAt(position.x, position.y);
-    if (!contract) return;
-
-    const matched = onDropDemand(drag.demandId, contract.id);
-    const bounds = mapRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    setDropFeedback({
-      id: Date.now(),
-      x: contract.x * bounds.width,
-      y: contract.y * bounds.height,
-      matched,
-    });
-  }
+  useEffect(() => {
+    stageRef.current?.syncWorld(world);
+  }, [world]);
 
   return (
-    <div ref={mapRef} className="mk-market-map" aria-label="Market demands">
-      {world.demands
-        .filter((demand) => demand.status === "open")
-        .map((demand) => {
-          const dragging = dragPosition?.demandId === demand.id;
-          const position = dragging
-            ? { left: `${dragPosition.x}px`, top: `${dragPosition.y}px` }
-            : { left: `${demand.x * 100}%`, top: `${demand.y * 100}%` };
-          return (
-            <button
-              key={demand.id}
-              className={`mk-demand-pin${dragging ? " is-dragging" : ""}`}
-              style={position}
-              onPointerDown={(event) => {
-                dragRef.current = {
-                  demandId: demand.id,
-                  pointerId: event.pointerId,
-                  startX: event.clientX,
-                  startY: event.clientY,
-                  moved: false,
-                };
-                event.currentTarget.setPointerCapture(event.pointerId);
-              }}
-              onPointerMove={(event) => {
-                const drag = dragRef.current;
-                if (!drag || drag.pointerId !== event.pointerId) return;
-                if (!drag.moved) {
-                  if (
-                    Math.hypot(
-                      event.clientX - drag.startX,
-                      event.clientY - drag.startY,
-                    ) < 7
-                  )
-                    return;
-                  drag.moved = true;
-                }
-                const position = mapPosition(event.clientX, event.clientY);
-                if (position)
-                  setDragPosition({ demandId: demand.id, ...position });
-              }}
-              onPointerUp={(event) => {
-                const drag = dragRef.current;
-                if (!drag || drag.pointerId !== event.pointerId) return;
-                finishDrag(event.clientX, event.clientY);
-              }}
-              onPointerCancel={() => {
-                dragRef.current = null;
-                setDragPosition(null);
-              }}
-              onClick={() => {
-                if (ignoreClickRef.current === demand.id) {
-                  ignoreClickRef.current = null;
-                  return;
-                }
-                onTapDemand(demand.id);
-              }}
-            >
-              <img src={demand.actor.image} alt="" />
-              <small>${demand.amount}</small>
-            </button>
-          );
-        })}
-      {world.contracts.map((contract) => (
-        <button
-          key={contract.id}
-          className="mk-contract-pin"
-          style={{ left: `${contract.x * 100}%`, top: `${contract.y * 100}%` }}
-          onClick={() => onTapContract(contract.id)}
-          aria-label="Open contract"
-        >
-          <b>$</b>
-          {pendingRequestCount(contract) > 0 && (
-            <span className="mk-contract-request-count">
-              {pendingRequestCount(contract) > 9
-                ? "9+"
-                : pendingRequestCount(contract)}
-            </span>
-          )}
-        </button>
-      ))}
-      {dropFeedback && (
-        <span
-          key={dropFeedback.id}
-          className={`mk-drop-feedback ${dropFeedback.matched ? "match" : "reject"}`}
-          style={{ left: `${dropFeedback.x}px`, top: `${dropFeedback.y}px` }}
-          onAnimationEnd={() => setDropFeedback(null)}
-          aria-hidden="true"
-        >
-          {dropFeedback.matched ? "✓" : "×"}
-        </span>
-      )}
-    </div>
+    <div
+      ref={hostRef}
+      style={{ position: "absolute", inset: 0, overflow: "hidden" }}
+    />
   );
 }
 
