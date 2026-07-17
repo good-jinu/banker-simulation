@@ -1,0 +1,23 @@
+{
+  "name": "@banker-simulation/content",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Versioned stage definitions, objectives, rewards, and balance fixtures.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm run typecheck && pnpm test"
+  },
+  "dependencies": {
+    "@banker-simulation/contracts": "workspace:*",
+    "@banker-simulation/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  }
+}

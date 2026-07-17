@@ -1,0 +1,24 @@
+{
+  "name": "@banker-simulation/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The event-sourced economic simulation engine.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm run typecheck && pnpm test",
+    "demo": "node src/demo.ts",
+    "play": "node src/cli.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2"
+  }
+}

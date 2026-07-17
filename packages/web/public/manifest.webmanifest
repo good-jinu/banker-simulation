@@ -1,0 +1,19 @@
+{
+  "name": "Banker Simulation",
+  "short_name": "Banker",
+  "description": "A touch-first financial automation puzzle game.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#edf3f7",
+  "theme_color": "#17375e",
+  "icons": [
+    {
+      "src": "/assets/assets/coin.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
