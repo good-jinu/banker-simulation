@@ -428,7 +428,10 @@ export type WorldEventKind =
   | "request-filed"
   | "loan-signed"
   | "loan-repaid"
-  | "loan-defaulted";
+  | "loan-defaulted"
+  | "special-event";
+
+export type SpecialEventId = "first-yield-tutorial";
 
 export interface WorldEvent {
   id: string;
@@ -436,6 +439,7 @@ export interface WorldEvent {
   kind: WorldEventKind;
   actorName: string;
   amount: number;
+  specialEventId?: SpecialEventId;
 }
 
 export interface MarketWorld {
@@ -754,6 +758,36 @@ function pushEvent(
   return next.length > MAX_LOG_ENTRIES
     ? next.slice(next.length - MAX_LOG_ENTRIES)
     : next;
+}
+
+/** Append a one-time scripted event to the same history as simulation events. */
+export function recordSpecialEvent(
+  world: MarketWorld,
+  specialEventId: SpecialEventId,
+  actorName: string,
+): MarketWorld {
+  if (
+    world.log.some(
+      (event) =>
+        event.kind === "special-event" &&
+        event.specialEventId === specialEventId,
+    )
+  )
+    return world;
+  return {
+    ...world,
+    log: pushEvent(
+      world.log,
+      {
+        day: world.day,
+        kind: "special-event",
+        actorName,
+        amount: 0,
+        specialEventId,
+      },
+      `event-special-${specialEventId}`,
+    ),
+  };
 }
 
 function spawnDemand(world: MarketWorld): MarketWorld {

@@ -4,6 +4,7 @@ import {
   Info,
   Landmark,
   LogOut,
+  MapPin,
   Menu,
   Pause,
   Play,
@@ -40,6 +41,7 @@ import {
   MARKET_START_DATE,
   moveContract,
   postContract,
+  recordSpecialEvent,
   rejectRequest,
   totalAssetValue,
   updateContract,
@@ -56,6 +58,13 @@ import "./market.css";
 const MARKET_MS_PER_DAY = 1_200;
 
 type View = "map" | "demand" | "contract" | "builder";
+
+type MarketSpecialEvent = {
+  kind: "first-yield-tutorial";
+  targetDemandId: string;
+};
+
+const FIRST_TUTORIAL_DEMAND_ID = "demand-1";
 
 function newWorldSeed(): string {
   return Math.random().toString(36).slice(2);
@@ -76,6 +85,10 @@ function eventText(event: WorldEvent, m: Messages): string {
       return t.loanRepaid(event.actorName, event.amount);
     case "loan-defaulted":
       return t.loanDefaulted(event.actorName, event.amount);
+    case "special-event":
+      return event.specialEventId === "first-yield-tutorial"
+        ? m.marketSim.specialEvents.firstYieldTitle
+        : m.marketSim.specialEvents.tutorialTag;
   }
 }
 
@@ -99,8 +112,31 @@ export function MarketApp({
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
-  const [world, setWorld] = useState<MarketWorld>(() =>
-    emptyWorld(stage?.seed ?? newWorldSeed(), stage?.startingCash),
+  const [world, setWorld] = useState<MarketWorld>(() => {
+    const initialWorld = emptyWorld(
+      stage?.seed ?? newWorldSeed(),
+      stage?.startingCash,
+    );
+    if (stage?.id !== "first-yield") return initialWorld;
+    const tutorialDemand = initialWorld.demands.find(
+      (demand) => demand.id === FIRST_TUTORIAL_DEMAND_ID,
+    );
+    return recordSpecialEvent(
+      initialWorld,
+      "first-yield-tutorial",
+      tutorialDemand?.actor.name ?? t.borrower,
+    );
+  });
+  const [eventPopup, setEventPopup] = useState<MarketSpecialEvent | null>(() =>
+    stage?.id === "first-yield"
+      ? {
+          kind: "first-yield-tutorial",
+          targetDemandId: FIRST_TUTORIAL_DEMAND_ID,
+        }
+      : null,
+  );
+  const [guidedDemandId, setGuidedDemandId] = useState<string | null>(() =>
+    stage?.id === "first-yield" ? FIRST_TUTORIAL_DEMAND_ID : null,
   );
   const [view, setView] = useState<View>("map");
   const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null);
@@ -123,7 +159,7 @@ export function MarketApp({
   const [clockView, setClockView] = useState<{
     paused: boolean;
     speed: ClockSpeed;
-  }>({ paused: false, speed: 1 });
+  }>({ paused: stage?.id === "first-yield", speed: 1 });
   const clockRef = useRef<GameClock | null>(null);
 
   useEffect(() => {
@@ -132,7 +168,7 @@ export function MarketApp({
       return true;
     }, MARKET_MS_PER_DAY);
     clockRef.current = clock;
-    clock.play();
+    if (!eventPopup) clock.play();
     clock.start();
     const pauseWhenHidden = () => {
       if (document.hidden) {
@@ -147,6 +183,14 @@ export function MarketApp({
       clockRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!eventPopup) return;
+    clockRef.current?.pause();
+    setClockView((current) =>
+      current.paused ? current : { ...current, paused: true },
+    );
+  }, [eventPopup]);
 
   useEffect(() => {
     if (!notice) return;
@@ -166,6 +210,7 @@ export function MarketApp({
   }, [assetPanelOpen, boardPanelOpen]);
 
   function togglePaused(): void {
+    if (eventPopup) return;
     const clock = clockRef.current;
     if (!clock) return;
     if (clock.paused) clock.play();
@@ -184,6 +229,20 @@ export function MarketApp({
     setHudPanel(null);
   }
 
+  function closeEventPopup(): void {
+    if (!eventPopup) return;
+    setEventPopup(null);
+    const clock = clockRef.current;
+    if (!clock) return;
+    clock.play();
+    setClockView((current) => ({ ...current, paused: false }));
+  }
+
+  const tutorialDemand = eventPopup
+    ? (world.demands.find(
+        (demand) => demand.id === eventPopup.targetDemandId,
+      ) ?? null)
+    : null;
   const selectedDemand =
     world.demands.find((demand) => demand.id === selectedDemandId) ?? null;
   const selectedContract =
@@ -204,7 +263,8 @@ export function MarketApp({
       .filter(
         (event) =>
           event.day >= Math.max(0, world.day - 1) &&
-          event.kind !== "demand-appeared",
+          event.kind !== "demand-appeared" &&
+          event.kind !== "demand-expired",
       )
       .map((event) => ({ id: event.id, text: eventText(event, m) }));
     const messages = [
@@ -235,7 +295,10 @@ export function MarketApp({
     boardMessages[boardMessageIndex % boardMessages.length] ??
     boardMessages[0]!;
   const boardHistoryEvents = [...world.log]
-    .filter((event) => event.kind !== "demand-appeared")
+    .filter(
+      (event) =>
+        event.kind !== "demand-appeared" && event.kind !== "demand-expired",
+    )
     .reverse();
 
   useEffect(() => {
@@ -262,11 +325,12 @@ export function MarketApp({
 
   const openDemandDetail = useCallback(
     (demandId: string, origin: "map" | "contract") => {
+      if (guidedDemandId === demandId) setGuidedDemandId(null);
       setSelectedDemandId(demandId);
       setDemandOrigin(origin);
       setView("demand");
     },
-    [],
+    [guidedDemandId],
   );
 
   const openContractDetail = useCallback((contractId: string) => {
@@ -585,6 +649,50 @@ export function MarketApp({
         </section>
       )}
 
+      {eventPopup && (
+        <div className="mk-event-backdrop">
+          <section
+            className="mk-event-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="mk-event-title"
+            aria-describedby="mk-event-body"
+          >
+            <div className="mk-event-tag">
+              <MapPin aria-hidden="true" />
+              <span>{t.specialEvents.tutorialTag}</span>
+            </div>
+            {tutorialDemand && (
+              <img
+                className="mk-event-portrait"
+                src={tutorialDemand.actor.image}
+                alt=""
+              />
+            )}
+            <h2 id="mk-event-title">{t.specialEvents.firstYieldTitle}</h2>
+            <p id="mk-event-body">
+              {t.specialEvents.firstYieldBody(
+                tutorialDemand?.actor.name ?? t.borrower,
+              )}
+            </p>
+            <ol className="mk-event-steps">
+              <li>{t.specialEvents.firstYieldInspect}</li>
+              <li>{t.specialEvents.firstYieldBuild}</li>
+              <li>{t.specialEvents.firstYieldPost}</li>
+            </ol>
+            <p className="mk-event-paused">{t.specialEvents.timePaused}</p>
+            <button
+              type="button"
+              className="mk-event-close"
+              onClick={closeEventPopup}
+              autoFocus
+            >
+              {t.specialEvents.closeEvent}
+            </button>
+          </section>
+        </div>
+      )}
+
       <section className="mk-info-board" aria-label={m.timebar.gameCalendar}>
         <button
           className="mk-info-board-trigger"
@@ -606,6 +714,7 @@ export function MarketApp({
           <button
             className="cs-clock-toggle"
             onClick={togglePaused}
+            disabled={eventPopup !== null}
             aria-label={clockView.paused ? m.timebar.resume : m.timebar.pause}
           >
             {clockView.paused ? (
@@ -637,6 +746,7 @@ export function MarketApp({
             world={world}
             suspended={view !== "map"}
             timeFlowing={!clockView.paused}
+            highlightedDemandId={guidedDemandId}
             onTapDemand={(id) => openDemandDetail(id, "map")}
             onTapContract={openContractDetail}
             onDropDemand={dropDemand}

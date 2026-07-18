@@ -153,6 +153,20 @@ export const en = {
       loanDefaulted: (name: string, amount: number) =>
         `${name} defaulted on $${amount.toLocaleString()}`,
     },
+    specialEvents: {
+      tutorialTag: "SPECIAL EVENT · TUTORIAL",
+      firstYieldTitle: "A request is waiting",
+      firstYieldBody: (name: string) =>
+        `${name} needs funding. Follow the request from the map and turn it into your first market offer.`,
+      firstYieldInspect:
+        "Tap the highlighted demand node to inspect what this borrower needs.",
+      firstYieldBuild:
+        "On the demand page, choose “Draft a matching contract” to open the builder.",
+      firstYieldPost:
+        "In the builder, connect a transfer to the borrower, a wait, and a transfer back to you. Then post it to the market.",
+      timePaused: "Time is paused until you close this event.",
+      closeEvent: "Close event and continue",
+    },
   },
   gameApp: {
     stageSelection: "Stage selection",

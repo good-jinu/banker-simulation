@@ -52,6 +52,7 @@ const LABEL_STYLE: TextStyleOptions = {
 interface DemandNode {
   root: Container;
   sprite: Sprite;
+  highlight: Graphics;
   /** Random phase so map nodes do not vibrate in lockstep. */
   jitterPhase: number;
 }
@@ -107,6 +108,7 @@ export class MarketStage {
   private animations: Animation[] = [];
   private suspended = false;
   private timeFlowing = false;
+  private highlightedDemandId: string | null = null;
   private jitterClock = 0;
 
   async init(
@@ -171,6 +173,13 @@ export class MarketStage {
     this.timeFlowing = flowing;
   }
 
+  /** Draw attention to a tutorial demand without changing its hit target. */
+  setHighlightedDemand(demandId: string | null): void {
+    this.highlightedDemandId = demandId;
+    for (const [id, node] of this.demandNodes)
+      node.highlight.visible = id === demandId;
+  }
+
   private applyJitter(deltaMs: number): void {
     if (this.timeFlowing) this.jitterClock += deltaMs;
     const nodes: Array<{ root: Container; jitterPhase: number }> = [
@@ -191,6 +200,15 @@ export class MarketStage {
         Math.sin(t * 9.3 + jitterPhase) * 1.1,
         Math.cos(t * 11.7 + jitterPhase * 1.9) * 1.1,
       );
+    }
+    const pulse = (Math.sin(this.jitterClock / 260) + 1) / 2;
+    for (const [id, node] of this.demandNodes) {
+      const highlighted = id === this.highlightedDemandId;
+      node.highlight.visible = highlighted;
+      if (highlighted) {
+        node.highlight.alpha = 0.58 + pulse * 0.32;
+        node.highlight.scale.set(1 + pulse * 0.12);
+      }
     }
   }
 
@@ -315,6 +333,7 @@ export class MarketStage {
       this.demandNodes.set(demand.id, node);
       this.nodeLayer.addChild(node.root);
       node.root.position.set(this.px(demand.x), this.py(demand.y));
+      node.highlight.visible = demand.id === this.highlightedDemandId;
       this.playSpawn(node.root);
     }
 
@@ -369,6 +388,12 @@ export class MarketStage {
     root.eventMode = "static";
     root.cursor = "pointer";
 
+    const highlight = new Graphics()
+      .circle(0, 0, DEMAND_RADIUS + 7)
+      .stroke({ width: 3, color: GOLD_BRIGHT });
+    highlight.visible = demandId === this.highlightedDemandId;
+    root.addChild(highlight);
+
     const back = new Graphics()
       .circle(0, 0, DEMAND_RADIUS)
       .fill(NIGHT_SOFT)
@@ -414,7 +439,12 @@ export class MarketStage {
       };
     });
 
-    return { root, sprite, jitterPhase: Math.random() * Math.PI * 2 };
+    return {
+      root,
+      sprite,
+      highlight,
+      jitterPhase: Math.random() * Math.PI * 2,
+    };
   }
 
   private buildContractNode(contractId: string): ContractNode {

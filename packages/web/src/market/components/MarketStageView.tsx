@@ -6,6 +6,7 @@ export function MarketStageView({
   world,
   suspended,
   timeFlowing,
+  highlightedDemandId,
   onTapDemand,
   onTapContract,
   onDropDemand,
@@ -16,6 +17,8 @@ export function MarketStageView({
   suspended: boolean;
   /** True while the game clock advances; map nodes vibrate to show it. */
   timeFlowing: boolean;
+  /** Optional demand node to call out for a tutorial. */
+  highlightedDemandId: string | null;
   onTapDemand: (demandId: string) => void;
   onTapContract: (contractId: string) => void;
   onDropDemand: (demandId: string, contractId: string) => boolean;
@@ -72,6 +75,10 @@ export function MarketStageView({
   useEffect(() => {
     stageRef.current?.setTimeFlowing(timeFlowing);
   }, [timeFlowing]);
+
+  useEffect(() => {
+    stageRef.current?.setHighlightedDemand(highlightedDemandId);
+  }, [highlightedDemandId]);
 
   return (
     <div

@@ -150,6 +150,20 @@ export const ko: Messages = {
       loanDefaulted: (name, amount) =>
         `${name} 채무 불이행 · $${amount.toLocaleString()}`,
     },
+    specialEvents: {
+      tutorialTag: "특별 이벤트 · 튜토리얼",
+      firstYieldTitle: "요청이 도착했습니다",
+      firstYieldBody: (name) =>
+        `${name}이(가) 자금을 요청했습니다. 지도에서 요청을 확인하고 첫 번째 마켓 제안으로 만들어 보세요.`,
+      firstYieldInspect:
+        "강조된 수요 노드를 눌러 이 대출자가 필요한 내용을 확인하세요.",
+      firstYieldBuild:
+        "수요 화면에서 ‘맞춤 컨트랙트 작성’을 눌러 빌더를 여세요.",
+      firstYieldPost:
+        "빌더에서 대출자에게 보내는 송금, 대기, 나에게 돌아오는 송금을 연결한 뒤 마켓에 게시하세요.",
+      timePaused: "이 이벤트를 닫을 때까지 시간이 멈춥니다.",
+      closeEvent: "이벤트 닫고 계속하기",
+    },
   },
   gameApp: {
     stageSelection: "스테이지 선택",
