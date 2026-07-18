@@ -1,29 +1,28 @@
-import { humanizeValue, VARIABLE_NAME_CARDS } from "../market-recipe.ts";
-
-export function VariableNameCards({
+export function VariableNameField({
   label,
-  value: selected,
+  value,
+  placeholder,
   onChange,
 }: {
   label: string;
   value: string;
+  placeholder: string;
   onChange: (name: string) => void;
 }) {
   return (
     <div className="wide mk-variable-names">
-      <span>{label}</span>
-      <div>
-        {VARIABLE_NAME_CARDS.map((name) => (
-          <button
-            key={name}
-            type="button"
-            className={selected === name ? "selected" : ""}
-            onClick={() => onChange(name)}
-          >
-            {humanizeValue(name)}
-          </button>
-        ))}
-      </div>
+      <label>
+        <span>{label}</span>
+        <input
+          value={value}
+          placeholder={placeholder}
+          autoComplete="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          pattern="[A-Za-z_][A-Za-z0-9_]*"
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </label>
     </div>
   );
 }

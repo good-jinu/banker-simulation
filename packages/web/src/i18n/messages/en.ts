@@ -109,7 +109,8 @@ export const en = {
     conditionMerge: "Merge",
     conditionVariableLabel: "Variable name",
     conditionNeedsVariable:
-      "The condition block needs a variable name (letters and _ only).",
+      "Enter a variable name starting with a letter or _ (letters, numbers, and _ only).",
+    variableNamePlaceholder: "e.g. interest_rate",
     variableReserved: (name: string) => `"${name}" is already defined.`,
     outcomeDraft: "Draft (review myself)",
     requestEvaluationError:
@@ -139,6 +140,9 @@ export const en = {
       "Use the + control on either branch in the canvas to extend it.",
     addNodeTitle: "Add node",
     fitGraph: "Fit graph",
+    formulaPickerTitle: "Choose formula part",
+    formulaAdd: "Add formula part",
+    formulaRemove: "Remove formula part",
     valueCards: "Value cards",
     operatorCards: "Operator cards",
     numberCard: "# Number",

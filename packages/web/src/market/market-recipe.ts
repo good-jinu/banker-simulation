@@ -15,13 +15,10 @@ export type ValueRecipe =
       right: ValueRecipe;
     };
 
-/** Names are chosen as cards, never typed. */
-export const VARIABLE_NAME_CARDS = [
-  "rate",
-  "margin",
-  "reserve",
-  "limit",
-] as const;
+/** Player-created values use identifier-safe names so they remain selectable. */
+export function isVariableName(name: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+}
 
 export const value = (name: string): ValueRecipe => ({
   kind: "value",

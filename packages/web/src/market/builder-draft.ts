@@ -2,10 +2,10 @@ import type { Messages } from "../i18n/messages/index.ts";
 import {
   constant,
   humanizeValue,
+  isVariableName,
   operation,
   recipeLabel,
   value,
-  VARIABLE_NAME_CARDS,
   type ValueRecipe,
 } from "./market-recipe.ts";
 import {
@@ -145,12 +145,7 @@ export function validateDraft(
         if (issue) return m.builder.nodeIssue(m.nodes.wait.title, issue);
       } else if (node.kind === "variable") {
         const name = node.variableName ?? "";
-        if (
-          !VARIABLE_NAME_CARDS.includes(
-            name as (typeof VARIABLE_NAME_CARDS)[number],
-          )
-        )
-          return t.conditionNeedsVariable;
+        if (!isVariableName(name)) return t.conditionNeedsVariable;
         if (names.includes(name)) return t.variableReserved(name);
         const issue = validateRecipe(node.amount, names);
         if (issue) return m.builder.nodeIssue(m.nodes.variable.title, issue);
@@ -220,8 +215,13 @@ export function findBuilderNodeContext(
       const elseMatch = findBuilderNodeContext(node.elseSteps ?? [], id, names);
       if (elseMatch) return elseMatch;
     }
-    if (node.kind === "variable" && node.variableName)
-      names.push(node.variableName);
+    const variableName = node.variableName;
+    if (
+      node.kind === "variable" &&
+      variableName &&
+      isVariableName(variableName)
+    )
+      names.push(variableName);
   }
   return null;
 }
@@ -238,7 +238,7 @@ export function makeNode(kind: BuilderAddableNode): MarketBuilderNode {
   const id = `${kind}-${Date.now().toString(36)}-${nodeSerial.toString(36)}`;
   if (kind === "wait") return { id, kind, days: value("days") };
   if (kind === "variable")
-    return { id, kind, variableName: "rate", amount: constant(1.05) };
+    return { id, kind, variableName: "", amount: constant(1.05) };
   if (kind === "condition")
     return {
       id,

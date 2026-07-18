@@ -7,6 +7,7 @@ import {
   type FederatedPointerEvent,
 } from "pixi.js";
 import { BUILDER_VARIABLES, type MarketBuilderNode } from "../market-world.ts";
+import { isVariableName } from "../market-recipe.ts";
 
 export type BuilderBranch = "thenSteps" | "elseSteps";
 
@@ -76,9 +77,10 @@ interface PathOwner {
   branch: BuilderBranch | null;
 }
 
+// The 44px add control needs breathing room between adjacent node cards.
 const ROW_GAP = 72;
-const START_ROW_GAP = 48;
-const BRANCH_GAP = 96;
+const START_ROW_GAP = 72;
+const BRANCH_GAP = 72;
 const GRID = 28;
 
 const COLOR = {
@@ -95,15 +97,15 @@ function nodeSize(node: MarketBuilderNode): { width: number; height: number } {
     case "start":
       return { width: 180, height: 96 };
     case "transfer":
-      return { width: 440, height: 410 };
+      return { width: 320, height: 190 };
     case "wait":
-      return { width: 400, height: 320 };
+      return { width: 300, height: 150 };
     case "variable":
-      return { width: 440, height: 380 };
+      return { width: 300, height: 200 };
     case "condition":
-      return { width: 520, height: 410 };
+      return { width: 480, height: 175 };
     case "decision":
-      return { width: 300, height: 180 };
+      return { width: 280, height: 140 };
     case "end":
       return { width: 180, height: 96 };
   }
@@ -160,6 +162,11 @@ class BuilderCanvasScene {
   private highlightAddControls = false;
   private pointerStart: Point | null = null;
   private worldStart: Point | null = null;
+  private readonly activePointers = new Map<number, Point>();
+  private pinchStartDistance = 0;
+  private pinchStartScale = 1;
+  private pinchStartWorld: Point | null = null;
+  private pinchStartCenter: Point | null = null;
   private moved = false;
   private bounds: Bounds = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
   private cards: CardLayout[] = [];
@@ -184,10 +191,10 @@ class BuilderCanvasScene {
     this.world.addChild(this.scopes, this.edges, this.controls);
     this.app.stage.eventMode = "static";
     this.app.stage.hitArea = this.app.screen;
-    this.app.stage.on("pointerdown", (event) => this.beginPan(event));
-    this.app.stage.on("pointermove", (event) => this.pan(event));
-    this.app.stage.on("pointerup", () => this.endPan());
-    this.app.stage.on("pointerupoutside", () => this.endPan());
+    this.app.stage.on("pointerdown", (event) => this.beginGesture(event));
+    this.app.stage.on("pointermove", (event) => this.updateGesture(event));
+    this.app.stage.on("pointerup", (event) => this.endGesture(event));
+    this.app.stage.on("pointerupoutside", (event) => this.endGesture(event));
     host.addEventListener("wheel", this.onWheel, { passive: false });
     this.app.renderer.on("resize", () => {
       this.app.stage.hitArea = this.app.screen;
@@ -263,10 +270,30 @@ class BuilderCanvasScene {
     this.reportLayout();
   };
 
-  private beginPan(event: FederatedPointerEvent): void {
-    this.pointerStart = { x: event.global.x, y: event.global.y };
-    this.worldStart = { x: this.world.x, y: this.world.y };
+  private beginGesture(event: FederatedPointerEvent): void {
+    this.activePointers.set(event.pointerId, {
+      x: event.global.x,
+      y: event.global.y,
+    });
     this.moved = false;
+    if (this.activePointers.size === 1) {
+      this.pointerStart = { x: event.global.x, y: event.global.y };
+      this.worldStart = { x: this.world.x, y: this.world.y };
+      return;
+    }
+    if (this.activePointers.size === 2) this.beginPinch();
+  }
+
+  private updateGesture(event: FederatedPointerEvent): void {
+    const pointer = this.activePointers.get(event.pointerId);
+    if (!pointer) return;
+    pointer.x = event.global.x;
+    pointer.y = event.global.y;
+    if (this.activePointers.size >= 2) {
+      this.updatePinch();
+      return;
+    }
+    this.pan(event);
   }
 
   private pan(event: FederatedPointerEvent): void {
@@ -279,9 +306,74 @@ class BuilderCanvasScene {
     this.reportLayout();
   }
 
-  private endPan(): void {
-    this.pointerStart = null;
-    this.worldStart = null;
+  private endGesture(event: FederatedPointerEvent): void {
+    this.activePointers.delete(event.pointerId);
+    if (this.activePointers.size === 1) {
+      const remaining = this.activePointers.values().next().value as
+        Point | undefined;
+      if (remaining) {
+        this.pointerStart = { ...remaining };
+        this.worldStart = { x: this.world.x, y: this.world.y };
+      }
+    } else if (this.activePointers.size === 0) {
+      this.pointerStart = null;
+      this.worldStart = null;
+      this.pinchStartWorld = null;
+      this.pinchStartCenter = null;
+    }
+  }
+
+  private beginPinch(): void {
+    const [first, second] = [...this.activePointers.values()];
+    if (!first || !second) return;
+    this.pinchStartDistance = Math.max(
+      1,
+      Math.hypot(second.x - first.x, second.y - first.y),
+    );
+    this.pinchStartScale = this.world.scale.x;
+    this.pinchStartWorld = { x: this.world.x, y: this.world.y };
+    this.pinchStartCenter = {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+    };
+    this.moved = true;
+  }
+
+  private updatePinch(): void {
+    const [first, second] = [...this.activePointers.values()];
+    if (
+      !first ||
+      !second ||
+      !this.pinchStartWorld ||
+      !this.pinchStartCenter ||
+      this.pinchStartDistance <= 0
+    )
+      return;
+    const distance = Math.max(
+      1,
+      Math.hypot(second.x - first.x, second.y - first.y),
+    );
+    const center = {
+      x: (first.x + second.x) / 2,
+      y: (first.y + second.y) / 2,
+    };
+    const nextScale = Math.max(
+      0.14,
+      Math.min(
+        1.8,
+        (this.pinchStartScale * distance) / this.pinchStartDistance,
+      ),
+    );
+    const localX =
+      (this.pinchStartCenter.x - this.pinchStartWorld.x) / this.pinchStartScale;
+    const localY =
+      (this.pinchStartCenter.y - this.pinchStartWorld.y) / this.pinchStartScale;
+    this.world.scale.set(nextScale);
+    this.world.position.set(
+      center.x - localX * nextScale,
+      center.y - localY * nextScale,
+    );
+    this.reportLayout();
   }
 
   private drawGrid(): void {
@@ -354,8 +446,13 @@ class BuilderCanvasScene {
       const rowGap = rowGapAfter(node);
       const namesAtNode = [...names];
       this.addCard(node, centerX, y, namesAtNode);
-      if (node.kind === "variable" && node.variableName)
-        names.push(node.variableName);
+      const variableName = node.variableName;
+      if (
+        node.kind === "variable" &&
+        variableName &&
+        isVariableName(variableName)
+      )
+        names.push(variableName);
       const remainder = path.slice(index + 1);
       if (node.kind === "condition") {
         const thenPath = visibleNodes(node.thenSteps ?? []);
@@ -455,7 +552,7 @@ class BuilderCanvasScene {
           { x: centerX, y: y + size.height / 2 },
           { x: centerX, y: nextY - nextSize!.height / 2 },
         );
-        this.addPlus(centerX, (y + nextY) / 2, {
+        this.addPlus(centerX, y + size.height / 2 + rowGap / 2, {
           ...owner,
           index: index + 1,
           terminal: false,
@@ -584,7 +681,8 @@ class BuilderCanvasScene {
       Math.round(transform.y),
       Math.round(transform.scale * 1000),
       ...this.cards.map(
-        (card) => `${card.node.id}:${Math.round(card.x)}:${Math.round(card.y)}`,
+        (card) =>
+          `${card.node.id}:${Math.round(card.x)}:${Math.round(card.y)}:${JSON.stringify(card.node)}:${card.names.join(",")}`,
       ),
     ].join("|");
     if (key === this.lastLayoutKey) return;
@@ -628,7 +726,7 @@ export function MarketBuilderCanvas(props: Props) {
         ref={hostRef}
         className="mk-builder-canvas"
         role="application"
-        aria-label="Contract graph. Drag the background to pan and use the mouse wheel to zoom."
+        aria-label="Contract graph. Drag the background to pan, use the mouse wheel or pinch to zoom."
       />
       <div
         className="mk-builder-form-layer"

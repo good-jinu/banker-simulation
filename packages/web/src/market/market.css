@@ -1069,9 +1069,9 @@
   margin: 12px;
 }
 
-/* Tap-only value recipes. A selected card is the next operand slot. */
+/* A formula stays compact until its selected part opens the picker. */
 .mk-recipe-label,
-.mk-variable-names > span {
+.mk-variable-names label > span {
   display: block;
   margin-bottom: 6px;
   color: #8291a6;
@@ -1084,7 +1084,10 @@
 .mk-recipe-slot,
 .mk-recipe-operator {
   min-height: 31px;
-  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 7px 5px 9px;
   color: #f4e7c0;
   border: 1px solid rgba(141, 168, 202, 0.4);
   border-radius: 8px;
@@ -1102,13 +1105,17 @@
   box-shadow: 0 0 0 2px rgba(240, 207, 130, 0.25);
 }
 
-.mk-recipe-operation {
-  display: inline-flex;
+.mk-recipe-expression {
+  width: 100%;
+  min-width: 0;
+  display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 4px;
-  padding: 4px;
-  border: 1px dashed rgba(214, 170, 82, 0.34);
-  border-radius: 10px;
+  overflow-x: auto;
+  padding-bottom: 3px;
+  overscroll-behavior-x: contain;
+  scrollbar-color: rgba(126, 157, 187, 0.56) transparent;
 }
 
 .mk-recipe-operator {
@@ -1119,22 +1126,42 @@
   background: rgba(214, 170, 82, 0.12);
 }
 
-.mk-recipe-tray {
-  margin-top: 8px;
+.mk-recipe-caret {
+  color: #93a8c0;
+  font-size: 0.58rem;
+  line-height: 1;
 }
 
-.mk-recipe-tray small {
-  display: block;
-  margin: 7px 0 4px;
-  color: #6f829b;
-  font-size: 0.54rem;
+.mk-recipe-slot.selected .mk-recipe-caret,
+.mk-recipe-operator.selected .mk-recipe-caret {
+  color: #423311;
+}
+
+.mk-recipe-expand {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.mk-recipe-expand {
+  flex: 0 0 31px;
+  width: 31px;
+  height: 31px;
+  color: #f0cf82;
+  border: 1px dashed rgba(240, 207, 130, 0.64);
+  border-radius: 8px;
+  background: rgba(214, 170, 82, 0.11);
+  font-size: 1rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-.mk-recipe-tray > div,
-.mk-variable-names > div,
+.mk-recipe-expand:hover {
+  color: #fff1c9;
+  border-style: solid;
+  background: rgba(214, 170, 82, 0.24);
+}
+
 .mk-comparator-cards,
 .mk-transfer-toggle,
 .mk-branch-add {
@@ -1143,8 +1170,11 @@
   gap: 5px;
 }
 
-.mk-recipe-tray button,
-.mk-variable-names button,
+.mk-variable-names label {
+  display: block;
+}
+
+.mk-variable-names input,
 .mk-comparator-cards button,
 .mk-transfer-toggle button,
 .mk-branch-add button {
@@ -1159,10 +1189,116 @@
   cursor: pointer;
 }
 
-.mk-recipe-tray .mk-number-card {
+.mk-variable-names input {
+  width: 100%;
+}
+
+.mk-formula-picker {
+  position: fixed;
+  z-index: 90;
+  width: min(260px, calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: 9px;
+  color: #e7edf5;
+  border: 1px solid rgba(240, 207, 130, 0.68);
+  border-radius: 10px;
+  background: #0b1e38;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.5);
+}
+
+.mk-formula-picker header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.mk-formula-picker-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.mk-formula-picker header strong,
+.mk-formula-picker section > small {
+  color: #aebed0;
+  font-size: 0.56rem;
+  font-weight: 900;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mk-formula-picker header button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #b8c6d8;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mk-formula-picker header button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mk-formula-picker header .mk-formula-picker-remove {
+  color: #e48c8d;
+}
+
+.mk-formula-picker header .mk-formula-picker-remove:hover {
+  color: #fff0ef;
+  background: rgba(151, 51, 61, 0.46);
+}
+
+.mk-formula-picker section + section {
+  margin-top: 8px;
+}
+
+.mk-formula-picker section > small {
+  display: block;
+  margin-bottom: 4px;
+  color: #7187a2;
+  font-size: 0.5rem;
+}
+
+.mk-formula-picker-values,
+.mk-formula-picker-operators {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.mk-formula-picker button:not(header button) {
+  min-height: 29px;
+  padding: 4px 7px;
+  color: #d7e1ee;
+  border: 1px solid rgba(120, 146, 180, 0.34);
+  border-radius: 6px;
+  background: #102640;
+  font-size: 0.58rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mk-formula-picker button:not(header button):hover {
+  border-color: rgba(240, 207, 130, 0.72);
+  background: #173657;
+}
+
+.mk-formula-picker .mk-formula-picker-number {
   color: #f0cf82;
   border-color: rgba(240, 207, 130, 0.52);
   background: rgba(214, 170, 82, 0.14);
+}
+
+.mk-formula-picker-operators button {
+  color: #f0cf82 !important;
+  font-size: 0.9rem !important;
 }
 
 .mk-keypad {
@@ -1602,11 +1738,6 @@
 
 .mk-canvas-node-card .cs-parameter-grid {
   padding-bottom: 2px;
-}
-
-.mk-canvas-node-card .mk-recipe-tray {
-  max-height: 164px;
-  overflow-y: auto;
 }
 
 .mk-canvas-node-card .mk-keypad {

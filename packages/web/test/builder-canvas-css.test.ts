@@ -10,6 +10,10 @@ const styles = readFileSync(
   new URL("../src/market/market.css", import.meta.url),
   "utf8",
 );
+const recipeFieldSource = readFileSync(
+  new URL("../src/market/components/RecipeField.tsx", import.meta.url),
+  "utf8",
+);
 
 function cssRule(selector: string): string {
   const start = styles.indexOf(`${selector} {`);
@@ -43,4 +47,26 @@ test("condition scopes retain nested scope bounds", () => {
   assert.match(canvasSource, /const nestedScopes = this\.scopeBounds\.slice/);
   assert.match(canvasSource, /\.\.\.nestedScopes\.map\(\(scope\) => scope\.minX\)/);
   assert.match(canvasSource, /\.\.\.nestedScopes\.map\(\(scope\) => scope\.maxY\)/);
+});
+
+test("node edits refresh the overlaid form card content", () => {
+  assert.match(canvasSource, /JSON\.stringify\(card\.node\)/);
+  assert.match(canvasSource, /card\.names\.join\(","\)/);
+});
+
+test("add controls are centered in the space between node edges", () => {
+  assert.match(
+    canvasSource,
+    /this\.addPlus\(centerX, y \+ size\.height \/ 2 \+ rowGap \/ 2,/,
+  );
+});
+
+test("formula parts append horizontally and remove from their picker", () => {
+  const expression = cssRule(".mk-recipe-expression");
+  assert.match(expression, /flex-wrap:\s*nowrap;/);
+  assert.match(expression, /overflow-x:\s*auto;/);
+  assert.match(recipeFieldSource, /className="mk-recipe-expand"/);
+  assert.match(recipeFieldSource, /className="mk-formula-picker-remove"/);
+  assert.doesNotMatch(recipeFieldSource, /className="mk-recipe-remove"/);
+  assert.match(recipeFieldSource, /onChange\(operation\("add", recipe, constant\(1\)\)\)/);
 });

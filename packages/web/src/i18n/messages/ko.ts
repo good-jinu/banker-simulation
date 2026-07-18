@@ -105,7 +105,8 @@ export const ko: Messages = {
     conditionMerge: "합류",
     conditionVariableLabel: "변수 이름",
     conditionNeedsVariable:
-      "조건 블록에는 변수 이름이 필요합니다(영문과 _만 사용).",
+      "변수 이름은 영문 또는 _로 시작하고 영문·숫자·_만 사용할 수 있습니다.",
+    variableNamePlaceholder: "예: interest_rate",
     variableReserved: (name) => `"${name}"은(는) 이미 정의된 이름입니다.`,
     outcomeDraft: "보류(직접 검토)",
     requestEvaluationError:
@@ -136,6 +137,9 @@ export const ko: Messages = {
       "캔버스에서 각 분기의 + 버튼을 눌러 경로를 확장하세요.",
     addNodeTitle: "노드 추가",
     fitGraph: "그래프 맞춤",
+    formulaPickerTitle: "수식 요소 선택",
+    formulaAdd: "수식 요소 추가",
+    formulaRemove: "수식 요소 제거",
     valueCards: "값 카드",
     operatorCards: "연산 카드",
     numberCard: "# 숫자",

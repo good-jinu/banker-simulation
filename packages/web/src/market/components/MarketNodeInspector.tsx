@@ -9,7 +9,7 @@ import type {
   MarketBuilderNode,
 } from "../market-world.ts";
 import { RecipeField } from "./RecipeField.tsx";
-import { VariableNameCards } from "./VariableNameCards.tsx";
+import { VariableNameField } from "./VariableNameCards.tsx";
 
 export function MarketNodeInspector({
   node,
@@ -99,9 +99,10 @@ export function MarketNodeInspector({
       )}
       {node.kind === "variable" && (
         <div className="cs-parameter-grid">
-          <VariableNameCards
+          <VariableNameField
             label={t.conditionVariableLabel}
-            value={node.variableName ?? "rate"}
+            value={node.variableName ?? ""}
+            placeholder={t.variableNamePlaceholder}
             onChange={(variableName) => onUpdate(node.id, { variableName })}
           />
           <RecipeField
