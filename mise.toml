@@ -2,3 +2,14 @@
 node = "24.16.0"
 pnpm = "11.2.2"
 
+[tasks."pre-commit"]
+description = "Execute before commit"
+run = """
+pnpm check
+"""
+
+[hooks]
+postinstall = """
+pnpm install
+mise generate git-pre-commit --write --task=pre-commit
+"""
