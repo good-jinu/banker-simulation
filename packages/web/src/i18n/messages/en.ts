@@ -89,6 +89,7 @@ export const en = {
     conditionIf: "If",
     conditionThen: "Then",
     conditionElse: "Else",
+    conditionMerge: "Merge",
     conditionVariableLabel: "Variable name",
     conditionNeedsVariable:
       "The condition block needs a variable name (letters and _ only).",

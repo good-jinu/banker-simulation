@@ -14,7 +14,6 @@ import {
 import { humanizeValue, recipeLabel } from "../market-recipe.ts";
 import {
   evaluateTermsWithVariables,
-  type DecisionOutcome,
   type MarketBuilderNode,
 } from "../market-world.ts";
 import {
@@ -141,8 +140,7 @@ export function MarketBuilder({
     else deleteNode(node.id);
   }
 
-  function outcomeName(outcome: DecisionOutcome | undefined): string {
-    if (outcome === "accept") return t.accept;
+  function outcomeName(outcome: MarketBuilderNode["outcome"]): string {
     if (outcome === "reject") return t.reject;
     return t.outcomeDraft;
   }
@@ -155,8 +153,7 @@ export function MarketBuilder({
       return `${humanizeValue(node.variableName ?? "rate")} = ${recipeLabel(node.amount)}`;
     if (node.kind === "condition")
       return `if ${recipeLabel(node.left)} ${node.comparator ?? ">"} ${recipeLabel(node.right)}`;
-    if (node.kind === "decision")
-      return `if ${recipeLabel(node.left)} ${node.comparator ?? ">"} ${recipeLabel(node.right)} → ${outcomeName(node.thenOutcome)} / ${outcomeName(node.elseOutcome)}`;
+    if (node.kind === "decision") return outcomeName(node.outcome);
     return `${partyName(node.senderId)} → ${partyName(node.recipientId)} · ${recipeLabel(node.amount)}`;
   }
 
@@ -191,6 +188,7 @@ export function MarketBuilder({
             end: m.nodes.end.title,
             true: t.conditionThen,
             false: t.conditionElse,
+            merge: t.conditionMerge,
             fit: t.fitGraph,
           }}
           nodeLabel={nodeLabel}

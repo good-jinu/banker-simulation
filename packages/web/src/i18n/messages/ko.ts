@@ -42,7 +42,7 @@ export const ko: Messages = {
     transfer: { title: "송금" },
     wait: { title: "대기" },
     condition: { title: "조건" },
-    decision: { title: "자동 심사" },
+    decision: { title: "결정" },
     variable: { title: "변수 설정" },
     end: { title: "종료" },
   },
@@ -85,6 +85,7 @@ export const ko: Messages = {
     conditionIf: "만약",
     conditionThen: "그러면",
     conditionElse: "아니면",
+    conditionMerge: "합류",
     conditionVariableLabel: "변수 이름",
     conditionNeedsVariable:
       "조건 블록에는 변수 이름이 필요합니다(영문과 _만 사용).",

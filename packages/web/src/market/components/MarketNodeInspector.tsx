@@ -111,7 +111,7 @@ export function MarketNodeInspector({
           />
         </div>
       )}
-      {(node.kind === "condition" || node.kind === "decision") && (
+      {node.kind === "condition" && (
         <div className="cs-parameter-grid">
           <div className="mk-condition-row wide">
             <RecipeField
@@ -147,43 +147,25 @@ export function MarketNodeInspector({
               onChange={(right) => onUpdate(node.id, { right })}
             />
           </div>
-          {node.kind === "condition" && (
-            <p className="mk-decision-help wide">{t.conditionCanvasHelp}</p>
-          )}
-          {node.kind === "decision" && (
-            <>
-              <label>
-                <span>{t.conditionThen}</span>
-                <select
-                  value={node.thenOutcome ?? "draft"}
-                  onChange={(event) =>
-                    onUpdate(node.id, {
-                      thenOutcome: event.target.value as DecisionOutcome,
-                    })
-                  }
-                >
-                  <option value="accept">{t.accept}</option>
-                  <option value="reject">{t.reject}</option>
-                  <option value="draft">{t.outcomeDraft}</option>
-                </select>
-              </label>
-              <label>
-                <span>{t.conditionElse}</span>
-                <select
-                  value={node.elseOutcome ?? "draft"}
-                  onChange={(event) =>
-                    onUpdate(node.id, {
-                      elseOutcome: event.target.value as DecisionOutcome,
-                    })
-                  }
-                >
-                  <option value="accept">{t.accept}</option>
-                  <option value="reject">{t.reject}</option>
-                  <option value="draft">{t.outcomeDraft}</option>
-                </select>
-              </label>
-            </>
-          )}
+          <p className="mk-decision-help wide">{t.conditionCanvasHelp}</p>
+        </div>
+      )}
+      {node.kind === "decision" && (
+        <div className="cs-parameter-grid">
+          <label>
+            <span>{m.nodes.decision.title}</span>
+            <select
+              value={node.outcome ?? "draft"}
+              onChange={(event) =>
+                onUpdate(node.id, {
+                  outcome: event.target.value as DecisionOutcome,
+                })
+              }
+            >
+              <option value="draft">{t.outcomeDraft}</option>
+              <option value="reject">{t.reject}</option>
+            </select>
+          </label>
         </div>
       )}
     </aside>

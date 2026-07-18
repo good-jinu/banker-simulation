@@ -77,10 +77,10 @@ export interface ContractOffer {
 export type ComparatorOp = ">" | ">=" | "<" | "<=" | "==";
 
 /**
- * What happens to a requester the moment they apply: sign the loan, turn
- * them away, or leave them in the request list for manual review.
+ * What happens when a decision gate is reached: turn the requester away or
+ * leave them in the request list for the banker to review.
  */
-export type DecisionOutcome = "accept" | "reject" | "draft";
+export type DecisionOutcome = "reject" | "draft";
 
 export interface MarketBuilderNode {
   id: string;
@@ -97,7 +97,7 @@ export interface MarketBuilderNode {
   /** A recipe assembled from value and operator cards. */
   amount?: ValueRecipe;
   days?: ValueRecipe;
-  /** Condition/decision test. */
+  /** Condition test. */
   left?: ValueRecipe;
   comparator?: ComparatorOp;
   right?: ValueRecipe;
@@ -106,9 +106,8 @@ export interface MarketBuilderNode {
   /** Conditions own two real, path-scoped execution lanes. */
   thenSteps?: MarketBuilderNode[];
   elseSteps?: MarketBuilderNode[];
-  /** Decision only: branch outcomes for the requester. */
-  thenOutcome?: DecisionOutcome;
-  elseOutcome?: DecisionOutcome;
+  /** Decision only: reject immediately, or draft for the banker's approval. */
+  outcome?: DecisionOutcome;
 }
 
 /** Requester facts every contract formula can reference. */
@@ -293,10 +292,10 @@ export function requesterStateSatisfiesDemand(
 }
 
 /**
- * Run the stack's decision nodes for a requester. Conditions route through
- * their selected lane and variable values remain local to that lane; the first
- * decision branch that is not "draft" settles the requester, and a stack
- * with no deciding node leaves them for manual review.
+ * Run the stack's decision gates for a requester. Conditions route through
+ * their selected lane and then merge back into the following contract flow.
+ * A draft gate pauses the flow for manual approval; accepting the resulting
+ * request later starts the complete contract, including its merged steps.
  */
 export function decideRequestOutcome(
   nodes: readonly MarketBuilderNode[],
@@ -307,7 +306,7 @@ export function decideRequestOutcome(
     const decidePath = (
       path: readonly MarketBuilderNode[],
       scope: Record<string, number>,
-    ): DecisionOutcome => {
+    ): DecisionOutcome | null => {
       for (const node of path) {
         if (node.kind === "variable") {
           if (!node.variableName) throw new Error("Choose a variable name.");
@@ -315,24 +314,19 @@ export function decideRequestOutcome(
           continue;
         }
         if (node.kind !== "condition" && node.kind !== "decision") continue;
+        if (node.kind === "decision") return node.outcome ?? "draft";
         const left = evaluateRecipe(node.left, scope);
         const right = evaluateRecipe(node.right, scope);
         const holds = compareValues(left, node.comparator ?? ">", right);
-        if (node.kind === "condition") {
-          const outcome = decidePath(
-            holds ? (node.thenSteps ?? []) : (node.elseSteps ?? []),
-            { ...scope },
-          );
-          if (outcome !== "draft") return outcome;
-          continue;
-        }
-        const outcome =
-          (holds ? node.thenOutcome : node.elseOutcome) ?? "draft";
-        if (outcome !== "draft") return outcome;
+        const outcome = decidePath(
+          holds ? (node.thenSteps ?? []) : (node.elseSteps ?? []),
+          { ...scope },
+        );
+        if (outcome) return outcome;
       }
-      return "draft";
+      return null;
     };
-    return decidePath(nodes, demandVariables(demand, availableCash));
+    return decidePath(nodes, demandVariables(demand, availableCash)) ?? "draft";
   } catch {
     return "draft";
   }
@@ -898,10 +892,8 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
         : demand,
     );
 
-  // 4. Open demands discover fitting contracts and apply.  The contract's
-  //    decision nodes settle each applicant on the spot: auto-accepted
-  //    loans sign immediately, auto-rejected people return to browsing,
-  //    and drafts wait in the request list for the banker.
+  // 4. Open demands discover fitting contracts and apply. Decision gates can
+  //    reject immediately; every other request is drafted for banker approval.
   let nextId = world.nextId;
   demands = demands.map((demand) => {
     if (demand.status !== "open") return demand;
@@ -915,50 +907,29 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     if (!request) return demand;
     nextId += 1;
 
-    let outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
-    if (outcome === "accept" && cash < request.principal) outcome = "draft";
+    const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
     if (outcome === "reject")
       return {
         ...demand,
         rejectedContractIds: [...demand.rejectedContractIds, contract.id],
       };
 
-    const settled = outcome === "accept";
-    const entry: ContractRequest = settled
-      ? { ...request, status: "accepted" }
-      : request;
     contracts = contracts.map((candidate) =>
       candidate.id === contract.id
-        ? { ...candidate, requests: [...candidate.requests, entry] }
+        ? { ...candidate, requests: [...candidate.requests, request] }
         : candidate,
     );
     log = pushEvent(
       log,
       {
         day,
-        kind: settled ? "loan-signed" : "request-filed",
+        kind: "request-filed",
         actorName: demand.actor.name,
         amount: request.principal,
       },
       `event-${request.id}`,
     );
-    if (!settled) return { ...demand, status: "requesting" as const };
-    cash -= request.principal;
-    loans = [
-      ...loans,
-      {
-        id: `loan-${request.id}`,
-        contractId: contract.id,
-        actor: request.actor,
-        principal: request.principal,
-        repayment: request.repayment,
-        signedDay: day,
-        dueDay: day + request.termDays,
-        defaultChanceBp: loanDefaultChanceBp(request.actor, request.repayment),
-        status: "active" as const,
-      },
-    ];
-    return { ...demand, status: "served" as const };
+    return { ...demand, status: "requesting" as const };
   });
 
   // 5. Pending requests whose demand expired never resolve, so they are
@@ -1112,9 +1083,9 @@ export function withdrawContract(
 
 /**
  * File a request on behalf of a demand the player dragged onto a contract.
- * The contract's decision nodes run exactly as they do for automatic
- * applicants: accept signs the loan, reject turns the person away (they
- * will not ask this contract again), draft waits in the request list.
+ * The contract's decision gates run exactly as they do for automatic
+ * applicants: reject turns the person away (they will not ask this contract
+ * again), while draft waits in the request list for the banker to accept.
  * No-op unless the demand is open and the contract fits its need — the
  * caller checks fit first to drive the reject animation.
  */
@@ -1138,8 +1109,11 @@ export function fileRequest(
   );
   if (!request) return world;
 
-  let outcome = decideRequestOutcome(contract.builderNodes, demand, world.cash);
-  if (outcome === "accept" && world.cash < request.principal) outcome = "draft";
+  const outcome = decideRequestOutcome(
+    contract.builderNodes,
+    demand,
+    world.cash,
+  );
   if (outcome === "reject")
     return {
       ...world,
@@ -1157,44 +1131,21 @@ export function fileRequest(
       ),
     };
 
-  const settled = outcome === "accept";
-  const entry: ContractRequest = settled
-    ? { ...request, status: "accepted" }
-    : request;
-  const loans = settled
-    ? [
-        ...world.loans,
-        {
-          id: `loan-${request.id}`,
-          contractId,
-          actor: request.actor,
-          principal: request.principal,
-          repayment: request.repayment,
-          signedDay: world.day,
-          dueDay: world.day + request.termDays,
-          defaultChanceBp: loanDefaultChanceBp(
-            request.actor,
-            request.repayment,
-          ),
-          status: "active" as const,
-        },
-      ]
-    : world.loans;
   return {
     ...world,
     nextId: world.nextId + 1,
-    cash: settled ? world.cash - request.principal : world.cash,
-    loans,
+    cash: world.cash,
+    loans: world.loans,
     contracts: world.contracts.map((candidate) =>
       candidate.id === contractId
-        ? { ...candidate, requests: [...candidate.requests, entry] }
+        ? { ...candidate, requests: [...candidate.requests, request] }
         : candidate,
     ),
     demands: world.demands.map((candidate) =>
       candidate.id === demandId
         ? {
             ...candidate,
-            status: settled ? ("served" as const) : ("requesting" as const),
+            status: "requesting" as const,
           }
         : candidate,
     ),
@@ -1202,7 +1153,7 @@ export function fileRequest(
       world.log,
       {
         day: world.day,
-        kind: settled ? "loan-signed" : "request-filed",
+        kind: "request-filed",
         actorName: demand.actor.name,
         amount: request.principal,
       },

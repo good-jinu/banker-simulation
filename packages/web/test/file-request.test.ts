@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { constant, operation, value } from "../src/market/market-recipe.ts";
 import {
+  acceptRequest,
+  decideRequestOutcome,
   fileRequest,
   type ContractOffer,
   type Demand,
@@ -12,7 +14,6 @@ import {
 
 // Spec for what a demand-onto-contract drop MEANS (`fileRequest` is the
 // handler behind the stage's `onDropDemand` callback):
-//   accept → loan signed, cash leaves, demand served
 //   draft  → request waits pending, nothing moves yet
 //   reject → demand returns to the map and never asks this contract again
 //   no-op  → unknown ids, non-open demands, and unfit contracts change nothing
@@ -44,10 +45,16 @@ function makeDemand(overrides: Partial<Demand> = {}): Demand {
   };
 }
 
-/** Fund `amount` on day 0, wait `days`, collect 1.5×, then decide. */
+/** A gate can draft/reject before the shared lending flow that follows it. */
 function lendingNodes(decide: DecisionOutcome | null): MarketBuilderNode[] {
-  const nodes: MarketBuilderNode[] = [
-    { id: "start", kind: "start" },
+  const nodes: MarketBuilderNode[] = [{ id: "start", kind: "start" }];
+  if (decide)
+    nodes.push({
+      id: "decide",
+      kind: "decision",
+      outcome: decide,
+    });
+  nodes.push(
     {
       id: "fund",
       kind: "transfer",
@@ -63,17 +70,7 @@ function lendingNodes(decide: DecisionOutcome | null): MarketBuilderNode[] {
       recipientId: "player",
       amount: operation("multiply", value("amount"), constant(1.5)),
     },
-  ];
-  if (decide)
-    nodes.push({
-      id: "decide",
-      kind: "decision",
-      left: constant(1),
-      comparator: ">",
-      right: constant(0),
-      thenOutcome: decide,
-      elseOutcome: decide,
-    });
+  );
   return nodes;
 }
 
@@ -101,15 +98,22 @@ function makeWorld(overrides: Partial<MarketWorld> = {}): MarketWorld {
     cash: 1_000,
     nextId: 1,
     demands: [makeDemand()],
-    contracts: [makeContract("accept")],
+    contracts: [makeContract("draft")],
     loans: [],
     log: [],
     ...overrides,
   };
 }
 
-test("accepting drop signs the loan, pays out cash, and serves the demand", () => {
-  const next = fileRequest(makeWorld(), "demand-1", "contract-1");
+test("accepting a drafted request signs the loan and continues the contract", () => {
+  const filed = fileRequest(makeWorld(), "demand-1", "contract-1");
+  const result = acceptRequest(
+    filed,
+    "contract-1",
+    filed.contracts[0]!.requests[0]!.id,
+  );
+  assert.equal(result.failure, null);
+  const next = result.world;
 
   assert.equal(next.cash, 900);
   assert.equal(next.loans.length, 1);
@@ -133,6 +137,32 @@ test("drop on a contract with no decision node files a pending request", () => {
   assert.equal(next.log.at(-1)?.kind, "request-filed");
 });
 
+test("a condition branch merges into the decision that follows it", () => {
+  const nodes: MarketBuilderNode[] = [
+    { id: "start", kind: "start" },
+    {
+      id: "condition",
+      kind: "condition",
+      left: value("income"),
+      comparator: ">",
+      right: constant(1_000),
+      thenSteps: [{ id: "reject", kind: "decision", outcome: "reject" }],
+      elseSteps: [],
+    },
+    { id: "draft", kind: "decision", outcome: "draft" },
+  ];
+
+  assert.equal(decideRequestOutcome(nodes, makeDemand(), 1_000), "draft");
+  assert.equal(
+    decideRequestOutcome(
+      nodes,
+      makeDemand({ actor: { ...makeDemand().actor, monthlyIncome: 2_000 } }),
+      1_000,
+    ),
+    "reject",
+  );
+});
+
 test("rejecting drop keeps the demand open and bans this contract for it", () => {
   const world = makeWorld({ contracts: [makeContract("reject")] });
   const next = fileRequest(world, "demand-1", "contract-1");
@@ -146,8 +176,15 @@ test("rejecting drop keeps the demand open and bans this contract for it", () =>
   assert.equal(fileRequest(next, "demand-1", "contract-1"), next);
 });
 
-test("accept downgrades to a pending request when cash cannot cover it", () => {
-  const next = fileRequest(makeWorld({ cash: 30 }), "demand-1", "contract-1");
+test("accepting a drafted request fails when cash cannot cover it", () => {
+  const filed = fileRequest(makeWorld({ cash: 30 }), "demand-1", "contract-1");
+  const result = acceptRequest(
+    filed,
+    "contract-1",
+    filed.contracts[0]!.requests[0]!.id,
+  );
+  assert.equal(result.failure, "insufficient-cash");
+  const next = result.world;
   assert.equal(next.loans.length, 0);
   assert.equal(next.cash, 30, "no partial payout");
   assert.equal(next.demands[0]?.status, "requesting");

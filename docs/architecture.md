@@ -54,11 +54,10 @@ formatting and the builder node vocabulary.
   actor's horizon, and ask a repayment within the actor's tolerance.
   Requests snapshot their evaluated terms; accepted loans are built from the
   snapshot. Rejected actors never ask the same contract again.
-- Decision blocks automate underwriting at request time: the first branch
-  outcome that is not "draft" settles the applicant — accept signs the loan
-  instantly (falling back to draft when cash is short), reject turns them
-  away. A stack without decision blocks drafts every requester for manual
-  review, which is the default.
+- Conditions select a path and then merge into the shared clauses that follow
+  them. Decision blocks contain no condition of their own: they either reject
+  the applicant immediately or draft the request for manual review. Accepting
+  a drafted request signs the loan using the complete, merged contract flow.
 - Patience is 16 days per state: an ignored demand leaves the map after 16
   days, a pending request is withdrawn 16 days after filing (the person
   leaves), and a rejection returns them to the map with fresh patience.

@@ -155,7 +155,7 @@ export function validateDraft(
         const issue = validateRecipe(node.amount, names);
         if (issue) return m.builder.nodeIssue(m.nodes.variable.title, issue);
         names.push(name);
-      } else if (node.kind === "condition" || node.kind === "decision") {
+      } else if (node.kind === "condition") {
         const issue =
           validateRecipe(node.left, names) ?? validateRecipe(node.right, names);
         if (issue) return m.builder.nodeIssue(m.nodes[node.kind].title, issue);
@@ -253,11 +253,7 @@ export function makeNode(kind: BuilderAddableNode): MarketBuilderNode {
     return {
       id,
       kind,
-      left: value("income"),
-      comparator: "<",
-      right: constant(2000),
-      thenOutcome: "reject",
-      elseOutcome: "draft",
+      outcome: "draft",
     };
   return {
     id,

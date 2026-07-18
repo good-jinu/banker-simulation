@@ -28,6 +28,7 @@ interface CanvasLabels {
   end: string;
   true: string;
   false: string;
+  merge: string;
   fit: string;
 }
 
@@ -349,8 +350,44 @@ class BuilderCanvasScene {
           this.labels!.false,
           false,
         );
+        const remainder = path.slice(index + 1);
+        // Branches rejoin the stack below the condition. The runtime has
+        // always continued with these shared clauses; drawing the join makes
+        // that continuation explicit and keeps it editable in the canvas.
+        const branchTailY = Math.max(
+          this.pathTailY(thenPath, branchY),
+          this.pathTailY(elsePath, branchY),
+        );
+        const groupTop = y - NODE_HEIGHT / 2 - 20;
+        const hasBranchNode = thenPath.length > 0 || elsePath.length > 0;
+        const groupBottom =
+          branchTailY + NODE_HEIGHT / 2 + (hasBranchNode ? 96 : 32);
+        // The merge is deliberately outside the condition group: it starts
+        // the shared flow, rather than being another conditional clause.
+        const mergePoint = { x: centerX, y: groupBottom + 54 };
+        const mergeY = mergePoint.y + NODE_HEIGHT / 2;
+        this.drawConditionGroup(
+          centerX,
+          groupTop,
+          thenWidth + BRANCH_GAP + elseWidth + 56,
+          groupBottom,
+        );
         this.layoutBranch(node, "thenSteps", thenPath, centerX, thenX, branchY);
         this.layoutBranch(node, "elseSteps", elsePath, centerX, elseX, branchY);
+        // The condition group exposes one output. Its internal Then/Else
+        // wiring stays contained by the frame, so the shared flow does not
+        // look like a third branch.
+        this.drawEdge({ x: centerX, y: groupBottom }, mergePoint);
+        this.addPlus(centerX, mergePoint.y, {
+          ...owner,
+          index: index + 1,
+          terminal: remainder.length === 0,
+        });
+        this.addMergeLabel(centerX, mergePoint.y - 16, this.labels!.merge);
+        this.expandBounds(centerX, mergePoint.y);
+        if (remainder.length > 0) {
+          this.layoutPath(remainder, owner, centerX, mergeY);
+        }
         return Math.max(branchY, this.bounds.maxY);
       }
       const next = path[index + 1];
@@ -411,6 +448,63 @@ class BuilderCanvasScene {
       terminal: false,
     });
     this.layoutPath(path, owner, centerX, startY);
+  }
+
+  /** Approximate the visible end of a branch for its merge connector. */
+  private pathTailY(
+    path: readonly MarketBuilderNode[],
+    startY: number,
+  ): number {
+    if (path.length === 0) return startY - 26;
+    let y = startY;
+    for (let index = 0; index < path.length; index += 1) {
+      const node = path[index]!;
+      if (node.kind === "condition") {
+        const branchY = y + NODE_HEIGHT + ROW_GAP;
+        y =
+          Math.max(
+            this.pathTailY(node.thenSteps ?? [], branchY),
+            this.pathTailY(node.elseSteps ?? [], branchY),
+          ) +
+          NODE_HEIGHT / 2 +
+          ROW_GAP;
+      } else if (index < path.length - 1) {
+        y += NODE_HEIGHT + ROW_GAP;
+      }
+    }
+    return y;
+  }
+
+  /** Frame a condition and its two lanes; the shared merge stays outside. */
+  private drawConditionGroup(
+    centerX: number,
+    top: number,
+    width: number,
+    bottom: number,
+  ): void {
+    const left = centerX - width / 2;
+    const height = Math.max(76, bottom - top);
+    this.edges
+      .roundRect(left, top, width, height, 18)
+      .fill({ color: COLOR.panel, alpha: 0.42 })
+      .stroke({ color: COLOR.line, alpha: 0.8, width: 1.5 });
+    this.expandBounds(left, top);
+    this.expandBounds(left + width, top + height);
+  }
+
+  private addMergeLabel(x: number, y: number, text: string): void {
+    const label = new Text({
+      text,
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: 9,
+        fontWeight: "900",
+        fill: COLOR.gold,
+      },
+    });
+    label.anchor.set(0.5);
+    label.position.set(x, y);
+    this.objects.addChild(label);
   }
 
   private drawEdge(from: Point, to: Point, positive?: boolean): void {
