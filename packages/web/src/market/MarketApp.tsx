@@ -158,7 +158,6 @@ export function MarketApp({
   const [editingContractId, setEditingContractId] = useState<string | null>(
     null,
   );
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [hudPanel, setHudPanel] = useState<"menu" | "objective" | null>(null);
   const [assetPanelOpen, setAssetPanelOpen] = useState(false);
@@ -364,14 +363,12 @@ export function MarketApp({
   function openBuilder(): void {
     setBuilderNodes(emptyDraftNodes());
     setEditingContractId(null);
-    setSelectedNodeId(null);
     setView("builder");
   }
 
   function openBuilderForContract(contract: ContractOffer): void {
     setBuilderNodes(withoutEndNodes(contract.builderNodes));
     setEditingContractId(contract.id);
-    setSelectedNodeId(null);
     setView("builder");
   }
 
@@ -837,9 +834,7 @@ export function MarketApp({
             <MarketBuilder
               nodes={builderNodes}
               locale={locale}
-              selectedNodeId={selectedNodeId}
               editing={Boolean(editingContractId)}
-              onSelectNode={setSelectedNodeId}
               onChangeNodes={setBuilderNodes}
               onSubmit={submitDraft}
               onWithdraw={editingContractId ? removeContract : undefined}

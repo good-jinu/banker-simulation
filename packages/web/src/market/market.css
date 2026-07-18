@@ -949,6 +949,15 @@
   background: #0c1a33;
 }
 
+.mk-request-cell.needs-review {
+  border-color: rgba(217, 168, 78, 0.72);
+  background: rgba(72, 48, 17, 0.36);
+}
+
+.mk-request-cell.needs-review em {
+  color: #efcb7d;
+}
+
 .mk-request-portrait {
   width: 56px;
   height: 56px;
@@ -1365,8 +1374,8 @@
   line-height: 1.35;
   word-break: break-word;
 }
-/* The builder is a full-height page like the map: the canvas fills all the
-   space under the guide strip and every control floats above it. */
+/* The workflow scrolls as one continuous document so every node keeps its
+   configuration open and immediately editable. */
 .mk-builder-page {
   display: flex;
   flex-direction: column;
@@ -1414,7 +1423,7 @@
   z-index: 5;
   top: 10px;
   left: 10px;
-  right: 96px; /* keep the fit-graph button clickable */
+  right: 110px;
   min-height: 38px;
   display: flex;
   align-items: center;
@@ -1483,9 +1492,161 @@
   height: 100%;
 }
 
+.mk-builder-form-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.mk-builder-form-world {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.mk-canvas-node-card {
+  position: absolute;
+  min-height: 0 !important;
+  box-sizing: border-box;
+  overflow: hidden;
+  pointer-events: auto;
+  padding: 13px;
+  color: #e7edf5;
+  border: 2px solid rgba(126, 157, 187, 0.68);
+  border-radius: 14px;
+  background: rgba(11, 28, 50, 0.97);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.27);
+}
+
+.mk-canvas-node-card.type-start {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mk-canvas-node-card.type-condition {
+  border-color: rgba(217, 168, 78, 0.76);
+}
+
+.mk-canvas-node-header {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 40px;
+  position: relative;
+  z-index: 2;
+}
+
+.mk-canvas-node-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.mk-canvas-node-header small {
+  color: #8291a6;
+  font-size: 0.5rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.mk-canvas-node-header strong {
+  color: #efdbad;
+  font-size: 0.8rem;
+}
+
+.mk-canvas-node-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #f0c86c;
+  border-radius: 9px;
+  background: rgba(217, 168, 78, 0.13);
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.mk-canvas-node-card.type-start .mk-canvas-node-header {
+  width: 180px;
+  box-sizing: border-box;
+  padding: 9px;
+  border: 2px solid rgba(97, 207, 170, 0.72);
+  border-radius: 12px;
+  background: rgba(14, 55, 54, 0.96);
+}
+
+.mk-canvas-node-card.type-start .mk-canvas-node-icon {
+  color: #8de3c5;
+  background: rgba(97, 207, 170, 0.14);
+}
+
+.mk-canvas-node-card .cs-node-inspector {
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  max-height: calc(100% - 46px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mk-canvas-node-card .cs-parameter-grid {
+  padding-bottom: 2px;
+}
+
+.mk-canvas-node-card .mk-recipe-tray {
+  max-height: 164px;
+  overflow-y: auto;
+}
+
+.mk-canvas-node-card .mk-keypad {
+  position: relative;
+  z-index: 3;
+}
+
+.mk-canvas-node-card .cs-node-inspector > header {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  z-index: 3;
+}
+
+.mk-canvas-node-card .cs-node-inspector > header > div {
+  display: none;
+}
+
+.mk-canvas-node-card .cs-node-inspector > header button {
+  width: 32px;
+  height: 32px;
+}
+
+.mk-canvas-start-detail {
+  width: calc(100% - 18px);
+  box-sizing: border-box;
+  margin: 10px 9px 0;
+  padding: 6px 9px;
+  color: #9bd8c5;
+  border: 1px solid rgba(97, 207, 170, 0.28);
+  border-radius: 7px;
+  background: rgba(14, 55, 54, 0.72);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
 .mk-canvas-fit {
   position: absolute;
-  z-index: 2;
+  z-index: 4;
   top: 10px;
   right: 10px;
   min-height: 32px;
@@ -1499,6 +1660,195 @@
   cursor: pointer;
 }
 
+.mk-builder-workflow {
+  width: min(880px, 100%);
+  margin: 0 auto;
+  padding: 72px 14px 28px;
+}
+
+.mk-workflow-path {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.mk-workflow-node {
+  position: relative;
+  width: min(100%, 680px);
+  padding: 13px;
+  color: #e7edf5;
+  border: 2px solid rgba(126, 157, 187, 0.68);
+  border-radius: 14px;
+  background: rgba(11, 28, 50, 0.97);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.27);
+}
+
+.mk-workflow-node.type-start {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  border-color: rgba(97, 207, 170, 0.72);
+  background: rgba(14, 55, 54, 0.94);
+}
+
+.mk-workflow-node.type-condition {
+  width: min(100%, 840px);
+  border-color: rgba(217, 168, 78, 0.76);
+}
+
+.mk-workflow-node-header {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 40px;
+}
+
+.mk-workflow-node-header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.mk-workflow-node-header small {
+  color: #8291a6;
+  font-size: 0.5rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.mk-workflow-node-header strong {
+  color: #efdbad;
+  font-size: 0.8rem;
+}
+
+.mk-workflow-node-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #f0c86c;
+  border-radius: 9px;
+  background: rgba(217, 168, 78, 0.13);
+  font-size: 1.05rem;
+  font-weight: 900;
+}
+
+.type-start .mk-workflow-node-icon {
+  color: #8de3c5;
+  background: rgba(97, 207, 170, 0.14);
+}
+
+.mk-workflow-node .cs-node-inspector {
+  margin: 10px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.mk-workflow-node .cs-node-inspector > header {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+}
+
+.mk-workflow-node .cs-node-inspector > header > div {
+  display: none;
+}
+
+.mk-workflow-node .cs-node-inspector > header button {
+  width: 32px;
+  height: 32px;
+}
+
+.mk-inline-add {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #f2d489;
+  border: 2px solid #d9a84e;
+  border-radius: 50%;
+  background: #102640;
+  box-shadow: 0 0 0 5px rgba(7, 19, 40, 0.88);
+  font: inherit;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mk-inline-add:hover {
+  color: #fff1c9;
+  background: #173657;
+}
+
+.mk-empty-flow {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+}
+
+.mk-condition-branches {
+  margin-top: 14px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border: 1px solid rgba(100, 130, 162, 0.34);
+  border-radius: 10px;
+  background: rgba(4, 16, 29, 0.36);
+}
+
+.mk-condition-branch {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgba(100, 130, 162, 0.3);
+  border-radius: 8px;
+  background: rgba(8, 24, 44, 0.56);
+}
+
+.mk-condition-branch > header {
+  margin-bottom: 9px;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+
+.mk-condition-branch.then > header {
+  color: #86e0c1;
+}
+
+.mk-condition-branch.otherwise > header {
+  color: #ec9a9d;
+}
+
+.mk-condition-branch .mk-workflow-node {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+}
+
+.mk-condition-branch .mk-workflow-node-header {
+  min-height: 30px;
+}
+
+.mk-condition-branch .mk-workflow-node-icon {
+  width: 30px;
+  height: 30px;
+}
+
+.mk-condition-branch .cs-parameter-grid {
+  grid-template-columns: 1fr;
+}
+
+.mk-condition-branch .mk-condition-branches {
+  grid-template-columns: 1fr;
+}
+
 .mk-node-picker {
   position: absolute;
   z-index: 6;
@@ -1510,6 +1860,12 @@
   background: rgba(10, 27, 49, 0.98);
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.48);
   transform: translate(-50%, 12px);
+}
+
+.mk-node-picker-centered {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .mk-node-picker > header {
@@ -1573,45 +1929,6 @@
   font-size: 1rem;
 }
 
-/* The settings panel is attached to the selected node's box: flush against
-   its bottom (or top) edge, sharing the gold selection stroke so the two
-   read as one expanded node. */
-.mk-node-panel {
-  position: absolute;
-  z-index: 5;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 2px solid #d9a84e;
-  border-radius: 0 0 14px 14px;
-  background: #0b1c32;
-  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.5);
-}
-
-.mk-node-panel.above {
-  border-radius: 14px 14px 0 0;
-  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.45);
-}
-
-.mk-node-panel .cs-node-inspector {
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-}
-
-.mk-canvas-inspector > header > div {
-  display: grid;
-  gap: 2px;
-}
-
-.mk-canvas-inspector > header small {
-  color: #8291a6;
-  font-size: 0.5rem;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .cs-dialog-backdrop article > .mk-dialog-cancel {
   margin-top: 8px;
   color: #c7d2df;
@@ -1620,6 +1937,14 @@
 }
 
 @media (max-width: 520px) {
+  .mk-builder-workflow {
+    padding: 72px 10px 22px;
+  }
+
+  .mk-condition-branches {
+    grid-template-columns: 1fr;
+  }
+
   .mk-node-picker {
     position: fixed;
     right: 10px;

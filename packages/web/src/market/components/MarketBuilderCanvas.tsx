@@ -1,19 +1,12 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Application,
   Container,
   Graphics,
   Rectangle,
-  Text,
   type FederatedPointerEvent,
 } from "pixi.js";
-import type { MarketBuilderNode } from "../market-world.ts";
+import { BUILDER_VARIABLES, type MarketBuilderNode } from "../market-world.ts";
 
 export type BuilderBranch = "thenSteps" | "elseSteps";
 
@@ -25,6 +18,8 @@ export interface BuilderInsertTarget {
 }
 
 interface CanvasLabels {
+  clause: string;
+  startDetail: string;
   start: string;
   transfer: string;
   wait: string;
@@ -38,55 +33,30 @@ interface CanvasLabels {
   fit: string;
 }
 
-interface Props {
-  nodes: readonly MarketBuilderNode[];
-  selectedNodeId: string | null;
-  labels: CanvasLabels;
-  nodeLabel: (node: MarketBuilderNode) => string;
-  onSelectNode: (id: string | null) => void;
-  onRequestInsert: (
-    target: BuilderInsertTarget,
-    position: { x: number; y: number },
-  ) => void;
-  /** Rendered as a panel attached to the selected node's box. */
-  overlay?: ReactNode;
-  /** Brighten the real canvas plus controls during guided play. */
-  highlightAddControls?: boolean;
-}
-
-/** Screen-space box of the selected node, for anchoring the HTML overlay. */
-interface SelectedNodeRect {
-  left: number;
-  top: number;
+interface CardLayout {
+  node: MarketBuilderNode;
+  names: readonly string[];
+  x: number;
+  y: number;
   width: number;
   height: number;
-  viewWidth: number;
-  viewHeight: number;
 }
 
-const NODE_WIDTH = 190;
-const NODE_HEIGHT = 72;
-const ROW_GAP = 72;
-const BRANCH_GAP = 72;
-const GRID = 28;
+interface BoardLayout {
+  cards: readonly CardLayout[];
+  transform: { x: number; y: number; scale: number };
+}
 
-const COLOR = {
-  night: 0x071328,
-  panel: 0x102640,
-  panelDeep: 0x0b1c32,
-  line: 0x55728f,
-  lineHot: 0xd9a84e,
-  gold: 0xd9a84e,
-  cream: 0xf1e2ba,
-  mist: 0x9fb1c5,
-  green: 0x61cfaa,
-  red: 0xd66b70,
-  grid: 0x193653,
-};
-
-interface PathOwner {
-  ownerId: string | null;
-  branch: BuilderBranch | null;
+interface Props {
+  nodes: readonly MarketBuilderNode[];
+  labels: CanvasLabels;
+  renderNodeDetails: (
+    node: MarketBuilderNode,
+    names: readonly string[],
+  ) => ReactNode;
+  onRequestInsert: (target: BuilderInsertTarget) => void;
+  onLayout?: (layout: BoardLayout) => void;
+  highlightAddControls?: boolean;
 }
 
 interface Point {
@@ -101,57 +71,100 @@ interface Bounds {
   maxY: number;
 }
 
+interface PathOwner {
+  ownerId: string | null;
+  branch: BuilderBranch | null;
+}
+
+const ROW_GAP = 72;
+const START_ROW_GAP = 48;
+const BRANCH_GAP = 96;
+const GRID = 28;
+
+const COLOR = {
+  night: 0x071328,
+  line: 0x55728f,
+  gold: 0xd9a84e,
+  green: 0x61cfaa,
+  red: 0xd66b70,
+  grid: 0x193653,
+};
+
+function nodeSize(node: MarketBuilderNode): { width: number; height: number } {
+  switch (node.kind) {
+    case "start":
+      return { width: 180, height: 96 };
+    case "transfer":
+      return { width: 440, height: 410 };
+    case "wait":
+      return { width: 400, height: 320 };
+    case "variable":
+      return { width: 440, height: 380 };
+    case "condition":
+      return { width: 520, height: 410 };
+    case "decision":
+      return { width: 300, height: 180 };
+    case "end":
+      return { width: 180, height: 96 };
+  }
+}
+
+function rowGapAfter(node: MarketBuilderNode): number {
+  return node.kind === "start" ? START_ROW_GAP : ROW_GAP;
+}
+
 function visibleNodes(
   nodes: readonly MarketBuilderNode[],
-): MarketBuilderNode[] {
+): readonly MarketBuilderNode[] {
   return nodes.filter((node) => node.kind !== "end");
 }
 
 function measurePath(path: readonly MarketBuilderNode[]): number {
-  let width = NODE_WIDTH;
+  let width = 0;
   for (const node of visibleNodes(path)) {
+    width = Math.max(width, nodeSize(node).width);
     if (node.kind !== "condition") continue;
-    const thenWidth = measurePath(node.thenSteps ?? []);
-    const elseWidth = measurePath(node.elseSteps ?? []);
-    width = Math.max(width, thenWidth + BRANCH_GAP + elseWidth);
+    width = Math.max(
+      width,
+      measurePath(node.thenSteps ?? []) +
+        BRANCH_GAP +
+        measurePath(node.elseSteps ?? []),
+    );
   }
-  return width;
+  return width || 180;
+}
+
+function nodeGlyph(kind: MarketBuilderNode["kind"]): string {
+  if (kind === "start") return "●";
+  if (kind === "transfer") return "⇄";
+  if (kind === "wait") return "◷";
+  if (kind === "variable") return "ƒ";
+  return "◇";
 }
 
 class BuilderCanvasScene {
   private readonly app = new Application();
   private readonly world = new Container();
   private grid = new Graphics();
+  private readonly scopes = new Graphics();
   private edges = new Graphics();
-  private readonly objects = new Container();
-  /**
-   * Objects removed during an input event may still be in Pixi's render list
-   * for the current frame, so they are destroyed two ticks later rather than
-   * immediately — and rather than never, which would leak every text texture
-   * created while editing.
-   */
-  private retiredObjects: Container[] = [];
-  private retiringObjects: Container[] = [];
+  private readonly controls = new Container();
   private host: HTMLElement | null = null;
   private ready = false;
   private destroyed = false;
   private fitted = false;
   private nodes: readonly MarketBuilderNode[] = [];
-  private selectedNodeId: string | null = null;
   private labels: CanvasLabels | null = null;
-  private nodeLabel: Props["nodeLabel"] = () => "";
-  private onSelectNode: Props["onSelectNode"] = () => undefined;
   private onRequestInsert: Props["onRequestInsert"] = () => undefined;
+  private onLayout: (layout: BoardLayout) => void = () => undefined;
   private highlightAddControls = false;
   private pointerStart: Point | null = null;
   private worldStart: Point | null = null;
   private moved = false;
   private bounds: Bounds = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
-  /** World-space centers of the laid-out nodes, rebuilt on every render. */
-  private readonly nodeCenters = new Map<string, Point>();
-  private lastRectKey = "";
-  /** Set by the React shell; receives the selected node's screen box. */
-  onSelectedNodeRect: (rect: SelectedNodeRect | null) => void = () => undefined;
+  private cards: CardLayout[] = [];
+  private scopeBounds: Bounds[] = [];
+  private lastLayoutKey = "";
 
   async init(host: HTMLElement): Promise<void> {
     this.host = host;
@@ -168,37 +181,18 @@ class BuilderCanvasScene {
     }
     host.appendChild(this.app.canvas);
     this.app.stage.addChild(this.grid, this.world);
-    this.world.addChild(this.edges, this.objects);
+    this.world.addChild(this.scopes, this.edges, this.controls);
     this.app.stage.eventMode = "static";
     this.app.stage.hitArea = this.app.screen;
     this.app.stage.on("pointerdown", (event) => this.beginPan(event));
     this.app.stage.on("pointermove", (event) => this.pan(event));
     this.app.stage.on("pointerup", () => this.endPan());
     this.app.stage.on("pointerupoutside", () => this.endPan());
-    // Node and plus-button taps stop propagation, so a tap that reaches the
-    // stage itself landed on empty canvas and clears the selection.
-    this.app.stage.on("pointertap", (event) => {
-      if (this.moved || event.target !== this.app.stage) return;
-      this.onSelectNode(null);
-    });
     host.addEventListener("wheel", this.onWheel, { passive: false });
     this.app.renderer.on("resize", () => {
       this.app.stage.hitArea = this.app.screen;
       this.drawGrid();
-      this.reportSelectedRect();
-    });
-    // Objects retired on frame N are still referenced by that frame's render
-    // list; promote them one tick later and destroy them the tick after.
-    this.app.ticker.add(() => {
-      if (this.retiringObjects.length > 0) {
-        for (const object of this.retiringObjects)
-          object.destroy({ children: true });
-        this.retiringObjects = [];
-      }
-      if (this.retiredObjects.length > 0) {
-        this.retiringObjects = this.retiredObjects;
-        this.retiredObjects = [];
-      }
+      this.reportLayout();
     });
     this.ready = true;
     this.drawGrid();
@@ -208,15 +202,12 @@ class BuilderCanvasScene {
   sync(props: Props): void {
     const needsRender =
       this.nodes !== props.nodes ||
-      this.selectedNodeId !== props.selectedNodeId ||
-      this.labels === null ||
+      this.labels !== props.labels ||
       this.highlightAddControls !== Boolean(props.highlightAddControls);
     this.nodes = props.nodes;
-    this.selectedNodeId = props.selectedNodeId;
     this.labels = props.labels;
-    this.nodeLabel = props.nodeLabel;
-    this.onSelectNode = props.onSelectNode;
     this.onRequestInsert = props.onRequestInsert;
+    this.onLayout = props.onLayout ?? (() => undefined);
     this.highlightAddControls = Boolean(props.highlightAddControls);
     if (this.ready && needsRender) this.render();
   }
@@ -226,18 +217,6 @@ class BuilderCanvasScene {
     this.destroyed = true;
     this.host?.removeEventListener("wheel", this.onWheel);
     if (!this.ready) return;
-    this.app.stage.removeChildren();
-    this.retiredObjects.forEach((object) => object.destroy({ children: true }));
-    this.retiredObjects.length = 0;
-    this.retiringObjects.forEach((object) =>
-      object.destroy({ children: true }),
-    );
-    this.retiringObjects.length = 0;
-    this.world.destroy({ children: true });
-    this.grid.destroy();
-    // `true` also releases Pixi's process-wide pools. React can mount the map
-    // canvas while this canvas is being cleaned up, so releasing those shared
-    // batches corrupts the newly mounted renderer.
     this.app.destroy({ removeView: true });
   }
 
@@ -246,11 +225,11 @@ class BuilderCanvasScene {
     const width = Math.max(1, this.bounds.maxX - this.bounds.minX);
     const height = Math.max(1, this.bounds.maxY - this.bounds.minY);
     const scale = Math.max(
-      0.25,
+      0.14,
       Math.min(
         1,
-        (this.app.screen.width - 80) / width,
-        (this.app.screen.height - 80) / height,
+        (this.app.screen.width - 96) / width,
+        (this.app.screen.height - 96) / height,
       ),
     );
     this.world.scale.set(scale);
@@ -258,42 +237,7 @@ class BuilderCanvasScene {
       (this.app.screen.width - width * scale) / 2 - this.bounds.minX * scale,
       (this.app.screen.height - height * scale) / 2 - this.bounds.minY * scale,
     );
-    this.reportSelectedRect();
-  }
-
-  /** Tell the React shell where the selected node sits on screen. */
-  private reportSelectedRect(): void {
-    if (!this.ready) return;
-    const center = this.selectedNodeId
-      ? this.nodeCenters.get(this.selectedNodeId)
-      : undefined;
-    if (!center) {
-      if (this.lastRectKey !== "") {
-        this.lastRectKey = "";
-        this.onSelectedNodeRect(null);
-      }
-      return;
-    }
-    const scale = this.world.scale.x;
-    const rect: SelectedNodeRect = {
-      left: this.world.x + (center.x - NODE_WIDTH / 2) * scale,
-      top: this.world.y + (center.y - NODE_HEIGHT / 2) * scale,
-      width: NODE_WIDTH * scale,
-      height: NODE_HEIGHT * scale,
-      viewWidth: this.app.screen.width,
-      viewHeight: this.app.screen.height,
-    };
-    const key = [
-      this.selectedNodeId,
-      Math.round(rect.left),
-      Math.round(rect.top),
-      Math.round(rect.width),
-      Math.round(rect.viewWidth),
-      Math.round(rect.viewHeight),
-    ].join(":");
-    if (key === this.lastRectKey) return;
-    this.lastRectKey = key;
-    this.onSelectedNodeRect(rect);
+    this.reportLayout();
   }
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -306,7 +250,7 @@ class BuilderCanvasScene {
     };
     const oldScale = this.world.scale.x;
     const nextScale = Math.max(
-      0.25,
+      0.14,
       Math.min(1.8, oldScale * Math.exp(-event.deltaY * 0.0012)),
     );
     const localX = (pointer.x - this.world.x) / oldScale;
@@ -316,7 +260,7 @@ class BuilderCanvasScene {
       pointer.x - localX * nextScale,
       pointer.y - localY * nextScale,
     );
-    this.reportSelectedRect();
+    this.reportLayout();
   };
 
   private beginPan(event: FederatedPointerEvent): void {
@@ -332,7 +276,7 @@ class BuilderCanvasScene {
     if (Math.hypot(dx, dy) > 4) this.moved = true;
     if (!this.moved) return;
     this.world.position.set(this.worldStart.x + dx, this.worldStart.y + dy);
-    this.reportSelectedRect();
+    this.reportLayout();
   }
 
   private endPan(): void {
@@ -341,12 +285,7 @@ class BuilderCanvasScene {
   }
 
   private drawGrid(): void {
-    if (this.grid.parent) {
-      this.app.stage.removeChild(this.grid);
-      this.retiredObjects.push(this.grid);
-      this.grid = new Graphics();
-      this.app.stage.addChildAt(this.grid, 0);
-    }
+    this.grid.clear();
     for (let x = 0; x <= this.app.screen.width; x += GRID)
       this.grid.moveTo(x, 0).lineTo(x, this.app.screen.height);
     for (let y = 0; y <= this.app.screen.height; y += GRID)
@@ -356,40 +295,43 @@ class BuilderCanvasScene {
 
   private render(): void {
     if (!this.ready || !this.labels) return;
-    // Graphics.clear() can invalidate a batch queued by the frame that
-    // dispatched the pointer event. Swap the edge layer just like the nodes.
-    this.world.removeChild(this.edges);
-    this.retiredObjects.push(this.edges);
-    this.edges = new Graphics();
-    this.world.addChildAt(this.edges, 0);
-    // React can sync this scene from inside a Pixi pointer handler. Destroying
-    // those objects immediately invalidates geometry already queued for the
-    // current frame, so keep them detached until the renderer is disposed.
-    this.retiredObjects.push(...this.objects.removeChildren());
-    this.nodeCenters.clear();
+    this.scopes.clear();
+    this.edges.clear();
+    this.controls
+      .removeChildren()
+      .forEach((child) => child.destroy({ children: true }));
+    this.cards = [];
+    this.scopeBounds = [];
     const path = visibleNodes(this.nodes);
     const rootWidth = measurePath(path);
     this.bounds = {
-      minX: -rootWidth / 2 - 60,
-      minY: -40,
-      maxX: rootWidth / 2 + 60,
-      maxY: 100,
+      minX: -rootWidth / 2 - 80,
+      minY: -80,
+      maxX: rootWidth / 2 + 80,
+      maxY: 180,
     };
     if (path.length === 0) {
-      this.addPlus(0, 20, {
+      this.addPlus(0, 40, {
         ownerId: null,
         branch: null,
         index: 0,
         terminal: true,
       });
-      this.expandBounds(0, 20);
+    } else {
+      this.layoutPath(
+        path,
+        { ownerId: null, branch: null },
+        0,
+        40,
+        BUILDER_VARIABLES,
+      );
     }
-    this.layoutPath(path, { ownerId: null, branch: null }, 0, 20);
     if (!this.fitted) {
       this.fitted = true;
       this.fit();
+    } else {
+      this.reportLayout();
     }
-    this.reportSelectedRect();
   }
 
   private layoutPath(
@@ -397,14 +339,24 @@ class BuilderCanvasScene {
     owner: PathOwner,
     centerX: number,
     startY: number,
+    inheritedNames: readonly string[],
   ): number {
     const path = visibleNodes(rawPath);
-    if (path.length === 0) return startY;
+    if (path.length === 0) {
+      this.addPlus(centerX, startY, { ...owner, index: 0, terminal: true });
+      return startY;
+    }
+    const names = [...inheritedNames];
     let y = startY;
     for (let index = 0; index < path.length; index += 1) {
       const node = path[index]!;
-      this.addNode(node, centerX, y);
-      this.expandBounds(centerX, y);
+      const size = nodeSize(node);
+      const rowGap = rowGapAfter(node);
+      const namesAtNode = [...names];
+      this.addCard(node, centerX, y, namesAtNode);
+      if (node.kind === "variable" && node.variableName)
+        names.push(node.variableName);
+      const remainder = path.slice(index + 1);
       if (node.kind === "condition") {
         const thenPath = visibleNodes(node.thenSteps ?? []);
         const elsePath = visibleNodes(node.elseSteps ?? []);
@@ -412,65 +364,96 @@ class BuilderCanvasScene {
         const elseWidth = measurePath(elsePath);
         const thenX = centerX - (thenWidth + BRANCH_GAP) / 2;
         const elseX = centerX + (elseWidth + BRANCH_GAP) / 2;
-        const branchY = y + NODE_HEIGHT + ROW_GAP;
-        this.addBranchLabel(
-          centerX - 34,
-          y + NODE_HEIGHT / 2 + 24,
-          this.labels!.true,
+        const thenFirstSize = thenPath[0] ? nodeSize(thenPath[0]) : null;
+        const elseFirstSize = elsePath[0] ? nodeSize(elsePath[0]) : null;
+        const branchY =
+          y +
+          size.height / 2 +
+          rowGap +
+          Math.max(thenFirstSize?.height ?? 0, elseFirstSize?.height ?? 0) / 2;
+        this.drawEdge(
+          { x: centerX - 70, y: y + size.height / 2 },
+          { x: thenX, y: branchY - (thenFirstSize?.height ?? 0) / 2 },
           true,
         );
-        this.addBranchLabel(
-          centerX + 34,
-          y + NODE_HEIGHT / 2 + 24,
-          this.labels!.false,
+        this.drawEdge(
+          { x: centerX + 70, y: y + size.height / 2 },
+          { x: elseX, y: branchY - (elseFirstSize?.height ?? 0) / 2 },
           false,
         );
-        const remainder = path.slice(index + 1);
-        // Branches rejoin the stack below the condition. The runtime has
-        // always continued with these shared clauses; drawing the join makes
-        // that continuation explicit and keeps it editable in the canvas.
-        const branchTailY = Math.max(
-          this.pathTailY(thenPath, branchY),
-          this.pathTailY(elsePath, branchY),
+        const nestedScopeStart = this.scopeBounds.length;
+        const thenBottom = this.layoutPath(
+          thenPath,
+          { ownerId: node.id, branch: "thenSteps" },
+          thenX,
+          branchY,
+          namesAtNode,
         );
-        const groupTop = y - NODE_HEIGHT / 2 - 20;
-        const hasBranchNode = thenPath.length > 0 || elsePath.length > 0;
-        const groupBottom =
-          branchTailY + NODE_HEIGHT / 2 + (hasBranchNode ? 96 : 32);
-        // The merge is deliberately outside the condition group: it starts
-        // the shared flow, rather than being another conditional clause.
-        const mergePoint = { x: centerX, y: groupBottom + 54 };
-        const mergeY = mergePoint.y + NODE_HEIGHT / 2;
-        this.drawConditionGroup(
-          centerX,
-          groupTop,
-          thenWidth + BRANCH_GAP + elseWidth + 56,
-          groupBottom,
+        const elseBottom = this.layoutPath(
+          elsePath,
+          { ownerId: node.id, branch: "elseSteps" },
+          elseX,
+          branchY,
+          namesAtNode,
         );
-        this.layoutBranch(node, "thenSteps", thenPath, centerX, thenX, branchY);
-        this.layoutBranch(node, "elseSteps", elsePath, centerX, elseX, branchY);
-        // The condition group exposes one output. Its internal Then/Else
-        // wiring stays contained by the frame, so the shared flow does not
-        // look like a third branch.
-        this.drawEdge({ x: centerX, y: groupBottom }, mergePoint);
-        this.addPlus(centerX, mergePoint.y, {
+        const nextSize = remainder[0] ? nodeSize(remainder[0]) : null;
+        const branchBottom = Math.max(thenBottom, elseBottom);
+        const nestedScopes = this.scopeBounds.slice(nestedScopeStart);
+        const contentMinX = Math.min(
+          centerX - size.width / 2,
+          thenX - thenWidth / 2,
+          elseX - elseWidth / 2,
+          ...nestedScopes.map((scope) => scope.minX),
+        );
+        const contentMaxX = Math.max(
+          centerX + size.width / 2,
+          thenX + thenWidth / 2,
+          elseX + elseWidth / 2,
+          ...nestedScopes.map((scope) => scope.maxX),
+        );
+        const contentBottom = Math.max(
+          branchBottom,
+          ...nestedScopes.map((scope) => scope.maxY),
+        );
+        this.drawConditionScope(
+          contentMinX - 32,
+          y - size.height / 2 - 28,
+          contentMaxX + 32,
+          contentBottom + 24,
+        );
+        const nextY = nextSize
+          ? branchBottom + rowGap + nextSize.height / 2
+          : branchBottom + 48;
+        const mergePlusY = nextSize
+          ? (branchBottom + nextY - nextSize.height / 2) / 2
+          : nextY;
+        this.addPlus(centerX, mergePlusY, {
           ...owner,
           index: index + 1,
           terminal: remainder.length === 0,
         });
-        this.addMergeLabel(centerX, mergePoint.y - 16, this.labels!.merge);
-        this.expandBounds(centerX, mergePoint.y);
         if (remainder.length > 0) {
-          this.layoutPath(remainder, owner, centerX, mergeY);
+          this.drawEdge(
+            { x: thenX, y: thenBottom },
+            { x: centerX, y: nextY - nextSize!.height / 2 },
+          );
+          this.drawEdge(
+            { x: elseX, y: elseBottom },
+            { x: centerX, y: nextY - nextSize!.height / 2 },
+          );
+          return this.layoutPath(remainder, owner, centerX, nextY, names);
         }
-        return Math.max(branchY, this.bounds.maxY);
+        this.expandBounds(centerX, nextY, { width: 44, height: 44 });
+        return branchBottom;
       }
-      const next = path[index + 1];
-      if (next) {
-        const nextY = y + NODE_HEIGHT + ROW_GAP;
+      const nextSize = remainder[0] ? nodeSize(remainder[0]) : null;
+      const nextY = nextSize
+        ? y + size.height / 2 + rowGap + nextSize.height / 2
+        : y + size.height / 2 + 48;
+      if (remainder.length > 0) {
         this.drawEdge(
-          { x: centerX, y: y + NODE_HEIGHT / 2 },
-          { x: centerX, y: nextY - NODE_HEIGHT / 2 },
+          { x: centerX, y: y + size.height / 2 },
+          { x: centerX, y: nextY - nextSize!.height / 2 },
         );
         this.addPlus(centerX, (y + nextY) / 2, {
           ...owner,
@@ -478,108 +461,69 @@ class BuilderCanvasScene {
           terminal: false,
         });
         y = nextY;
-      } else {
-        const terminalY = y + NODE_HEIGHT / 2 + 54;
-        this.drawEdge(
-          { x: centerX, y: y + NODE_HEIGHT / 2 },
-          { x: centerX, y: terminalY },
-        );
-        this.addPlus(centerX, terminalY, {
-          ...owner,
-          index: path.length,
-          terminal: true,
-        });
-        this.bounds.maxY = Math.max(this.bounds.maxY, terminalY + 30);
+        continue;
       }
+      const terminalY = y + size.height / 2 + 48;
+      this.drawEdge(
+        { x: centerX, y: y + size.height / 2 },
+        { x: centerX, y: terminalY },
+      );
+      this.addPlus(centerX, terminalY, {
+        ...owner,
+        index: index + 1,
+        terminal: true,
+      });
+      this.expandBounds(centerX, terminalY, { width: 44, height: 44 });
+      return y + size.height / 2;
     }
     return y;
   }
 
-  private layoutBranch(
-    condition: MarketBuilderNode,
-    branch: BuilderBranch,
-    path: readonly MarketBuilderNode[],
-    originX: number,
-    centerX: number,
-    startY: number,
+  private addCard(
+    node: MarketBuilderNode,
+    x: number,
+    y: number,
+    names: readonly string[],
   ): void {
-    const owner = { ownerId: condition.id, branch };
-    const from = {
-      x: originX + (branch === "thenSteps" ? -34 : 34),
-      y: startY - ROW_GAP - NODE_HEIGHT / 2,
-    };
-    if (path.length === 0) {
-      const target = { x: centerX, y: startY - 26 };
-      this.drawEdge(from, target, branch === "thenSteps");
-      this.addPlus(target.x, target.y, { ...owner, index: 0, terminal: true });
-      this.expandBounds(target.x, target.y);
-      return;
-    }
-    const first = { x: centerX, y: startY - NODE_HEIGHT / 2 };
-    this.drawEdge(from, first, branch === "thenSteps");
-    this.addPlus((from.x + first.x) / 2, (from.y + first.y) / 2, {
-      ...owner,
-      index: 0,
-      terminal: false,
+    const size = nodeSize(node);
+    this.cards.push({
+      node,
+      names,
+      x: x - size.width / 2,
+      y: y - size.height / 2,
+      width: size.width,
+      height: size.height,
     });
-    this.layoutPath(path, owner, centerX, startY);
+    this.expandBounds(x, y, size);
   }
 
-  /** Approximate the visible end of a branch for its merge connector. */
-  private pathTailY(
-    path: readonly MarketBuilderNode[],
-    startY: number,
-  ): number {
-    if (path.length === 0) return startY - 26;
-    let y = startY;
-    for (let index = 0; index < path.length; index += 1) {
-      const node = path[index]!;
-      if (node.kind === "condition") {
-        const branchY = y + NODE_HEIGHT + ROW_GAP;
-        y =
-          Math.max(
-            this.pathTailY(node.thenSteps ?? [], branchY),
-            this.pathTailY(node.elseSteps ?? [], branchY),
-          ) +
-          NODE_HEIGHT / 2 +
-          ROW_GAP;
-      } else if (index < path.length - 1) {
-        y += NODE_HEIGHT + ROW_GAP;
-      }
-    }
-    return y;
-  }
-
-  /** Frame a condition and its two lanes; the shared merge stays outside. */
-  private drawConditionGroup(
-    centerX: number,
-    top: number,
-    width: number,
-    bottom: number,
-  ): void {
-    const left = centerX - width / 2;
-    const height = Math.max(76, bottom - top);
-    this.edges
-      .roundRect(left, top, width, height, 18)
-      .fill({ color: COLOR.panel, alpha: 0.42 })
-      .stroke({ color: COLOR.line, alpha: 0.8, width: 1.5 });
-    this.expandBounds(left, top);
-    this.expandBounds(left + width, top + height);
-  }
-
-  private addMergeLabel(x: number, y: number, text: string): void {
-    const label = new Text({
-      text,
-      style: {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 9,
-        fontWeight: "900",
-        fill: COLOR.gold,
-      },
+  private addPlus(x: number, y: number, target: BuilderInsertTarget): void {
+    const root = new Container();
+    root.position.set(x, y);
+    root.eventMode = "static";
+    root.cursor = "pointer";
+    root.hitArea = new Rectangle(-22, -22, 44, 44);
+    const circle = new Graphics()
+      .circle(0, 0, 16)
+      .fill(COLOR.night)
+      .stroke({
+        color: this.highlightAddControls ? COLOR.green : COLOR.gold,
+        width: this.highlightAddControls ? 4 : 2,
+      });
+    const mark = new Graphics()
+      .moveTo(-6, 0)
+      .lineTo(6, 0)
+      .moveTo(0, -6)
+      .lineTo(0, 6)
+      .stroke({ color: 0xf1e2ba, width: 2 });
+    root.addChild(circle, mark);
+    root.on("pointertap", (event: FederatedPointerEvent) => {
+      if (this.moved) return;
+      event.stopPropagation();
+      this.onRequestInsert(target);
     });
-    label.anchor.set(0.5);
-    label.position.set(x, y);
-    this.objects.addChild(label);
+    this.controls.addChild(root);
+    this.expandBounds(x, y, { width: 44, height: 44 });
   }
 
   private drawEdge(from: Point, to: Point, positive?: boolean): void {
@@ -595,196 +539,58 @@ class BuilderCanvasScene {
               ? COLOR.red
               : COLOR.line,
         alpha: 0.9,
-        width: 2,
+        width: 3,
       });
   }
 
-  private addNode(node: MarketBuilderNode, x: number, y: number): void {
-    this.nodeCenters.set(node.id, { x, y });
-    const root = new Container();
-    root.position.set(x - NODE_WIDTH / 2, y - NODE_HEIGHT / 2);
-    root.eventMode = node.kind === "start" ? "none" : "static";
-    root.cursor = node.kind === "start" ? "default" : "pointer";
-    root.hitArea = new Rectangle(0, 0, NODE_WIDTH, NODE_HEIGHT);
-    const selected = node.id === this.selectedNodeId;
-    const panel = new Graphics()
-      .roundRect(0, 0, NODE_WIDTH, NODE_HEIGHT, 12)
-      .fill({
-        color: node.kind === "start" ? 0x123d35 : COLOR.panelDeep,
-        alpha: 0.98,
-      })
-      .stroke({
-        color: selected
-          ? COLOR.gold
-          : node.kind === "start"
-            ? COLOR.green
-            : COLOR.line,
-        width: selected ? 3 : 1.5,
-      });
-    const icon = new Graphics();
-    icon.position.set(17, 17);
-    this.drawIcon(icon, node.kind);
-    const title = new Text({
-      text: this.labels![node.kind],
-      style: {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 12,
-        fontWeight: "800",
-        fill: COLOR.cream,
-      },
-    });
-    title.position.set(54, 13);
-    const detail = new Text({
-      text: this.nodeLabel(node),
-      style: {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 10,
-        fontWeight: "600",
-        fill: COLOR.mist,
-      },
-    });
-    detail.position.set(54, 36);
-    detail.style.wordWrap = true;
-    detail.style.wordWrapWidth = 124;
-    root.addChild(panel, icon, title, detail);
-    root.on("pointertap", (event: FederatedPointerEvent) => {
-      if (this.moved) return;
-      event.stopPropagation();
-      this.onSelectNode(node.id === this.selectedNodeId ? null : node.id);
-    });
-    this.objects.addChild(root);
+  /** Visually contains a condition and both of its local execution lanes. */
+  private drawConditionScope(
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+  ): void {
+    const width = right - left;
+    const height = Math.max(96, bottom - top);
+    this.scopes
+      .roundRect(left, top, width, height, 22)
+      .fill({ color: 0x102640, alpha: 0.3 })
+      .stroke({ color: COLOR.line, alpha: 0.82, width: 2 });
+    const bounds = { minX: left, minY: top, maxX: right, maxY: top + height };
+    this.scopeBounds.push(bounds);
+    this.expandBounds((left + right) / 2, top + height / 2, { width, height });
   }
 
-  private drawIcon(icon: Graphics, kind: MarketBuilderNode["kind"]): void {
-    const color = kind === "start" ? COLOR.green : COLOR.gold;
-    icon.roundRect(0, 0, 28, 28, 7).fill({ color, alpha: 0.13 });
-    if (kind === "start") icon.circle(14, 14, 6).fill(color);
-    else if (kind === "transfer") {
-      icon
-        .moveTo(6, 10)
-        .lineTo(21, 10)
-        .lineTo(17, 6)
-        .moveTo(21, 18)
-        .lineTo(6, 18)
-        .lineTo(10, 22)
-        .stroke({ color, width: 2 });
-    } else if (kind === "wait") {
-      icon
-        .circle(14, 14, 8)
-        .stroke({ color, width: 2 })
-        .moveTo(14, 14)
-        .lineTo(14, 9)
-        .moveTo(14, 14)
-        .lineTo(18, 16)
-        .stroke({ color, width: 2 });
-    } else if (kind === "variable") {
-      icon
-        .moveTo(7, 8)
-        .lineTo(12, 8)
-        .lineTo(16, 20)
-        .lineTo(21, 20)
-        .moveTo(8, 20)
-        .lineTo(12, 20)
-        .lineTo(16, 8)
-        .lineTo(20, 8)
-        .stroke({ color, width: 2 });
-    } else if (kind === "condition" || kind === "decision") {
-      icon.poly([14, 5, 23, 14, 14, 23, 5, 14]).stroke({ color, width: 2 });
-      if (kind === "decision") icon.circle(14, 14, 2).fill(color);
-    }
-  }
-
-  private addPlus(x: number, y: number, target: BuilderInsertTarget): void {
-    const root = new Container();
-    root.position.set(x, y);
-    root.eventMode = "static";
-    root.cursor = "pointer";
-    root.hitArea = new Rectangle(-18, -18, 36, 36);
-    const circle = new Graphics()
-      .circle(0, 0, 13)
-      .fill(COLOR.panel)
-      .stroke({
-        color: this.highlightAddControls ? COLOR.green : COLOR.gold,
-        width: this.highlightAddControls ? 4 : 2,
-      });
-    const mark = new Graphics()
-      .moveTo(-5, 0)
-      .lineTo(5, 0)
-      .moveTo(0, -5)
-      .lineTo(0, 5)
-      .stroke({ color: COLOR.cream, width: 2 });
-    root.addChild(circle, mark);
-    root.on("pointertap", (event: FederatedPointerEvent) => {
-      if (this.moved) return;
-      event.stopPropagation();
-      this.onRequestInsert(target, { x: event.global.x, y: event.global.y });
-    });
-    this.objects.addChild(root);
-  }
-
-  private addBranchLabel(
+  private expandBounds(
     x: number,
     y: number,
-    text: string,
-    positive: boolean,
+    size: { width: number; height: number },
   ): void {
-    const label = new Text({
-      text,
-      style: {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: 9,
-        fontWeight: "900",
-        fill: positive ? COLOR.green : COLOR.red,
-      },
-    });
-    label.anchor.set(0.5);
-    label.position.set(x, y);
-    this.objects.addChild(label);
+    this.bounds.minX = Math.min(this.bounds.minX, x - size.width / 2 - 48);
+    this.bounds.maxX = Math.max(this.bounds.maxX, x + size.width / 2 + 48);
+    this.bounds.minY = Math.min(this.bounds.minY, y - size.height / 2 - 48);
+    this.bounds.maxY = Math.max(this.bounds.maxY, y + size.height / 2 + 48);
   }
 
-  private expandBounds(x: number, y: number): void {
-    this.bounds.minX = Math.min(this.bounds.minX, x - NODE_WIDTH / 2 - 30);
-    this.bounds.maxX = Math.max(this.bounds.maxX, x + NODE_WIDTH / 2 + 30);
-    this.bounds.minY = Math.min(this.bounds.minY, y - NODE_HEIGHT / 2 - 30);
-    this.bounds.maxY = Math.max(this.bounds.maxY, y + NODE_HEIGHT / 2 + 30);
-  }
-}
-
-/**
- * Anchor the settings panel to the selected node's box: flush under the box
- * when the node sits in the upper half of the canvas, flush above otherwise,
- * always clamped to the canvas and scrolling internally when space runs out.
- */
-function nodePanelStyle(rect: SelectedNodeRect): {
-  style: CSSProperties;
-  above: boolean;
-} {
-  const width = Math.min(Math.max(260, rect.width), rect.viewWidth - 16);
-  const left = Math.min(
-    Math.max(8, rect.left + rect.width / 2 - width / 2),
-    rect.viewWidth - width - 8,
-  );
-  const above = rect.top + rect.height / 2 > rect.viewHeight / 2;
-  if (above) {
-    return {
-      above,
-      style: {
-        left,
-        width,
-        bottom: rect.viewHeight - rect.top - 2,
-        maxHeight: Math.max(120, rect.top - 12),
-      },
+  private reportLayout(): void {
+    if (!this.ready) return;
+    const transform = {
+      x: this.world.x,
+      y: this.world.y,
+      scale: this.world.scale.x,
     };
+    const key = [
+      Math.round(transform.x),
+      Math.round(transform.y),
+      Math.round(transform.scale * 1000),
+      ...this.cards.map(
+        (card) => `${card.node.id}:${Math.round(card.x)}:${Math.round(card.y)}`,
+      ),
+    ].join("|");
+    if (key === this.lastLayoutKey) return;
+    this.lastLayoutKey = key;
+    this.onLayout({ cards: this.cards, transform });
   }
-  return {
-    above,
-    style: {
-      left,
-      width,
-      top: rect.top + rect.height - 2,
-      maxHeight: Math.max(120, rect.viewHeight - rect.top - rect.height - 12),
-    },
-  };
 }
 
 export function MarketBuilderCanvas(props: Props) {
@@ -792,26 +598,29 @@ export function MarketBuilderCanvas(props: Props) {
   const sceneRef = useRef<BuilderCanvasScene | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
-  const [nodeRect, setNodeRect] = useState<SelectedNodeRect | null>(null);
+  const [layout, setLayout] = useState<BoardLayout>({
+    cards: [],
+    transform: { x: 0, y: 0, scale: 1 },
+  });
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const scene = new BuilderCanvasScene();
     sceneRef.current = scene;
-    scene.onSelectedNodeRect = setNodeRect;
-    scene.sync(propsRef.current);
-    void scene.init(host).then(() => scene.sync(propsRef.current));
+    scene.sync({ ...propsRef.current, onLayout: setLayout });
+    void scene
+      .init(host)
+      .then(() => scene.sync({ ...propsRef.current, onLayout: setLayout }));
     return () => {
       sceneRef.current = null;
       scene.destroy();
-      setNodeRect(null);
     };
   }, []);
 
-  useEffect(() => sceneRef.current?.sync(props), [props]);
-
-  const panel = props.overlay && nodeRect ? nodePanelStyle(nodeRect) : null;
+  useEffect(() => {
+    sceneRef.current?.sync({ ...props, onLayout: setLayout });
+  }, [props]);
 
   return (
     <div className="mk-builder-canvas-shell">
@@ -821,6 +630,48 @@ export function MarketBuilderCanvas(props: Props) {
         role="application"
         aria-label="Contract graph. Drag the background to pan and use the mouse wheel to zoom."
       />
+      <div
+        className="mk-builder-form-layer"
+        aria-hidden={layout.cards.length === 0}
+      >
+        <div
+          className="mk-builder-form-world"
+          style={{
+            transform: `translate(${layout.transform.x}px, ${layout.transform.y}px) scale(${layout.transform.scale})`,
+          }}
+        >
+          {layout.cards.map((card) => (
+            <article
+              className={`mk-canvas-node-card type-${card.node.kind}`}
+              key={card.node.id}
+              style={{
+                left: card.x,
+                top: card.y,
+                width: card.width,
+                height: card.height,
+              }}
+              aria-label={props.labels[card.node.kind]}
+            >
+              <header className="mk-canvas-node-header">
+                <span className="mk-canvas-node-icon" aria-hidden="true">
+                  {nodeGlyph(card.node.kind)}
+                </span>
+                <div>
+                  <small>{props.labels.clause}</small>
+                  <strong>{props.labels[card.node.kind]}</strong>
+                </div>
+              </header>
+              {card.node.kind === "start" && (
+                <p className="mk-canvas-start-detail">
+                  {props.labels.startDetail}
+                </p>
+              )}
+              {card.node.kind !== "start" &&
+                props.renderNodeDetails(card.node, card.names)}
+            </article>
+          ))}
+        </div>
+      </div>
       <button
         type="button"
         className="mk-canvas-fit"
@@ -828,14 +679,6 @@ export function MarketBuilderCanvas(props: Props) {
       >
         {props.labels.fit}
       </button>
-      {panel && (
-        <div
-          className={`mk-node-panel${panel.above ? " above" : ""}`}
-          style={panel.style}
-        >
-          {props.overlay}
-        </div>
-      )}
     </div>
   );
 }

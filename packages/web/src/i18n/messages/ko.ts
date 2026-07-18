@@ -55,7 +55,7 @@ export const ko: Messages = {
     transfer: { title: "송금" },
     wait: { title: "대기" },
     condition: { title: "조건" },
-    decision: { title: "결정" },
+    decision: { title: "처리 게이트" },
     variable: { title: "변수 설정" },
     end: { title: "종료" },
   },
@@ -84,6 +84,10 @@ export const ko: Messages = {
     daysCount: (days) => `${days}일`,
     requestsTitle: "요청",
     pendingCount: (count) => `대기 ${count}건`,
+    requestQueueCount: (pending, review) =>
+      review > 0
+        ? `대기 ${pending}건 · 검토 필요 ${review}건`
+        : `대기 ${pending}건`,
     noRequests:
       "아직 요청이 없습니다. 조건이 맞는 사람들이 시간이 지나면 찾아옵니다.",
     accept: "수락",
@@ -104,6 +108,10 @@ export const ko: Messages = {
       "조건 블록에는 변수 이름이 필요합니다(영문과 _만 사용).",
     variableReserved: (name) => `"${name}"은(는) 이미 정의된 이름입니다.`,
     outcomeDraft: "보류(직접 검토)",
+    requestEvaluationError:
+      "검토 필요 — 이 대출자에 대해 컨트랙트를 안전하게 계산할 수 없습니다.",
+    requestInsufficientCash: (amount) =>
+      `자동화 보류 — 이 대출을 실행하려면 현금 $${amount.toLocaleString()}이 필요합니다.`,
     requestTerms: (principal, repayment, days) =>
       `$${principal.toLocaleString()} → $${repayment.toLocaleString()} · ${days}일`,
     builderReady: "이 컨트랙트를 오픈 마켓에 게시할 수 있습니다.",

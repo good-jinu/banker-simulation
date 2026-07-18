@@ -59,7 +59,7 @@ export const en = {
     transfer: { title: "Transfer Money" },
     wait: { title: "Wait" },
     condition: { title: "Condition" },
-    decision: { title: "Decision" },
+    decision: { title: "Processing Gate" },
     variable: { title: "Set Variable" },
     end: { title: "End" },
   },
@@ -88,6 +88,10 @@ export const en = {
     daysCount: (days: number) => `${days} days`,
     requestsTitle: "Requests",
     pendingCount: (count: number) => `${count} pending`,
+    requestQueueCount: (pending: number, review: number) =>
+      review > 0
+        ? `${pending} pending · ${review} need review`
+        : `${pending} pending`,
     noRequests:
       "No requests yet. People whose demand fits these terms will knock as the days pass.",
     accept: "Accept",
@@ -108,6 +112,10 @@ export const en = {
       "The condition block needs a variable name (letters and _ only).",
     variableReserved: (name: string) => `"${name}" is already defined.`,
     outcomeDraft: "Draft (review myself)",
+    requestEvaluationError:
+      "Needs review — the contract could not be evaluated safely for this borrower.",
+    requestInsufficientCash: (amount: number) =>
+      `Automation paused — $${amount.toLocaleString()} cash is needed to fund this loan.`,
     requestTerms: (principal: number, repayment: number, days: number) =>
       `$${principal.toLocaleString()} → $${repayment.toLocaleString()} · ${days}d`,
     builderReady: "This contract is ready to post on the open market.",

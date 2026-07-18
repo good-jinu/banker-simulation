@@ -1,17 +1,14 @@
 import { Send, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { playerLabel } from "../../i18n/local-text.ts";
 import type { Locale } from "../../i18n/locale.ts";
 import { messagesFor } from "../../i18n/messages/index.ts";
 import {
   descendantCount,
-  findBuilderNodeContext,
   makeNode,
   SAMPLE_REQUESTER,
   validateDraft,
   type BuilderAddableNode,
 } from "../builder-draft.ts";
-import { humanizeValue, recipeLabel } from "../market-recipe.ts";
 import {
   evaluateTermsWithVariables,
   type MarketBuilderNode,
@@ -26,9 +23,7 @@ import { MarketNodeInspector } from "./MarketNodeInspector.tsx";
 export function MarketBuilder({
   nodes,
   locale,
-  selectedNodeId,
   editing,
-  onSelectNode,
   onChangeNodes,
   onSubmit,
   onWithdraw,
@@ -36,9 +31,7 @@ export function MarketBuilder({
 }: {
   nodes: MarketBuilderNode[];
   locale: Locale;
-  selectedNodeId: string | null;
   editing: boolean;
-  onSelectNode: (id: string | null) => void;
   onChangeNodes: (nodes: MarketBuilderNode[]) => void;
   onSubmit: () => void;
   onWithdraw?: (() => void) | undefined;
@@ -52,15 +45,12 @@ export function MarketBuilder({
   );
   const issue = validateDraft(nodes, m);
   const [dismissedIssue, setDismissedIssue] = useState<string | null>(null);
-  const [insertMenu, setInsertMenu] = useState<{
-    target: BuilderInsertTarget;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [insertMenu, setInsertMenu] = useState<BuilderInsertTarget | null>(
+    null,
+  );
   const [pendingDelete, setPendingDelete] = useState<MarketBuilderNode | null>(
     null,
   );
-  const selectedContext = findBuilderNodeContext(nodes, selectedNodeId);
   const hasOutgoingTransfer = nodes.some(
     (node) => node.kind === "transfer" && node.senderId === "player",
   );
@@ -81,10 +71,7 @@ export function MarketBuilder({
     hasOutgoingTransfer &&
     hasWait &&
     !hasIncomingTransfer &&
-    transferCount >= 2 &&
-    selectedContext?.node.kind === "transfer";
-  const partyName = (id: string | undefined): string =>
-    id === "player" ? playerLabel(locale) : t.borrower;
+    transferCount >= 2;
 
   useEffect(() => {
     if (!issue) setDismissedIssue(null);
@@ -126,7 +113,6 @@ export function MarketBuilder({
       });
     };
     onChangeNodes(insertAt(nodes));
-    onSelectNode(node.id);
     setInsertMenu(null);
   }
 
@@ -162,29 +148,11 @@ export function MarketBuilder({
               },
         );
     onChangeNodes(deleteFromPath(nodes));
-    onSelectNode(null);
   }
 
   function requestDelete(node: MarketBuilderNode): void {
     if (descendantCount(node) > 0) setPendingDelete(node);
     else deleteNode(node.id);
-  }
-
-  function outcomeName(outcome: MarketBuilderNode["outcome"]): string {
-    if (outcome === "reject") return t.reject;
-    return t.outcomeDraft;
-  }
-
-  function nodeLabel(node: MarketBuilderNode): string {
-    if (node.kind === "start") return m.nodeLabels.startActive;
-    if (node.kind === "end") return m.nodeLabels.endResolved;
-    if (node.kind === "wait") return `⏱ ${recipeLabel(node.days)}`;
-    if (node.kind === "variable")
-      return `${humanizeValue(node.variableName ?? "rate")} = ${recipeLabel(node.amount)}`;
-    if (node.kind === "condition")
-      return `if ${recipeLabel(node.left)} ${node.comparator ?? ">"} ${recipeLabel(node.right)}`;
-    if (node.kind === "decision") return outcomeName(node.outcome);
-    return `${partyName(node.senderId)} → ${partyName(node.recipientId)} · ${recipeLabel(node.amount)}`;
   }
 
   return (
@@ -207,20 +175,23 @@ export function MarketBuilder({
       <div className="mk-graph-builder">
         <MarketBuilderCanvas
           nodes={nodes}
-          selectedNodeId={selectedNodeId}
-          overlay={
-            selectedContext && selectedContext.node.kind !== "start" ? (
+          renderNodeDetails={(node, names) =>
+            node.kind !== "start" ? (
               <MarketNodeInspector
-                node={selectedContext.node}
-                names={selectedContext.names}
+                node={node}
+                names={names}
                 locale={locale}
-                highlightRecipient={highlightReturnRecipient}
+                highlightRecipient={
+                  highlightReturnRecipient && node.kind === "transfer"
+                }
                 onUpdate={updateNode}
-                onDelete={() => requestDelete(selectedContext.node)}
+                onDelete={() => requestDelete(node)}
               />
             ) : null
           }
           labels={{
+            clause: m.builder.clause,
+            startDetail: m.nodeLabels.startActive,
             start: m.nodes.start.title,
             transfer: m.nodes.transfer.title,
             wait: m.nodes.wait.title,
@@ -233,12 +204,8 @@ export function MarketBuilder({
             merge: t.conditionMerge,
             fit: t.fitGraph,
           }}
-          nodeLabel={nodeLabel}
           highlightAddControls={tutorialStep === "build-contract"}
-          onSelectNode={onSelectNode}
-          onRequestInsert={(target, position) =>
-            setInsertMenu({ target, ...position })
-          }
+          onRequestInsert={setInsertMenu}
         />
         {issue && dismissedIssue !== issue && (
           <aside className="mk-canvas-tip" role="status">
@@ -259,8 +226,7 @@ export function MarketBuilder({
         )}
         {insertMenu && (
           <div
-            className="mk-node-picker"
-            style={{ left: insertMenu.x, top: insertMenu.y }}
+            className="mk-node-picker mk-node-picker-centered"
             role="dialog"
             aria-label={t.addNodeTitle}
           >
@@ -276,7 +242,7 @@ export function MarketBuilder({
                   "transfer",
                   "wait",
                   "variable",
-                  ...(insertMenu.target.terminal
+                  ...(insertMenu.terminal
                     ? (["condition", "decision"] as const)
                     : []),
                 ] as BuilderAddableNode[]
@@ -287,7 +253,7 @@ export function MarketBuilder({
                   className={
                     kind === nextTutorialNode ? "mk-tutorial-target" : ""
                   }
-                  onClick={() => insertNode(insertMenu.target, kind)}
+                  onClick={() => insertNode(insertMenu, kind)}
                 >
                   <span aria-hidden="true">
                     {kind === "transfer"

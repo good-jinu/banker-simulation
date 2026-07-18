@@ -24,6 +24,10 @@ export function ContractDetail({
   const pending = contract.requests.filter(
     (request) => request.status === "pending",
   );
+  const review = contract.requests.filter(
+    (request) => request.status === "review",
+  );
+  const queued = [...review, ...pending];
   const statics = staticContractTerms(contract.builderNodes);
   const formulas = draftExpressions(contract.builderNodes);
   return (
@@ -52,12 +56,17 @@ export function ContractDetail({
       </article>
       <div className="mk-request-heading">
         <h2>{t.requestsTitle}</h2>
-        <b>{t.pendingCount(pending.length)}</b>
+        <b>{t.requestQueueCount(pending.length, review.length)}</b>
       </div>
-      {pending.length > 0 ? (
+      {queued.length > 0 ? (
         <div className="mk-request-grid">
-          {pending.map((request) => (
-            <div className="mk-request-cell" key={request.id}>
+          {queued.map((request) => (
+            <div
+              className={`mk-request-cell${
+                request.status === "review" ? " needs-review" : ""
+              }`}
+              key={request.id}
+            >
               <button
                 className="mk-request-portrait"
                 onClick={() => onOpenActor(request.demandId)}
@@ -66,33 +75,41 @@ export function ContractDetail({
                 <img src={request.actor.image} alt="" />
               </button>
               <strong>{request.actor.name}</strong>
-              <em>
-                {t.requestTerms(
-                  request.principal,
-                  request.repayment,
-                  request.termDays,
-                )}
-              </em>
-              <span className="mk-request-actions">
-                <button
-                  className={`accept${
-                    request.id === highlightAcceptRequestId
-                      ? " mk-tutorial-target"
-                      : ""
-                  }`}
-                  onClick={() => onDecide(request.id, true)}
-                  aria-label={`${t.accept} · ${request.actor.name}`}
-                >
-                  <Check aria-hidden="true" />
-                </button>
-                <button
-                  className="reject"
-                  onClick={() => onDecide(request.id, false)}
-                  aria-label={`${t.reject} · ${request.actor.name}`}
-                >
-                  <X aria-hidden="true" />
-                </button>
-              </span>
+              {request.status === "review" ? (
+                <em>{t.requestEvaluationError}</em>
+              ) : (
+                <>
+                  <em>
+                    {request.issue === "insufficient-cash"
+                      ? t.requestInsufficientCash(request.principal)
+                      : t.requestTerms(
+                          request.principal,
+                          request.repayment,
+                          request.termDays,
+                        )}
+                  </em>
+                  <span className="mk-request-actions">
+                    <button
+                      className={`accept${
+                        request.id === highlightAcceptRequestId
+                          ? " mk-tutorial-target"
+                          : ""
+                      }`}
+                      onClick={() => onDecide(request.id, true)}
+                      aria-label={`${t.accept} · ${request.actor.name}`}
+                    >
+                      <Check aria-hidden="true" />
+                    </button>
+                    <button
+                      className="reject"
+                      onClick={() => onDecide(request.id, false)}
+                      aria-label={`${t.reject} · ${request.actor.name}`}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  </span>
+                </>
+              )}
             </div>
           ))}
         </div>

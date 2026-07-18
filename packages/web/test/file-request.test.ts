@@ -131,6 +131,51 @@ test("accepting a drafted request signs the loan and continues the contract", ()
   assert.equal(next.log.at(-1)?.kind, "loan-signed");
 });
 
+test("a contract with no decision signs a valid request automatically", () => {
+  const world = makeWorld({ contracts: [makeContract(null)] });
+  const next = fileRequest(world, "demand-1", "contract-1");
+
+  assert.equal(availableCash(next), 900);
+  assert.equal(loanReceivables(next).length, 1);
+  assert.equal(next.demands[0]?.status, "served");
+  assert.equal(next.contracts[0]?.requests[0]?.status, "accepted");
+  assert.equal(next.log.at(-1)?.kind, "loan-signed");
+});
+
+test("default automation queues a safe manual request when cash is unavailable", () => {
+  const world = makeWorld({
+    contracts: [makeContract(null)],
+    balanceSheet: {
+      assets: [{ id: "cash", kind: "cash", value: 30, status: "active" }],
+      liabilities: [],
+    },
+  });
+  const next = fileRequest(world, "demand-1", "contract-1");
+
+  assert.equal(availableCash(next), 30);
+  assert.equal(loanReceivables(next).length, 0);
+  assert.equal(next.demands[0]?.status, "requesting");
+  assert.equal(next.contracts[0]?.requests[0]?.status, "pending");
+  assert.equal(next.contracts[0]?.requests[0]?.issue, "insufficient-cash");
+});
+
+test("an evaluation error is held for review instead of being rejected or signed", () => {
+  const brokenNodes = lendingNodes(null).map((node) =>
+    node.id === "fund" ? { ...node, amount: value("missing") } : node,
+  );
+  const world = makeWorld({
+    contracts: [makeContract(null, { builderNodes: brokenNodes })],
+  });
+  const next = fileRequest(world, "demand-1", "contract-1");
+
+  assert.deepEqual(matchingOpenDemandIds(world, "contract-1"), ["demand-1"]);
+  assert.equal(availableCash(next), 1_000);
+  assert.equal(loanReceivables(next).length, 0);
+  assert.equal(next.demands[0]?.status, "requesting");
+  assert.equal(next.contracts[0]?.requests[0]?.status, "review");
+  assert.equal(next.contracts[0]?.requests[0]?.issue, "evaluation-error");
+});
+
 test("a new contract routes only matching open demands into absorption", () => {
   assert.deepEqual(matchingOpenDemandIds(makeWorld(), "contract-1"), [
     "demand-1",
@@ -147,19 +192,15 @@ test("a new contract routes only matching open demands into absorption", () => {
   assert.deepEqual(matchingOpenDemandIds(rejected, "contract-1"), []);
 });
 
-test("drop on a contract with no decision node files a pending request", () => {
+test("drop on a contract with no decision node signs automatically", () => {
   const world = makeWorld({ contracts: [makeContract(null)] });
   const next = fileRequest(world, "demand-1", "contract-1");
 
-  assert.equal(
-    availableCash(next),
-    1_000,
-    "no money moves until the banker accepts",
-  );
-  assert.equal(loanReceivables(next).length, 0);
-  assert.equal(next.demands[0]?.status, "requesting");
-  assert.equal(next.contracts[0]?.requests[0]?.status, "pending");
-  assert.equal(next.log.at(-1)?.kind, "request-filed");
+  assert.equal(availableCash(next), 900);
+  assert.equal(loanReceivables(next).length, 1);
+  assert.equal(next.demands[0]?.status, "served");
+  assert.equal(next.contracts[0]?.requests[0]?.status, "accepted");
+  assert.equal(next.log.at(-1)?.kind, "loan-signed");
 });
 
 test("a condition branch merges into the decision that follows it", () => {
@@ -185,6 +226,31 @@ test("a condition branch merges into the decision that follows it", () => {
       1_000,
     ),
     "reject",
+  );
+});
+
+test("a condition path with no decision continues through default automation", () => {
+  const nodes: MarketBuilderNode[] = [
+    { id: "start", kind: "start" },
+    {
+      id: "condition",
+      kind: "condition",
+      left: value("income"),
+      comparator: ">=",
+      right: constant(1_000),
+      thenSteps: [{ id: "draft", kind: "decision", outcome: "draft" }],
+      elseSteps: [],
+    },
+  ];
+
+  assert.equal(decideRequestOutcome(nodes, makeDemand(), 1_000), "auto");
+  assert.equal(
+    decideRequestOutcome(
+      nodes,
+      makeDemand({ actor: { ...makeDemand().actor, monthlyIncome: 2_000 } }),
+      1_000,
+    ),
+    "draft",
   );
 });
 

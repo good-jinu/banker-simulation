@@ -47,7 +47,10 @@ export interface Demand {
   rejectedContractIds: string[];
 }
 
-export type RequestStatus = "pending" | "accepted" | "rejected";
+export type RequestStatus = "pending" | "review" | "accepted" | "rejected";
+
+/** Why automated processing left a request for a banker to inspect. */
+export type RequestIssue = "evaluation-error" | "insufficient-cash";
 
 export interface ContractRequest {
   id: string;
@@ -55,6 +58,8 @@ export interface ContractRequest {
   actor: ActorProfile;
   day: number;
   status: RequestStatus;
+  /** Present when automatic processing could not safely complete. */
+  issue?: RequestIssue;
   /** Contract terms evaluated for THIS requester when the request was filed. */
   principal: number;
   termDays: number;
@@ -78,9 +83,12 @@ export type ComparatorOp = ">" | ">=" | "<" | "<=" | "==";
 
 /**
  * What happens when a decision gate is reached: turn the requester away or
- * leave them in the request list for the banker to review.
+ * leave them in the request list for manual review.
  */
 export type DecisionOutcome = "reject" | "draft";
+
+/** The resolved route defaults to automatic signing when no gate stops it. */
+export type DecisionRoute = DecisionOutcome | "auto";
 
 export interface MarketBuilderNode {
   id: string;
@@ -106,7 +114,7 @@ export interface MarketBuilderNode {
   /** Conditions own two real, path-scoped execution lanes. */
   thenSteps?: MarketBuilderNode[];
   elseSteps?: MarketBuilderNode[];
-  /** Decision only: reject immediately, or draft for the banker's approval. */
+  /** Decision only: reject immediately, or draft for manual review. */
   outcome?: DecisionOutcome;
 }
 
@@ -294,14 +302,15 @@ export function requesterStateSatisfiesDemand(
 /**
  * Run the stack's decision gates for a requester. Conditions route through
  * their selected lane and then merge back into the following contract flow.
- * A draft gate pauses the flow for manual approval; accepting the resulting
- * request later starts the complete contract, including its merged steps.
+ * A draft gate pauses the flow for manual approval. When no decision gate is
+ * reached, the request router signs automatically after the full contract run
+ * and funding check succeed.
  */
 export function decideRequestOutcome(
   nodes: readonly MarketBuilderNode[],
   demand: Demand,
   availableCash: number,
-): DecisionOutcome {
+): DecisionRoute {
   try {
     const decidePath = (
       path: readonly MarketBuilderNode[],
@@ -326,7 +335,7 @@ export function decideRequestOutcome(
       }
       return null;
     };
-    return decidePath(nodes, demandVariables(demand, availableCash)) ?? "draft";
+    return decidePath(nodes, demandVariables(demand, availableCash)) ?? "auto";
   } catch {
     return "draft";
   }
@@ -861,6 +870,19 @@ export function contractFitsDemand(
   );
 }
 
+/** True only when a contract run threw while evaluating this applicant. */
+function contractHasEvaluationError(
+  contract: ContractOffer,
+  demand: Demand,
+  availableCash: number,
+): boolean {
+  return (
+    !demand.rejectedContractIds.includes(contract.id) &&
+    simulateContractForDemand(contract.builderNodes, demand, availableCash) ===
+      null
+  );
+}
+
 /**
  * Open demands that should automatically apply when a contract enters the
  * market. This is the same fit and decision logic used by fileRequest; the
@@ -876,12 +898,17 @@ export function matchingOpenDemandIds(
   if (!contract) return [];
   const cash = availableCash(world);
   return world.demands
-    .filter(
-      (demand) =>
-        demand.status === "open" &&
+    .filter((demand) => {
+      if (demand.status !== "open") return false;
+      // Evaluation failures always surface for review, even if a decision
+      // would otherwise reject the applicant. Silently dropping a broken
+      // contract would hide a configuration or requester-data problem.
+      if (contractHasEvaluationError(contract, demand, cash)) return true;
+      return (
         contractFitsDemand(contract, demand, cash) &&
-        decideRequestOutcome(contract.builderNodes, demand, cash) !== "reject",
-    )
+        decideRequestOutcome(contract.builderNodes, demand, cash) !== "reject"
+      );
+    })
     .map((demand) => demand.id);
 }
 
@@ -910,6 +937,27 @@ function buildRequest(
     principal: terms.principal,
     termDays: terms.termDays,
     repayment: terms.repayment,
+  };
+}
+
+function buildReviewRequest(
+  demand: Demand,
+  contract: ContractOffer,
+  day: number,
+  serial: number,
+): ContractRequest {
+  return {
+    id: `request-${serial}-${demand.id}-${contract.id}`,
+    demandId: demand.id,
+    actor: demand.actor,
+    day,
+    status: "review",
+    issue: "evaluation-error",
+    // These values are deliberately unusable: a review request never reaches
+    // acceptRequest until the contract is corrected and re-evaluated.
+    principal: 0,
+    termDays: 0,
+    repayment: 0,
   };
 }
 
@@ -982,14 +1030,14 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     return { ...demand, status: "expired" as const };
   });
 
-  // 3. Requesters run out of patience: a pending request older than the
+  // 3. Requesters run out of patience: a queued review/request older than the
   //    patience window is withdrawn and the person leaves the market.
   let contracts = world.contracts;
   const impatientDemandIds = new Set<string>();
   contracts = contracts.map((contract) => {
     const stale = contract.requests.filter(
       (request) =>
-        request.status === "pending" &&
+        (request.status === "pending" || request.status === "review") &&
         day - request.day >= REQUEST_LIFETIME_DAYS,
     );
     if (stale.length === 0) return contract;
@@ -1022,30 +1070,92 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     );
 
   // 4. Open demands discover fitting contracts and apply. Decision gates can
-  //    reject immediately; every other request is drafted for banker approval.
+  //    reject, queue for review, or safely sign the loan in this same tick.
   let nextId = world.nextId;
   demands = demands.map((demand) => {
     if (demand.status !== "open") return demand;
-    const fitting = contracts.filter((contract) =>
-      contractFitsDemand(contract, demand, cash),
+    const candidates = contracts.filter(
+      (contract) =>
+        contractFitsDemand(contract, demand, cash) ||
+        contractHasEvaluationError(contract, demand, cash),
     );
-    if (fitting.length === 0) return demand;
+    if (candidates.length === 0) return demand;
     if (!roller.chance(DAILY_REQUEST_CHANCE)) return demand;
-    const contract = roller.pick(fitting);
-    const request = buildRequest(demand, contract, day, cash, nextId);
+    const contract = roller.pick(candidates);
+    const evaluationFailed = contractHasEvaluationError(contract, demand, cash);
+    const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
+    const request = evaluationFailed
+      ? buildReviewRequest(demand, contract, day, nextId)
+      : buildRequest(demand, contract, day, cash, nextId);
     if (!request) return demand;
     nextId += 1;
 
-    const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
+    // An execution failure is always visible for review, never hidden by a
+    // rejection rule or pushed through the automated signing path.
+    if (evaluationFailed) {
+      contracts = contracts.map((candidate) =>
+        candidate.id === contract.id
+          ? { ...candidate, requests: [...candidate.requests, request] }
+          : candidate,
+      );
+      log = pushEvent(
+        log,
+        {
+          day,
+          kind: "request-filed",
+          actorName: demand.actor.name,
+          amount: demand.amount,
+        },
+        `event-${request.id}`,
+      );
+      return { ...demand, status: "requesting" as const };
+    }
+
     if (outcome === "reject")
       return {
         ...demand,
         rejectedContractIds: [...demand.rejectedContractIds, contract.id],
       };
 
+    if (outcome === "auto" && cash >= request.principal) {
+      const loanAsset = loanAssetForRequest(contract.id, request, day);
+      cash -= request.principal;
+      assets = [...assets, loanAsset];
+      contracts = contracts.map((candidate) =>
+        candidate.id === contract.id
+          ? {
+              ...candidate,
+              requests: [
+                ...candidate.requests,
+                { ...request, status: "accepted" as const },
+              ],
+            }
+          : candidate,
+      );
+      log = pushEvent(
+        log,
+        {
+          day,
+          kind: "loan-signed",
+          actorName: request.actor.name,
+          amount: request.principal,
+        },
+        `event-${loanAsset.id}`,
+      );
+      return { ...demand, status: "served" as const };
+    }
+
     contracts = contracts.map((candidate) =>
       candidate.id === contract.id
-        ? { ...candidate, requests: [...candidate.requests, request] }
+        ? {
+            ...candidate,
+            requests: [
+              ...candidate.requests,
+              outcome === "auto"
+                ? { ...request, issue: "insufficient-cash" }
+                : request,
+            ],
+          }
         : candidate,
     );
     log = pushEvent(
@@ -1061,7 +1171,7 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     return { ...demand, status: "requesting" as const };
   });
 
-  // 5. Pending requests whose demand expired never resolve, so they are
+  // 5. Queued requests whose demand expired never resolve, so they are
   //    withdrawn together with the demand (step 2 only expires open demands,
   //    which cannot have pending requests — kept for safety).
   if (expiredIds.size > 0)
@@ -1069,7 +1179,8 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
       ...contract,
       requests: contract.requests.filter(
         (request) =>
-          request.status !== "pending" || !expiredIds.has(request.demandId),
+          (request.status !== "pending" && request.status !== "review") ||
+          !expiredIds.has(request.demandId),
       ),
     }));
 
@@ -1138,7 +1249,7 @@ export function postContract(
 }
 
 /**
- * Rewrite a posted contract's terms.  Pending requests were filed against
+ * Rewrite a posted contract's terms. Queued requests were filed against
  * the old terms, so their demands return to the open market — and people
  * the old terms turned away will reconsider the new ones.
  */
@@ -1153,7 +1264,10 @@ export function updateContract(
   if (!contract) return world;
   const releasedDemandIds = new Set(
     contract.requests
-      .filter((request) => request.status === "pending")
+      .filter(
+        (request) =>
+          request.status === "pending" || request.status === "review",
+      )
       .map((request) => request.demandId),
   );
   return {
@@ -1164,7 +1278,8 @@ export function updateContract(
             ...candidate,
             builderNodes,
             requests: candidate.requests.filter(
-              (request) => request.status !== "pending",
+              (request) =>
+                request.status !== "pending" && request.status !== "review",
             ),
           }
         : candidate,
@@ -1205,7 +1320,7 @@ export function moveContract(
   };
 }
 
-/** Remove a posted contract; pending requesters return to the market. */
+/** Remove a posted contract; queued requesters return to the market. */
 export function withdrawContract(
   world: MarketWorld,
   contractId: string,
@@ -1216,7 +1331,10 @@ export function withdrawContract(
   if (!contract) return world;
   const releasedDemandIds = new Set(
     contract.requests
-      .filter((request) => request.status === "pending")
+      .filter(
+        (request) =>
+          request.status === "pending" || request.status === "review",
+      )
       .map((request) => request.demandId),
   );
   return {
@@ -1251,11 +1369,43 @@ export function fileRequest(
   );
   if (!demand || !contract || demand.status !== "open") return world;
   const cash = availableCash(world);
-  if (!contractFitsDemand(contract, demand, cash)) return world;
-  const request = buildRequest(demand, contract, world.day, cash, world.nextId);
+  const evaluationFailed = contractHasEvaluationError(contract, demand, cash);
+  if (!evaluationFailed && !contractFitsDemand(contract, demand, cash))
+    return world;
+  const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
+  // A failed run is never rejected or auto-signed. It remains visible, but
+  // cannot be accepted until the contract is fixed and filed again.
+  const request = evaluationFailed
+    ? buildReviewRequest(demand, contract, world.day, world.nextId)
+    : buildRequest(demand, contract, world.day, cash, world.nextId);
   if (!request) return world;
 
-  const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
+  const filed: MarketWorld = {
+    ...world,
+    nextId: world.nextId + 1,
+    contracts: world.contracts.map((candidate) =>
+      candidate.id === contractId
+        ? { ...candidate, requests: [...candidate.requests, request] }
+        : candidate,
+    ),
+    demands: world.demands.map((candidate) =>
+      candidate.id === demandId
+        ? { ...candidate, status: "requesting" as const }
+        : candidate,
+    ),
+    log: pushEvent(
+      world.log,
+      {
+        day: world.day,
+        kind: "request-filed",
+        actorName: demand.actor.name,
+        amount: request.principal || demand.amount,
+      },
+      `event-${request.id}`,
+    ),
+  };
+  if (evaluationFailed) return filed;
+
   if (outcome === "reject")
     return {
       ...world,
@@ -1273,31 +1423,25 @@ export function fileRequest(
       ),
     };
 
+  if (outcome !== "auto") return filed;
+
+  const result = acceptRequest(filed, contractId, request.id);
+  if (!result.failure) return result.world;
+  // The terms are sound but the balance has changed since matching. Preserve
+  // a normal, manually approvable request and explain why automation stopped.
   return {
-    ...world,
-    nextId: world.nextId + 1,
-    contracts: world.contracts.map((candidate) =>
+    ...filed,
+    contracts: filed.contracts.map((candidate) =>
       candidate.id === contractId
-        ? { ...candidate, requests: [...candidate.requests, request] }
-        : candidate,
-    ),
-    demands: world.demands.map((candidate) =>
-      candidate.id === demandId
         ? {
             ...candidate,
-            status: "requesting" as const,
+            requests: candidate.requests.map((entry) =>
+              entry.id === request.id
+                ? { ...entry, issue: "insufficient-cash" }
+                : entry,
+            ),
           }
         : candidate,
-    ),
-    log: pushEvent(
-      world.log,
-      {
-        day: world.day,
-        kind: "request-filed",
-        actorName: demand.actor.name,
-        amount: request.principal,
-      },
-      `event-${request.id}`,
     ),
   };
 }
@@ -1307,6 +1451,29 @@ export type AcceptFailure = "insufficient-cash" | "not-found";
 export interface AcceptResult {
   world: MarketWorld;
   failure: AcceptFailure | null;
+}
+
+function loanAssetForRequest(
+  contractId: string,
+  request: ContractRequest,
+  day: number,
+): Asset {
+  const loan: Loan = {
+    contractId,
+    actor: request.actor,
+    principal: request.principal,
+    repayment: request.repayment,
+    signedDay: day,
+    dueDay: day + request.termDays,
+    defaultChanceBp: loanDefaultChanceBp(request.actor, request.repayment),
+  };
+  return {
+    id: `loan-${request.id}`,
+    kind: "loan-receivable",
+    value: request.principal,
+    status: "active",
+    loan,
+  };
 }
 
 /** Accept a pending request: cash goes out now, the loan starts today. */
@@ -1325,22 +1492,7 @@ export function acceptRequest(
     return { world, failure: "not-found" };
   const cash = availableCash(world);
   if (cash < request.principal) return { world, failure: "insufficient-cash" };
-  const loan: Loan = {
-    contractId,
-    actor: request.actor,
-    principal: request.principal,
-    repayment: request.repayment,
-    signedDay: world.day,
-    dueDay: world.day + request.termDays,
-    defaultChanceBp: loanDefaultChanceBp(request.actor, request.repayment),
-  };
-  const loanAsset: Asset = {
-    id: `loan-${request.id}`,
-    kind: "loan-receivable",
-    value: request.principal,
-    status: "active",
-    loan,
-  };
+  const loanAsset = loanAssetForRequest(contractId, request, world.day);
   return {
     failure: null,
     world: {
@@ -1454,6 +1606,7 @@ export function outstandingPrincipal(world: MarketWorld): number {
 }
 
 export function pendingRequestCount(contract: ContractOffer): number {
-  return contract.requests.filter((request) => request.status === "pending")
-    .length;
+  return contract.requests.filter(
+    (request) => request.status === "pending" || request.status === "review",
+  ).length;
 }
