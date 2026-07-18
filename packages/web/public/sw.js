@@ -1,24 +1,27 @@
 const CACHE_NAME = "banker-simulation-v1";
+const BASE_URL = new URL("./", self.location.href);
+const pageUrl = (path) => new URL(path, BASE_URL).toString();
 const STATIC_ASSETS = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/assets/assets/coin.svg",
-  "/assets/avatars/mina-neutral.webp",
-  "/assets/board/network-grid-light.webp",
-  "/assets/composer/tray-surface.webp",
+  pageUrl("./"),
+  pageUrl("index.html"),
+  pageUrl("manifest.webmanifest"),
+  pageUrl("assets/assets/coin.svg"),
+  pageUrl("assets/avatars/mina-neutral.webp"),
+  pageUrl("assets/board/network-grid-light.webp"),
+  pageUrl("assets/composer/tray-surface.webp"),
 ];
 
 async function installShell() {
   const cache = await caches.open(CACHE_NAME);
   await cache.addAll(STATIC_ASSETS);
-  const response = await fetch("/index.html");
+  const response = await fetch(pageUrl("index.html"));
   const html = await response.clone().text();
-  const buildAssets = [
-    ...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g),
-  ].map((match) => match[1]);
-  await cache.put("/index.html", response);
-  await Promise.all(buildAssets.map((asset) => asset && cache.add(asset)));
+  const buildAssets = [...html.matchAll(/(?:src|href)="([^"]+)"/g)]
+    .map((match) => match[1])
+    .filter((asset) => asset && !asset.startsWith("http"))
+    .map((asset) => pageUrl(asset));
+  await cache.put(pageUrl("index.html"), response);
+  await Promise.all(buildAssets.map((asset) => cache.add(asset)));
 }
 
 self.addEventListener("install", (event) => {
@@ -52,11 +55,12 @@ self.addEventListener("fetch", (event) => {
           const copy = response.clone();
           void caches
             .open(CACHE_NAME)
-            .then((cache) => cache.put("/index.html", copy));
+            .then((cache) => cache.put(pageUrl("index.html"), copy));
           return response;
         })
         .catch(
-          async () => (await caches.match("/index.html")) || Response.error(),
+          async () =>
+            (await caches.match(pageUrl("index.html"))) || Response.error(),
         ),
     );
     return;
