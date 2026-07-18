@@ -11,13 +11,12 @@ import {
 import {
   BUILDER_VARIABLES,
   evaluateTermsWithVariables,
-  type Demand,
   type MarketBuilderNode,
 } from "./market-world.ts";
 
 /**
- * Pure helpers behind the contract builder: the seed stacks a draft starts
- * from, draft validation, the formula summaries, and node construction.
+ * Pure helpers behind the contract builder: the required start node, draft
+ * validation, formula summaries, and node construction.
  */
 
 export type BuilderAddableNode =
@@ -30,6 +29,11 @@ export const SAMPLE_REQUESTER: Record<string, number> = {
   age: 40,
   cash: 1000,
 };
+
+/** A new graph has no configurable nodes, but every graph starts here. */
+export function emptyDraftNodes(): MarketBuilderNode[] {
+  return [{ id: "start-fixed", kind: "start" }];
+}
 
 /**
  * Formulas each summary column shows, joined across the stack.  Conditions
@@ -171,97 +175,27 @@ export function validateDraft(
   return null;
 }
 
-export function defaultDraftNodes(demand?: Demand): MarketBuilderNode[] {
-  if (demand)
-    // Drafted from a specific person: fixed terms that fit them exactly.
-    return [
-      { id: "start-fixed", kind: "start" },
-      {
-        id: "out-seed",
-        kind: "transfer",
-        senderId: "player",
-        recipientId: "customer",
-        amount: constant(demand.amount),
-      },
-      {
-        id: "wait-seed",
-        kind: "wait",
-        days: constant(demand.payableAfterDays),
-      },
-      {
-        id: "in-seed",
-        kind: "transfer",
-        senderId: "customer",
-        recipientId: "player",
-        amount: constant(demand.maxRepayment),
-      },
-    ];
-  // A fresh contract showcases dynamic terms: lend whatever is asked and
-  // price the margin by how long the requester needs.
-  return [
-    { id: "start-fixed", kind: "start" },
-    {
-      id: "out-seed",
-      kind: "transfer",
-      senderId: "player",
-      recipientId: "customer",
-      amount: value("amount"),
-    },
-    { id: "wait-seed", kind: "wait", days: value("days") },
-    {
-      id: "cond-seed",
-      kind: "condition",
-      left: value("days"),
-      comparator: ">",
-      right: constant(180),
-      thenSteps: [
-        {
-          id: "rate-long",
-          kind: "variable",
-          variableName: "rate",
-          amount: constant(1.1),
-        },
-        {
-          id: "in-long",
-          kind: "transfer",
-          senderId: "customer",
-          recipientId: "player",
-          amount: operation("multiply", value("amount"), value("rate")),
-        },
-      ],
-      elseSteps: [
-        {
-          id: "rate-short",
-          kind: "variable",
-          variableName: "rate",
-          amount: constant(1.05),
-        },
-        {
-          id: "in-short",
-          kind: "transfer",
-          senderId: "customer",
-          recipientId: "player",
-          amount: operation("multiply", value("amount"), value("rate")),
-        },
-      ],
-    },
-  ];
-}
-
 export function withoutEndNodes(
   nodes: readonly MarketBuilderNode[],
 ): MarketBuilderNode[] {
-  return nodes
-    .filter((node) => node.kind !== "end")
-    .map((node) =>
-      node.kind === "condition"
-        ? {
-            ...node,
-            thenSteps: withoutEndNodes(node.thenSteps ?? []),
-            elseSteps: withoutEndNodes(node.elseSteps ?? []),
-          }
-        : node,
-    );
+  const stripEndNodes = (
+    path: readonly MarketBuilderNode[],
+  ): MarketBuilderNode[] =>
+    path
+      .filter((node) => node.kind !== "end")
+      .map((node) =>
+        node.kind === "condition"
+          ? {
+              ...node,
+              thenSteps: stripEndNodes(node.thenSteps ?? []),
+              elseSteps: stripEndNodes(node.elseSteps ?? []),
+            }
+          : node,
+      );
+  const withoutEnds = stripEndNodes(nodes);
+  return withoutEnds.some((node) => node.kind === "start")
+    ? withoutEnds
+    : [emptyDraftNodes()[0]!, ...withoutEnds];
 }
 export interface BuilderNodeContext {
   node: MarketBuilderNode;

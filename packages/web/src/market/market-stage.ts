@@ -10,6 +10,7 @@ import {
 } from "pixi.js";
 import type { ContractOffer, MarketWorld } from "./market-world.ts";
 import { pendingRequestCount, staticContractTerms } from "./market-world.ts";
+import { nearestDropTarget } from "./drop-target.ts";
 
 /**
  * PixiJS scene for the open-market map.  Demand nodes are draggable portrait
@@ -29,7 +30,6 @@ export interface MarketStageCallbacks {
 const DEMAND_RADIUS = 26;
 const CONTRACT_HALF = 27;
 const DRAG_THRESHOLD_PX = 7;
-const DROP_RANGE_PX = 56;
 
 const GOLD = 0xd6aa52;
 const GOLD_BRIGHT = 0xf0cf82;
@@ -434,18 +434,17 @@ export class MarketStage {
     x: number,
     y: number,
   ): { contractId: string; node: ContractNode } | null {
-    let best: {
-      contractId: string;
-      node: ContractNode;
-      distance: number;
-    } | null = null;
-    for (const [contractId, node] of this.contractNodes) {
-      const distance = Math.hypot(node.root.x - x, node.root.y - y);
-      if (distance > DROP_RANGE_PX) continue;
-      if (!best || distance < best.distance)
-        best = { contractId, node, distance };
-    }
-    return best;
+    const contractId = nearestDropTarget(
+      x,
+      y,
+      [...this.contractNodes].map(([id, node]) => ({
+        id,
+        x: node.root.x,
+        y: node.root.y,
+      })),
+    );
+    const node = contractId ? this.contractNodes.get(contractId) : undefined;
+    return contractId && node ? { contractId, node } : null;
   }
 
   private snapBack(drag: DragState): void {

@@ -300,6 +300,15 @@ class BuilderCanvasScene {
       maxX: rootWidth / 2 + 60,
       maxY: 100,
     };
+    if (path.length === 0) {
+      this.addPlus(0, 20, {
+        ownerId: null,
+        branch: null,
+        index: 0,
+        terminal: true,
+      });
+      this.expandBounds(0, 20);
+    }
     this.layoutPath(path, { ownerId: null, branch: null }, 0, 20);
     if (!this.fitted) {
       this.fitted = true;

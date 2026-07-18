@@ -22,7 +22,7 @@ import { messagesFor, type Messages } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "../lib/game-clock.ts";
 import { formatGameDate } from "../lib/game-date.ts";
 import {
-  defaultDraftNodes,
+  emptyDraftNodes,
   validateDraft,
   withoutEndNodes,
 } from "./builder-draft.ts";
@@ -102,7 +102,7 @@ export function MarketApp({
     null,
   );
   const [builderNodes, setBuilderNodes] = useState<MarketBuilderNode[]>(() =>
-    defaultDraftNodes(),
+    emptyDraftNodes(),
   );
   const [editingContractId, setEditingContractId] = useState<string | null>(
     null,
@@ -210,8 +210,8 @@ export function MarketApp({
     setView("contract");
   }, []);
 
-  function openBuilder(demand?: Demand): void {
-    setBuilderNodes(defaultDraftNodes(demand));
+  function openBuilder(): void {
+    setBuilderNodes(emptyDraftNodes());
     setEditingContractId(null);
     setSelectedNodeId(null);
     setView("builder");
@@ -479,11 +479,7 @@ export function MarketApp({
             <DemandDetail
               demand={selectedDemand}
               locale={locale}
-              onDraft={
-                demandOrigin === "map"
-                  ? () => openBuilder(selectedDemand)
-                  : undefined
-              }
+              onDraft={demandOrigin === "map" ? () => openBuilder() : undefined}
             />
           </div>
         )}

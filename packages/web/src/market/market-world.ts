@@ -481,10 +481,13 @@ function hashRoll(seed: string, cursor: number): number {
  * many rolls as they need, and store the advanced cursor back on the copy.
  */
 class Roller {
-  constructor(
-    private readonly seed: string,
-    public cursor: number,
-  ) {}
+  private readonly seed: string;
+  cursor: number;
+
+  constructor(seed: string, cursor: number) {
+    this.seed = seed;
+    this.cursor = cursor;
+  }
 
   next(): number {
     return hashRoll(this.seed, this.cursor++);
