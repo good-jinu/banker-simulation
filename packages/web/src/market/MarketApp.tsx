@@ -38,6 +38,7 @@ import {
   fileRequest,
   loanReceivables,
   MARKET_START_DATE,
+  moveContract,
   postContract,
   rejectRequest,
   totalAssetValue,
@@ -122,7 +123,7 @@ export function MarketApp({
   const [clockView, setClockView] = useState<{
     paused: boolean;
     speed: ClockSpeed;
-  }>({ paused: true, speed: 1 });
+  }>({ paused: false, speed: 1 });
   const clockRef = useRef<GameClock | null>(null);
 
   useEffect(() => {
@@ -131,6 +132,7 @@ export function MarketApp({
       return true;
     }, MARKET_MS_PER_DAY);
     clockRef.current = clock;
+    clock.play();
     clock.start();
     const pauseWhenHidden = () => {
       if (document.hidden) {
@@ -634,9 +636,13 @@ export function MarketApp({
           <MarketStageView
             world={world}
             suspended={view !== "map"}
+            timeFlowing={!clockView.paused}
             onTapDemand={(id) => openDemandDetail(id, "map")}
             onTapContract={openContractDetail}
             onDropDemand={dropDemand}
+            onMoveContract={(id, x, y) =>
+              setWorld((current) => moveContract(current, id, x, y))
+            }
           />
           <button
             className="mk-fab"

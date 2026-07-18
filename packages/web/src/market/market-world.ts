@@ -1127,6 +1127,26 @@ export function updateContract(
   };
 }
 
+/** Reposition a contract on the map; coordinates are normalized to [0, 1]. */
+export function moveContract(
+  world: MarketWorld,
+  contractId: string,
+  x: number,
+  y: number,
+): MarketWorld {
+  if (!world.contracts.some((candidate) => candidate.id === contractId))
+    return world;
+  const clamp = (value: number) => Math.min(1, Math.max(0, value));
+  return {
+    ...world,
+    contracts: world.contracts.map((candidate) =>
+      candidate.id === contractId
+        ? { ...candidate, x: clamp(x), y: clamp(y) }
+        : candidate,
+    ),
+  };
+}
+
 /** Remove a posted contract; pending requesters return to the market. */
 export function withdrawContract(
   world: MarketWorld,

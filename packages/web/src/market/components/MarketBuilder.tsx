@@ -163,7 +163,7 @@ export function MarketBuilder({
   }
 
   return (
-    <section className="cs-builder mk-detail-scroll">
+    <section className="cs-builder mk-builder-page">
       <div className="cs-builder-guide">
         <div>
           <span>{t.builderSummary}</span>
@@ -183,6 +183,17 @@ export function MarketBuilder({
         <MarketBuilderCanvas
           nodes={nodes}
           selectedNodeId={selectedNodeId}
+          overlay={
+            selectedContext && selectedContext.node.kind !== "start" ? (
+              <MarketNodeInspector
+                node={selectedContext.node}
+                names={selectedContext.names}
+                locale={locale}
+                onUpdate={updateNode}
+                onDelete={() => requestDelete(selectedContext.node)}
+              />
+            ) : null
+          }
           labels={{
             start: m.nodes.start.title,
             transfer: m.nodes.transfer.title,
@@ -213,6 +224,11 @@ export function MarketBuilder({
               <X aria-hidden="true" />
             </button>
           </aside>
+        )}
+        {!issue && (
+          <p className="cs-builder-feedback ready mk-canvas-ready">
+            {t.builderReady}
+          </p>
         )}
         {insertMenu && (
           <div
@@ -258,28 +274,16 @@ export function MarketBuilder({
             </div>
           </div>
         )}
+        {onWithdraw && (
+          <button className="mk-withdraw-button" onClick={onWithdraw}>
+            {t.withdrawContract}
+          </button>
+        )}
       </div>
-
-      {selectedContext && selectedContext.node.kind !== "start" && (
-        <MarketNodeInspector
-          node={selectedContext.node}
-          names={selectedContext.names}
-          locale={locale}
-          onUpdate={updateNode}
-          onDelete={() => requestDelete(selectedContext.node)}
-        />
-      )}
-
-      {!issue && <p className="cs-builder-feedback ready">{t.builderReady}</p>}
 
       <button className="cs-offer-button" onClick={onSubmit}>
         <Send aria-hidden="true" /> {editing ? t.saveChanges : t.postToMarket}
       </button>
-      {onWithdraw && (
-        <button className="mk-withdraw-button" onClick={onWithdraw}>
-          {t.withdrawContract}
-        </button>
-      )}
       {pendingDelete && (
         <div className="cs-dialog-backdrop">
           <article role="alertdialog" aria-modal="true">

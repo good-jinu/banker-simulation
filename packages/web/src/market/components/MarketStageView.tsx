@@ -5,23 +5,38 @@ import type { MarketWorld } from "../market-world.ts";
 export function MarketStageView({
   world,
   suspended,
+  timeFlowing,
   onTapDemand,
   onTapContract,
   onDropDemand,
+  onMoveContract,
 }: {
   world: MarketWorld;
   /** True while an opaque overlay covers the map; pauses Pixi rendering. */
   suspended: boolean;
+  /** True while the game clock advances; map nodes vibrate to show it. */
+  timeFlowing: boolean;
   onTapDemand: (demandId: string) => void;
   onTapContract: (contractId: string) => void;
   onDropDemand: (demandId: string, contractId: string) => boolean;
+  onMoveContract: (contractId: string, x: number, y: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<MarketStage | null>(null);
   // Callbacks live in a ref so the Pixi app never re-initializes just
   // because a render produced fresh closures.
-  const callbacksRef = useRef({ onTapDemand, onTapContract, onDropDemand });
-  callbacksRef.current = { onTapDemand, onTapContract, onDropDemand };
+  const callbacksRef = useRef({
+    onTapDemand,
+    onTapContract,
+    onDropDemand,
+    onMoveContract,
+  });
+  callbacksRef.current = {
+    onTapDemand,
+    onTapContract,
+    onDropDemand,
+    onMoveContract,
+  };
   const worldRef = useRef(world);
   worldRef.current = world;
 
@@ -36,6 +51,8 @@ export function MarketStageView({
         onTapContract: (id) => callbacksRef.current.onTapContract(id),
         onDropDemand: (demandId, contractId) =>
           callbacksRef.current.onDropDemand(demandId, contractId),
+        onMoveContract: (contractId, x, y) =>
+          callbacksRef.current.onMoveContract(contractId, x, y),
       })
       .then(() => stage.syncWorld(worldRef.current));
     return () => {
@@ -51,6 +68,10 @@ export function MarketStageView({
   useEffect(() => {
     stageRef.current?.setSuspended(suspended);
   }, [suspended]);
+
+  useEffect(() => {
+    stageRef.current?.setTimeFlowing(timeFlowing);
+  }, [timeFlowing]);
 
   return (
     <div

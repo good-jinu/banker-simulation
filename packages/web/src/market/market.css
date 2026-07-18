@@ -1047,9 +1047,48 @@
   line-height: 1.35;
   word-break: break-word;
 }
+/* The builder is a full-height page like the map: the canvas fills all the
+   space under the guide strip and every control floats above it. */
+.mk-builder-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.mk-builder-page .cs-builder-guide {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(214, 170, 82, 0.18);
+  background: rgba(5, 14, 29, 0.92);
+}
+
 .mk-graph-builder {
   position: relative;
-  margin-top: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.mk-canvas-ready {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 10px;
+  margin: 0;
+  pointer-events: none;
+  background: rgba(13, 46, 37, 0.88);
+}
+
+.mk-builder-page .mk-withdraw-button {
+  position: absolute;
+  z-index: 4;
+  left: 10px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: auto;
+  margin: 0;
+  padding: 11px 14px;
+  background: rgba(84, 27, 22, 0.88);
 }
 
 .mk-canvas-tip {
@@ -1057,7 +1096,7 @@
   z-index: 5;
   top: 10px;
   left: 10px;
-  right: 10px;
+  right: 96px; /* keep the fit-graph button clickable */
   min-height: 38px;
   display: flex;
   align-items: center;
@@ -1103,10 +1142,8 @@
 
 .mk-builder-canvas-shell {
   position: relative;
-  height: clamp(420px, 58dvh, 680px);
+  height: 100%;
   overflow: hidden;
-  border: 1px solid rgba(99, 137, 172, 0.38);
-  border-radius: 10px;
   background: #071328;
   box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.42);
 }
@@ -1218,8 +1255,30 @@
   font-size: 1rem;
 }
 
-.mk-canvas-inspector {
-  margin-top: 9px;
+/* The settings panel is attached to the selected node's box: flush against
+   its bottom (or top) edge, sharing the gold selection stroke so the two
+   read as one expanded node. */
+.mk-node-panel {
+  position: absolute;
+  z-index: 5;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 2px solid #d9a84e;
+  border-radius: 0 0 14px 14px;
+  background: #0b1c32;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.5);
+}
+
+.mk-node-panel.above {
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.mk-node-panel .cs-node-inspector {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .mk-canvas-inspector > header > div {
@@ -1243,10 +1302,6 @@
 }
 
 @media (max-width: 520px) {
-  .mk-builder-canvas-shell {
-    height: 500px;
-  }
-
   .mk-node-picker {
     position: fixed;
     right: 10px;

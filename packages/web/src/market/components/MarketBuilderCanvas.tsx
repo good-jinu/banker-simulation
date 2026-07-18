@@ -1,4 +1,10 @@
-import { useEffect, useRef } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import {
   Application,
   Container,
@@ -42,6 +48,18 @@ interface Props {
     target: BuilderInsertTarget,
     position: { x: number; y: number },
   ) => void;
+  /** Rendered as a panel attached to the selected node's box. */
+  overlay?: ReactNode;
+}
+
+/** Screen-space box of the selected node, for anchoring the HTML overlay. */
+interface SelectedNodeRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  viewWidth: number;
+  viewHeight: number;
 }
 
 const NODE_WIDTH = 190;
@@ -126,6 +144,11 @@ class BuilderCanvasScene {
   private worldStart: Point | null = null;
   private moved = false;
   private bounds: Bounds = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+  /** World-space centers of the laid-out nodes, rebuilt on every render. */
+  private readonly nodeCenters = new Map<string, Point>();
+  private lastRectKey = "";
+  /** Set by the React shell; receives the selected node's screen box. */
+  onSelectedNodeRect: (rect: SelectedNodeRect | null) => void = () => undefined;
 
   async init(host: HTMLElement): Promise<void> {
     this.host = host;
@@ -149,10 +172,17 @@ class BuilderCanvasScene {
     this.app.stage.on("pointermove", (event) => this.pan(event));
     this.app.stage.on("pointerup", () => this.endPan());
     this.app.stage.on("pointerupoutside", () => this.endPan());
+    // Node and plus-button taps stop propagation, so a tap that reaches the
+    // stage itself landed on empty canvas and clears the selection.
+    this.app.stage.on("pointertap", (event) => {
+      if (this.moved || event.target !== this.app.stage) return;
+      this.onSelectNode(null);
+    });
     host.addEventListener("wheel", this.onWheel, { passive: false });
     this.app.renderer.on("resize", () => {
       this.app.stage.hitArea = this.app.screen;
       this.drawGrid();
+      this.reportSelectedRect();
     });
     // Objects retired on frame N are still referenced by that frame's render
     // list; promote them one tick later and destroy them the tick after.
@@ -223,6 +253,42 @@ class BuilderCanvasScene {
       (this.app.screen.width - width * scale) / 2 - this.bounds.minX * scale,
       (this.app.screen.height - height * scale) / 2 - this.bounds.minY * scale,
     );
+    this.reportSelectedRect();
+  }
+
+  /** Tell the React shell where the selected node sits on screen. */
+  private reportSelectedRect(): void {
+    if (!this.ready) return;
+    const center = this.selectedNodeId
+      ? this.nodeCenters.get(this.selectedNodeId)
+      : undefined;
+    if (!center) {
+      if (this.lastRectKey !== "") {
+        this.lastRectKey = "";
+        this.onSelectedNodeRect(null);
+      }
+      return;
+    }
+    const scale = this.world.scale.x;
+    const rect: SelectedNodeRect = {
+      left: this.world.x + (center.x - NODE_WIDTH / 2) * scale,
+      top: this.world.y + (center.y - NODE_HEIGHT / 2) * scale,
+      width: NODE_WIDTH * scale,
+      height: NODE_HEIGHT * scale,
+      viewWidth: this.app.screen.width,
+      viewHeight: this.app.screen.height,
+    };
+    const key = [
+      this.selectedNodeId,
+      Math.round(rect.left),
+      Math.round(rect.top),
+      Math.round(rect.width),
+      Math.round(rect.viewWidth),
+      Math.round(rect.viewHeight),
+    ].join(":");
+    if (key === this.lastRectKey) return;
+    this.lastRectKey = key;
+    this.onSelectedNodeRect(rect);
   }
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -245,6 +311,7 @@ class BuilderCanvasScene {
       pointer.x - localX * nextScale,
       pointer.y - localY * nextScale,
     );
+    this.reportSelectedRect();
   };
 
   private beginPan(event: FederatedPointerEvent): void {
@@ -260,6 +327,7 @@ class BuilderCanvasScene {
     if (Math.hypot(dx, dy) > 4) this.moved = true;
     if (!this.moved) return;
     this.world.position.set(this.worldStart.x + dx, this.worldStart.y + dy);
+    this.reportSelectedRect();
   }
 
   private endPan(): void {
@@ -293,6 +361,7 @@ class BuilderCanvasScene {
     // those objects immediately invalidates geometry already queued for the
     // current frame, so keep them detached until the renderer is disposed.
     this.retiredObjects.push(...this.objects.removeChildren());
+    this.nodeCenters.clear();
     const path = visibleNodes(this.nodes);
     const rootWidth = measurePath(path);
     this.bounds = {
@@ -315,6 +384,7 @@ class BuilderCanvasScene {
       this.fitted = true;
       this.fit();
     }
+    this.reportSelectedRect();
   }
 
   private layoutPath(
@@ -525,6 +595,7 @@ class BuilderCanvasScene {
   }
 
   private addNode(node: MarketBuilderNode, x: number, y: number): void {
+    this.nodeCenters.set(node.id, { x, y });
     const root = new Container();
     root.position.set(x - NODE_WIDTH / 2, y - NODE_HEIGHT / 2);
     root.eventMode = node.kind === "start" ? "none" : "static";
@@ -671,26 +742,68 @@ class BuilderCanvasScene {
   }
 }
 
+/**
+ * Anchor the settings panel to the selected node's box: flush under the box
+ * when the node sits in the upper half of the canvas, flush above otherwise,
+ * always clamped to the canvas and scrolling internally when space runs out.
+ */
+function nodePanelStyle(rect: SelectedNodeRect): {
+  style: CSSProperties;
+  above: boolean;
+} {
+  const width = Math.min(Math.max(260, rect.width), rect.viewWidth - 16);
+  const left = Math.min(
+    Math.max(8, rect.left + rect.width / 2 - width / 2),
+    rect.viewWidth - width - 8,
+  );
+  const above = rect.top + rect.height / 2 > rect.viewHeight / 2;
+  if (above) {
+    return {
+      above,
+      style: {
+        left,
+        width,
+        bottom: rect.viewHeight - rect.top - 2,
+        maxHeight: Math.max(120, rect.top - 12),
+      },
+    };
+  }
+  return {
+    above,
+    style: {
+      left,
+      width,
+      top: rect.top + rect.height - 2,
+      maxHeight: Math.max(120, rect.viewHeight - rect.top - rect.height - 12),
+    },
+  };
+}
+
 export function MarketBuilderCanvas(props: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<BuilderCanvasScene | null>(null);
   const propsRef = useRef(props);
   propsRef.current = props;
+  const [nodeRect, setNodeRect] = useState<SelectedNodeRect | null>(null);
 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const scene = new BuilderCanvasScene();
     sceneRef.current = scene;
+    scene.onSelectedNodeRect = setNodeRect;
     scene.sync(propsRef.current);
     void scene.init(host).then(() => scene.sync(propsRef.current));
     return () => {
       sceneRef.current = null;
       scene.destroy();
+      setNodeRect(null);
     };
   }, []);
 
   useEffect(() => sceneRef.current?.sync(props), [props]);
+
+  const panel = props.overlay && nodeRect ? nodePanelStyle(nodeRect) : null;
 
   return (
     <div className="mk-builder-canvas-shell">
@@ -707,6 +820,14 @@ export function MarketBuilderCanvas(props: Props) {
       >
         {props.labels.fit}
       </button>
+      {panel && (
+        <div
+          className={`mk-node-panel${panel.above ? " above" : ""}`}
+          style={panel.style}
+        >
+          {props.overlay}
+        </div>
+      )}
     </div>
   );
 }

@@ -22,15 +22,15 @@ cached chromium).
 
 Flow landmarks:
 
-- Home → button "Play" → open-market map.
+- Home → button "Play" → stage grid (`.stage-card.active`) → open-market map.
 - The market map is a PixiJS `<canvas>` (`.mk-map canvas`). Nodes are
   Pixi-drawn, so there are no DOM elements to click: tap-scan the canvas in
-  a grid and detect navigation via the header title
-  (`header.cs-header strong`), which reads "Open Market" / "Borrower Demand"
-  / "Posted Contract". If a scan tap opens the wrong detail page, click the
-  header back button and continue. Detail pages are overlays — the map (and
-  its Pixi app) stays mounted underneath, so remembered node coordinates
-  stay valid across navigation.
+  a grid and detect which overlay opened via DOM markers —
+  `.cs-customer-detail` (demand), `.mk-contract-summary` (contract),
+  `.mk-builder-canvas-shell` (builder); none of them → still on the map.
+  Go back with the button labeled "Back to the map". Detail pages are
+  overlays — the map (and its Pixi app) stays mounted underneath, so
+  remembered node coordinates stay valid across navigation.
 - Drag-and-drop: `page.mouse.down()` on a demand circle, `move` in ~14 steps
   to a contract square, `up`. A fitting demand files a request (badge +1,
   green pulse); a non-fitting one flashes a red X and snaps back. Moves under
@@ -45,8 +45,17 @@ Gotchas:
 
 - The world is seeded from `Math.random()` per session — flows are stable in
   shape but not in values; assert on deltas (cash before/after), not amounts.
-- A contract drafted from a demand ("Draft a matching contract") is prefilled
-  to exactly fit that demand; raising the repayment above the demand's
-  "will repay up to" ceiling means that borrower never requests it.
+- "Draft a matching contract" opens an EMPTY draft (start node only), not a
+  prefilled one. To build a valid contract, add via the "+" plus buttons:
+  Transfer (defaults player→borrower · Loan amount), Wait (Requested days),
+  Transfer flipped to Borrower→Player in its settings panel. The panel opens
+  in-canvas attached to the selected node; deselect by tapping empty canvas.
+- Builder-canvas driving pitfalls: click "Fit graph" before hunting for the
+  terminal "+" (the graph is not refit as it grows, so it can be off-screen),
+  scan the center column bottom-up (the top "+" inserts BEFORE the stack),
+  and dismiss the validation tip first — it sits over the canvas top edge.
+- Node order matters to fit rules: the borrower must be funded before the
+  repayment transfer, and the wait must cover the demand's payable-after
+  window, or drops reject with the red X.
 - Prettier is enforced (`pnpm format:check` at repo root) — run
   `npx prettier --write` on touched files before finishing.

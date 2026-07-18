@@ -25,6 +25,8 @@ export interface MarketStageCallbacks {
   onTapContract(contractId: string): void;
   /** Return true when the demand fit and a request was filed. */
   onDropDemand(demandId: string, contractId: string): boolean;
+  /** A contract square was dragged; coordinates are normalized to [0, 1]. */
+  onMoveContract(contractId: string, x: number, y: number): void;
 }
 
 const DEMAND_RADIUS = 26;
@@ -50,6 +52,8 @@ const LABEL_STYLE: TextStyleOptions = {
 interface DemandNode {
   root: Container;
   sprite: Sprite;
+  /** Random phase so map nodes do not vibrate in lockstep. */
+  jitterPhase: number;
 }
 
 interface ContractNode {
@@ -57,10 +61,12 @@ interface ContractNode {
   badge: Container;
   badgeText: Text;
   termsText: Text;
+  jitterPhase: number;
 }
 
 interface DragState {
-  demandId: string;
+  kind: "demand" | "contract";
+  id: string;
   node: Container;
   originX: number;
   originY: number;
@@ -100,6 +106,8 @@ export class MarketStage {
   private drag: DragState | null = null;
   private animations: Animation[] = [];
   private suspended = false;
+  private timeFlowing = false;
+  private jitterClock = 0;
 
   async init(
     host: HTMLElement,
@@ -139,8 +147,9 @@ export class MarketStage {
       this.layout();
     });
     this.app.ticker.add((ticker) => {
-      if (this.animations.length === 0) return;
-      this.animations = this.animations.filter((run) => run(ticker.deltaMS));
+      if (this.animations.length > 0)
+        this.animations = this.animations.filter((run) => run(ticker.deltaMS));
+      this.applyJitter(ticker.deltaMS);
     });
 
     this.ready = true;
@@ -155,6 +164,69 @@ export class MarketStage {
     if (!this.ready || this.destroyed) return;
     if (suspended) this.app.ticker.stop();
     else this.app.ticker.start();
+  }
+
+  /** While game time advances the map nodes vibrate; paused nodes sit still. */
+  setTimeFlowing(flowing: boolean): void {
+    this.timeFlowing = flowing;
+  }
+
+  private applyJitter(deltaMs: number): void {
+    if (this.timeFlowing) this.jitterClock += deltaMs;
+    const nodes: Array<{ root: Container; jitterPhase: number }> = [
+      ...this.demandNodes.values(),
+      ...this.contractNodes.values(),
+    ];
+    for (const { root, jitterPhase } of nodes) {
+      if (root.destroyed) continue;
+      // The dragged node stays glued to the pointer.
+      if (!this.timeFlowing || this.drag?.node === root) {
+        root.pivot.set(0, 0);
+        continue;
+      }
+      // Pivot offsets the visuals without disturbing the layout position that
+      // drags, drops, and hit-testing read from root.x / root.y.
+      const t = this.jitterClock / 1000;
+      root.pivot.set(
+        Math.sin(t * 9.3 + jitterPhase) * 1.1,
+        Math.cos(t * 11.7 + jitterPhase * 1.9) * 1.1,
+      );
+    }
+  }
+
+  /** Grow a freshly added map node from nothing to full size. */
+  private playSpawn(root: Container): void {
+    root.scale.set(0);
+    const duration = 320;
+    let elapsed = 0;
+    this.animations.push((deltaMs) => {
+      if (root.destroyed) return false;
+      elapsed += deltaMs;
+      const t = Math.min(1, elapsed / duration);
+      // Ease out with a light overshoot so the pop reads as an arrival.
+      const eased = 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
+      root.scale.set(Math.max(0, eased));
+      if (t >= 1) root.scale.set(1);
+      return t < 1;
+    });
+  }
+
+  /** Shrink a leaving map node to nothing, then destroy it. */
+  private playDespawn(root: Container): void {
+    const from = root.scale.x;
+    const duration = 240;
+    let elapsed = 0;
+    this.animations.push((deltaMs) => {
+      if (root.destroyed) return false;
+      elapsed += deltaMs;
+      const t = Math.min(1, elapsed / duration);
+      root.scale.set(from * (1 - easeOutCubic(t)));
+      if (t >= 1) {
+        root.destroy({ children: true });
+        return false;
+      }
+      return true;
+    });
   }
 
   destroy(): void {
@@ -189,18 +261,24 @@ export class MarketStage {
     );
     const contractIds = new Set(world.contracts.map((contract) => contract.id));
 
-    // A dragged node whose demand left the open pool (auto-request fired,
-    // expiry, or the drop just succeeded) ends its drag.
-    if (this.drag && !openDemandIds.has(this.drag.demandId)) this.drag = null;
+    // A dragged node whose subject left the world (auto-request fired,
+    // expiry, withdrawal, or the drop just succeeded) ends its drag.
+    if (
+      this.drag &&
+      !(this.drag.kind === "demand"
+        ? openDemandIds.has(this.drag.id)
+        : contractIds.has(this.drag.id))
+    )
+      this.drag = null;
 
     for (const [id, node] of this.demandNodes) {
       if (openDemandIds.has(id)) continue;
-      node.root.destroy({ children: true });
+      this.playDespawn(node.root);
       this.demandNodes.delete(id);
     }
     for (const [id, node] of this.contractNodes) {
       if (contractIds.has(id)) continue;
-      node.root.destroy({ children: true });
+      this.playDespawn(node.root);
       this.contractNodes.delete(id);
     }
 
@@ -210,6 +288,8 @@ export class MarketStage {
         node = this.buildContractNode(contract.id);
         this.contractNodes.set(contract.id, node);
         this.contractLayer.addChild(node.root);
+        node.root.position.set(this.px(contract.x), this.py(contract.y));
+        this.playSpawn(node.root);
       }
       const pending = pendingRequestCount(contract);
       node.badge.visible = pending > 0;
@@ -234,6 +314,8 @@ export class MarketStage {
       );
       this.demandNodes.set(demand.id, node);
       this.nodeLayer.addChild(node.root);
+      node.root.position.set(this.px(demand.x), this.py(demand.y));
+      this.playSpawn(node.root);
     }
 
     this.layout();
@@ -251,15 +333,17 @@ export class MarketStage {
     if (!this.world) return;
     for (const contract of this.world.contracts) {
       const node = this.contractNodes.get(contract.id);
-      if (node)
-        node.root.position.set(this.px(contract.x), this.py(contract.y));
+      if (!node) continue;
+      // Never yank a node out from under the player's finger.
+      if (this.drag?.kind === "contract" && this.drag.id === contract.id)
+        continue;
+      node.root.position.set(this.px(contract.x), this.py(contract.y));
     }
     for (const demand of this.world.demands) {
       if (demand.status !== "open") continue;
       const node = this.demandNodes.get(demand.id);
       if (!node) continue;
-      // Never yank the node out from under the player's finger.
-      if (this.drag?.demandId === demand.id) continue;
+      if (this.drag?.kind === "demand" && this.drag.id === demand.id) continue;
       node.root.position.set(this.px(demand.x), this.py(demand.y));
     }
   }
@@ -319,7 +403,8 @@ export class MarketStage {
     root.on("pointerdown", (event: FederatedPointerEvent) => {
       if (this.drag) return;
       this.drag = {
-        demandId,
+        kind: "demand",
+        id: demandId,
         node: root,
         originX: root.x,
         originY: root.y,
@@ -329,7 +414,7 @@ export class MarketStage {
       };
     });
 
-    return { root, sprite };
+    return { root, sprite, jitterPhase: Math.random() * Math.PI * 2 };
   }
 
   private buildContractNode(contractId: string): ContractNode {
@@ -379,13 +464,29 @@ export class MarketStage {
     badge.visible = false;
     root.addChild(badge);
 
-    root.on("pointertap", () => {
-      // A drag that started on a demand never taps the contract: the tap
-      // event needs pointerdown and pointerup on this same node.
-      this.callbacks?.onTapContract(contractId);
+    // Contracts share the demand drag machinery: a still pointer is a tap
+    // that opens the detail page, a real drag repositions the square.
+    root.on("pointerdown", (event: FederatedPointerEvent) => {
+      if (this.drag) return;
+      this.drag = {
+        kind: "contract",
+        id: contractId,
+        node: root,
+        originX: root.x,
+        originY: root.y,
+        startGlobalX: event.global.x,
+        startGlobalY: event.global.y,
+        moved: false,
+      };
     });
 
-    return { root, badge, badgeText, termsText };
+    return {
+      root,
+      badge,
+      badgeText,
+      termsText,
+      jitterPhase: Math.random() * Math.PI * 2,
+    };
   }
 
   private onPointerMove(event: FederatedPointerEvent): void {
@@ -396,7 +497,7 @@ export class MarketStage {
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     if (!drag.moved) {
       drag.moved = true;
-      this.nodeLayer.addChild(drag.node); // lift above everything else
+      drag.node.parent?.addChild(drag.node); // lift above its layer siblings
     }
     drag.node.position.set(drag.originX + dx, drag.originY + dy);
   }
@@ -407,7 +508,21 @@ export class MarketStage {
     this.drag = null;
 
     if (!drag.moved) {
-      this.callbacks?.onTapDemand(drag.demandId);
+      if (drag.kind === "demand") this.callbacks?.onTapDemand(drag.id);
+      else this.callbacks?.onTapContract(drag.id);
+      return;
+    }
+
+    if (drag.kind === "contract") {
+      // Persist the drop point in normalized world coordinates so the square
+      // stays where the player left it across resizes and re-syncs.
+      const spanX = Math.max(1, this.app.screen.width - 88);
+      const spanY = Math.max(1, this.app.screen.height - 104);
+      this.callbacks?.onMoveContract(
+        drag.id,
+        (drag.node.x - 44) / spanX,
+        (drag.node.y - 48) / spanY,
+      );
       return;
     }
 
@@ -417,7 +532,7 @@ export class MarketStage {
       return;
     }
     const accepted =
-      this.callbacks?.onDropDemand(drag.demandId, target.contractId) ?? false;
+      this.callbacks?.onDropDemand(drag.id, target.contractId) ?? false;
     if (accepted) {
       // The world update removes the node on the next sync; hide it now so
       // it does not flash back to its map spot first.
