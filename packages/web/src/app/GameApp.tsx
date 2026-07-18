@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Check, Landmark, LockKeyhole, Play } from "lucide-react";
-import { MarketApp } from "./MarketApp.tsx";
-import { localize } from "./campaign-stages.ts";
-import { marketCampaignStages, marketStageById } from "./market-campaign.ts";
-import { detectLocale, type Locale } from "./i18n.tsx";
-import { messagesFor } from "./messages/index.ts";
+import { MarketApp } from "../market/MarketApp.tsx";
+import { localize } from "../i18n/local-text.ts";
+import {
+  marketCampaignStages,
+  marketStageById,
+} from "../market/market-campaign.ts";
+import { detectLocale, type Locale } from "../i18n/locale.ts";
+import { messagesFor } from "../i18n/messages/index.ts";
 import {
   emptySave,
   loadGame,
@@ -14,12 +17,14 @@ import {
 } from "./persistence.ts";
 import "./game.css";
 
-type Screen = "home" | "stages" | "campaign" | "market";
+type Screen = "home" | "stages" | "campaign";
 
 export function GameApp() {
   const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
-  const [selectedStageId, setSelectedStageId] = useState(marketCampaignStages[0]!.id);
+  const [selectedStageId, setSelectedStageId] = useState(
+    marketCampaignStages[0]!.id,
+  );
   const [campaign, setCampaign] = useState<CampaignProgress>(
     () => emptySave().campaign,
   );
@@ -73,9 +78,6 @@ export function GameApp() {
       </main>
     );
   }
-
-  if (screen === "market")
-    return <MarketApp locale={locale} onBack={() => setScreen("home")} />;
 
   if (screen === "campaign") {
     return (
@@ -158,9 +160,16 @@ function StageSelection({
   const m = messagesFor(locale);
   return (
     <main className="home-screen">
-      <section className="stage-card-overlay" aria-label={m.gameApp.stageSelection}>
+      <section
+        className="stage-card-overlay"
+        aria-label={m.gameApp.stageSelection}
+      >
         <header className="stage-card-header">
-          <button className="stage-card-back" onClick={onBack} aria-label={m.gameApp.backToMainMenu}>
+          <button
+            className="stage-card-back"
+            onClick={onBack}
+            aria-label={m.gameApp.backToMainMenu}
+          >
             <ArrowLeft aria-hidden="true" />
           </button>
           <strong>{m.gameApp.campaignStages}</strong>
@@ -169,7 +178,11 @@ function StageSelection({
         <div className="stage-card-grid">
           {marketCampaignStages.map((stage, index) => {
             const complete = campaign.completedStageIds.includes(stage.id);
-            const unlocked = index === 0 || campaign.completedStageIds.includes(marketCampaignStages[index - 1]!.id);
+            const unlocked =
+              index === 0 ||
+              campaign.completedStageIds.includes(
+                marketCampaignStages[index - 1]!.id,
+              );
             return (
               <button
                 key={stage.id}
@@ -180,11 +193,21 @@ function StageSelection({
                 <span className="stage-card-image">
                   <img src={stage.image} alt="" />
                   <b>{String(stage.number).padStart(2, "0")}</b>
-                  {complete ? <Check aria-label={m.gameApp.playAgain} /> : !unlocked ? <LockKeyhole aria-label={m.gameApp.locked} /> : null}
+                  {complete ? (
+                    <Check aria-label={m.gameApp.playAgain} />
+                  ) : !unlocked ? (
+                    <LockKeyhole aria-label={m.gameApp.locked} />
+                  ) : null}
                 </span>
                 <span className="stage-card-copy">
                   <strong>{localize(stage.title, locale)}</strong>
-                  <small>{complete ? m.gameApp.playAgain : unlocked ? localize(stage.subtitle, locale) : m.gameApp.completePriorStage}</small>
+                  <small>
+                    {complete
+                      ? m.gameApp.playAgain
+                      : unlocked
+                        ? localize(stage.subtitle, locale)
+                        : m.gameApp.completePriorStage}
+                  </small>
                 </span>
               </button>
             );

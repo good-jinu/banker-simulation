@@ -99,6 +99,7 @@ export class MarketStage {
   private readonly contractNodes = new Map<string, ContractNode>();
   private drag: DragState | null = null;
   private animations: Animation[] = [];
+  private suspended = false;
 
   async init(
     host: HTMLElement,
@@ -145,6 +146,15 @@ export class MarketStage {
     this.ready = true;
     this.drawGrid();
     if (this.world) this.syncWorld(this.world);
+    if (this.suspended) this.app.ticker.stop();
+  }
+
+  /** Stop rendering while an opaque overlay covers the map. */
+  setSuspended(suspended: boolean): void {
+    this.suspended = suspended;
+    if (!this.ready || this.destroyed) return;
+    if (suspended) this.app.ticker.stop();
+    else this.app.ticker.start();
   }
 
   destroy(): void {
@@ -209,7 +219,14 @@ export class MarketStage {
 
     for (const demand of world.demands) {
       if (demand.status !== "open") continue;
-      if (this.demandNodes.has(demand.id)) continue;
+      const existing = this.demandNodes.get(demand.id);
+      if (existing) {
+        // A drop optimistically hides the node; if the request did not land
+        // (the world changed under the drag), the demand is still open and
+        // must stay visible and clickable.
+        existing.root.visible = true;
+        continue;
+      }
       const node = this.buildDemandNode(
         demand.id,
         demand.actor.image,

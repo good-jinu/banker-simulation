@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { GameApp } from "./GameApp.tsx";
+import { GameApp } from "./app/GameApp.tsx";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");

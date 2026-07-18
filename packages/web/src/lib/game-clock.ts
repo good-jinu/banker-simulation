@@ -1,4 +1,4 @@
-export const MS_PER_GAME_DAY = 6_000;
+const MS_PER_GAME_DAY = 6_000;
 
 export const CLOCK_SPEEDS = [1, 2, 5] as const;
 export type ClockSpeed = (typeof CLOCK_SPEEDS)[number];
@@ -45,11 +45,6 @@ export class GameClock {
 
   setSpeed(speed: ClockSpeed): void {
     this.speed = speed;
-  }
-
-  /** Fraction of the current day already elapsed, for smooth progress UI. */
-  dayProgress(): number {
-    return this.accumulatedMs / this.msPerDay;
   }
 
   private frame = (now: number): void => {

@@ -1,4 +1,4 @@
-import type { Locale } from "../i18n.tsx";
+import type { Locale } from "../locale.ts";
 import { en, type Messages } from "./en.ts";
 import { ko } from "./ko.ts";
 

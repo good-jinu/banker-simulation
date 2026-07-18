@@ -7,7 +7,7 @@ import {
   Text,
   type FederatedPointerEvent,
 } from "pixi.js";
-import type { MarketBuilderNode } from "./market-world.ts";
+import type { MarketBuilderNode } from "../market-world.ts";
 
 export type BuilderBranch = "thenSteps" | "elseSteps";
 
@@ -80,7 +80,9 @@ interface Bounds {
   maxY: number;
 }
 
-function visibleNodes(nodes: readonly MarketBuilderNode[]): MarketBuilderNode[] {
+function visibleNodes(
+  nodes: readonly MarketBuilderNode[],
+): MarketBuilderNode[] {
   return nodes.filter((node) => node.kind !== "end");
 }
 
@@ -101,8 +103,14 @@ class BuilderCanvasScene {
   private grid = new Graphics();
   private edges = new Graphics();
   private readonly objects = new Container();
-  /** Objects removed during an input event may still be in Pixi's render list. */
-  private readonly retiredObjects: Container[] = [];
+  /**
+   * Objects removed during an input event may still be in Pixi's render list
+   * for the current frame, so they are destroyed two ticks later rather than
+   * immediately — and rather than never, which would leak every text texture
+   * created while editing.
+   */
+  private retiredObjects: Container[] = [];
+  private retiringObjects: Container[] = [];
   private host: HTMLElement | null = null;
   private ready = false;
   private destroyed = false;
@@ -145,6 +153,19 @@ class BuilderCanvasScene {
       this.app.stage.hitArea = this.app.screen;
       this.drawGrid();
     });
+    // Objects retired on frame N are still referenced by that frame's render
+    // list; promote them one tick later and destroy them the tick after.
+    this.app.ticker.add(() => {
+      if (this.retiringObjects.length > 0) {
+        for (const object of this.retiringObjects)
+          object.destroy({ children: true });
+        this.retiringObjects = [];
+      }
+      if (this.retiredObjects.length > 0) {
+        this.retiringObjects = this.retiredObjects;
+        this.retiredObjects = [];
+      }
+    });
     this.ready = true;
     this.drawGrid();
     this.render();
@@ -172,6 +193,10 @@ class BuilderCanvasScene {
     this.app.stage.removeChildren();
     this.retiredObjects.forEach((object) => object.destroy({ children: true }));
     this.retiredObjects.length = 0;
+    this.retiringObjects.forEach((object) =>
+      object.destroy({ children: true }),
+    );
+    this.retiringObjects.length = 0;
     this.world.destroy({ children: true });
     this.grid.destroy();
     // `true` also releases Pixi's process-wide pools. React can mount the map
@@ -186,7 +211,11 @@ class BuilderCanvasScene {
     const height = Math.max(1, this.bounds.maxY - this.bounds.minY);
     const scale = Math.max(
       0.25,
-      Math.min(1, (this.app.screen.width - 80) / width, (this.app.screen.height - 80) / height),
+      Math.min(
+        1,
+        (this.app.screen.width - 80) / width,
+        (this.app.screen.height - 80) / height,
+      ),
     );
     this.world.scale.set(scale);
     this.world.position.set(
@@ -199,7 +228,10 @@ class BuilderCanvasScene {
     event.preventDefault();
     const rect = this.host?.getBoundingClientRect();
     if (!rect) return;
-    const pointer = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const pointer = {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
     const oldScale = this.world.scale.x;
     const nextScale = Math.max(
       0.25,
@@ -296,8 +328,18 @@ class BuilderCanvasScene {
         const thenX = centerX - (thenWidth + BRANCH_GAP) / 2;
         const elseX = centerX + (elseWidth + BRANCH_GAP) / 2;
         const branchY = y + NODE_HEIGHT + ROW_GAP;
-        this.addBranchLabel(centerX - 34, y + NODE_HEIGHT / 2 + 24, this.labels!.true, true);
-        this.addBranchLabel(centerX + 34, y + NODE_HEIGHT / 2 + 24, this.labels!.false, false);
+        this.addBranchLabel(
+          centerX - 34,
+          y + NODE_HEIGHT / 2 + 24,
+          this.labels!.true,
+          true,
+        );
+        this.addBranchLabel(
+          centerX + 34,
+          y + NODE_HEIGHT / 2 + 24,
+          this.labels!.false,
+          false,
+        );
         this.layoutBranch(node, "thenSteps", thenPath, centerX, thenX, branchY);
         this.layoutBranch(node, "elseSteps", elsePath, centerX, elseX, branchY);
         return Math.max(branchY, this.bounds.maxY);
@@ -305,16 +347,22 @@ class BuilderCanvasScene {
       const next = path[index + 1];
       if (next) {
         const nextY = y + NODE_HEIGHT + ROW_GAP;
-        this.drawEdge({ x: centerX, y: y + NODE_HEIGHT / 2 }, { x: centerX, y: nextY - NODE_HEIGHT / 2 });
-        this.addPlus(
-          centerX,
-          (y + nextY) / 2,
-          { ...owner, index: index + 1, terminal: false },
+        this.drawEdge(
+          { x: centerX, y: y + NODE_HEIGHT / 2 },
+          { x: centerX, y: nextY - NODE_HEIGHT / 2 },
         );
+        this.addPlus(centerX, (y + nextY) / 2, {
+          ...owner,
+          index: index + 1,
+          terminal: false,
+        });
         y = nextY;
       } else {
         const terminalY = y + NODE_HEIGHT / 2 + 54;
-        this.drawEdge({ x: centerX, y: y + NODE_HEIGHT / 2 }, { x: centerX, y: terminalY });
+        this.drawEdge(
+          { x: centerX, y: y + NODE_HEIGHT / 2 },
+          { x: centerX, y: terminalY },
+        );
         this.addPlus(centerX, terminalY, {
           ...owner,
           index: path.length,
@@ -362,7 +410,12 @@ class BuilderCanvasScene {
       .moveTo(from.x, from.y)
       .bezierCurveTo(from.x, middle, to.x, middle, to.x, to.y)
       .stroke({
-        color: positive === true ? COLOR.green : positive === false ? COLOR.red : COLOR.line,
+        color:
+          positive === true
+            ? COLOR.green
+            : positive === false
+              ? COLOR.red
+              : COLOR.line,
         alpha: 0.9,
         width: 2,
       });
@@ -377,9 +430,16 @@ class BuilderCanvasScene {
     const selected = node.id === this.selectedNodeId;
     const panel = new Graphics()
       .roundRect(0, 0, NODE_WIDTH, NODE_HEIGHT, 12)
-      .fill({ color: node.kind === "start" ? 0x123d35 : COLOR.panelDeep, alpha: 0.98 })
+      .fill({
+        color: node.kind === "start" ? 0x123d35 : COLOR.panelDeep,
+        alpha: 0.98,
+      })
       .stroke({
-        color: selected ? COLOR.gold : node.kind === "start" ? COLOR.green : COLOR.line,
+        color: selected
+          ? COLOR.gold
+          : node.kind === "start"
+            ? COLOR.green
+            : COLOR.line,
         width: selected ? 3 : 1.5,
       });
     const icon = new Graphics();
@@ -387,12 +447,22 @@ class BuilderCanvasScene {
     this.drawIcon(icon, node.kind);
     const title = new Text({
       text: this.labels![node.kind],
-      style: { fontFamily: "system-ui, sans-serif", fontSize: 12, fontWeight: "800", fill: COLOR.cream },
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: 12,
+        fontWeight: "800",
+        fill: COLOR.cream,
+      },
     });
     title.position.set(54, 13);
     const detail = new Text({
       text: this.nodeLabel(node),
-      style: { fontFamily: "system-ui, sans-serif", fontSize: 10, fontWeight: "600", fill: COLOR.mist },
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: 10,
+        fontWeight: "600",
+        fill: COLOR.mist,
+      },
     });
     detail.position.set(54, 36);
     detail.style.wordWrap = true;
@@ -411,11 +481,34 @@ class BuilderCanvasScene {
     icon.roundRect(0, 0, 28, 28, 7).fill({ color, alpha: 0.13 });
     if (kind === "start") icon.circle(14, 14, 6).fill(color);
     else if (kind === "transfer") {
-      icon.moveTo(6, 10).lineTo(21, 10).lineTo(17, 6).moveTo(21, 18).lineTo(6, 18).lineTo(10, 22).stroke({ color, width: 2 });
+      icon
+        .moveTo(6, 10)
+        .lineTo(21, 10)
+        .lineTo(17, 6)
+        .moveTo(21, 18)
+        .lineTo(6, 18)
+        .lineTo(10, 22)
+        .stroke({ color, width: 2 });
     } else if (kind === "wait") {
-      icon.circle(14, 14, 8).stroke({ color, width: 2 }).moveTo(14, 14).lineTo(14, 9).moveTo(14, 14).lineTo(18, 16).stroke({ color, width: 2 });
+      icon
+        .circle(14, 14, 8)
+        .stroke({ color, width: 2 })
+        .moveTo(14, 14)
+        .lineTo(14, 9)
+        .moveTo(14, 14)
+        .lineTo(18, 16)
+        .stroke({ color, width: 2 });
     } else if (kind === "variable") {
-      icon.moveTo(7, 8).lineTo(12, 8).lineTo(16, 20).lineTo(21, 20).moveTo(8, 20).lineTo(12, 20).lineTo(16, 8).lineTo(20, 8).stroke({ color, width: 2 });
+      icon
+        .moveTo(7, 8)
+        .lineTo(12, 8)
+        .lineTo(16, 20)
+        .lineTo(21, 20)
+        .moveTo(8, 20)
+        .lineTo(12, 20)
+        .lineTo(16, 8)
+        .lineTo(20, 8)
+        .stroke({ color, width: 2 });
     } else if (kind === "condition" || kind === "decision") {
       icon.poly([14, 5, 23, 14, 14, 23, 5, 14]).stroke({ color, width: 2 });
       if (kind === "decision") icon.circle(14, 14, 2).fill(color);
@@ -428,8 +521,16 @@ class BuilderCanvasScene {
     root.eventMode = "static";
     root.cursor = "pointer";
     root.hitArea = new Rectangle(-18, -18, 36, 36);
-    const circle = new Graphics().circle(0, 0, 13).fill(COLOR.panel).stroke({ color: COLOR.gold, width: 2 });
-    const mark = new Graphics().moveTo(-5, 0).lineTo(5, 0).moveTo(0, -5).lineTo(0, 5).stroke({ color: COLOR.cream, width: 2 });
+    const circle = new Graphics()
+      .circle(0, 0, 13)
+      .fill(COLOR.panel)
+      .stroke({ color: COLOR.gold, width: 2 });
+    const mark = new Graphics()
+      .moveTo(-5, 0)
+      .lineTo(5, 0)
+      .moveTo(0, -5)
+      .lineTo(0, 5)
+      .stroke({ color: COLOR.cream, width: 2 });
     root.addChild(circle, mark);
     root.on("pointertap", (event: FederatedPointerEvent) => {
       if (this.moved) return;
@@ -439,10 +540,20 @@ class BuilderCanvasScene {
     this.objects.addChild(root);
   }
 
-  private addBranchLabel(x: number, y: number, text: string, positive: boolean): void {
+  private addBranchLabel(
+    x: number,
+    y: number,
+    text: string,
+    positive: boolean,
+  ): void {
     const label = new Text({
       text,
-      style: { fontFamily: "system-ui, sans-serif", fontSize: 9, fontWeight: "900", fill: positive ? COLOR.green : COLOR.red },
+      style: {
+        fontFamily: "system-ui, sans-serif",
+        fontSize: 9,
+        fontWeight: "900",
+        fill: positive ? COLOR.green : COLOR.red,
+      },
     });
     label.anchor.set(0.5);
     label.position.set(x, y);

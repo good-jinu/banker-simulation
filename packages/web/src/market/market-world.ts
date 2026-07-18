@@ -1,4 +1,4 @@
-import type { LocalText } from "./campaign-stages.ts";
+import type { LocalText } from "../i18n/local-text.ts";
 import { evaluateRecipe, type ValueRecipe } from "./market-recipe.ts";
 
 /**
@@ -773,6 +773,7 @@ function buildRequest(
   contract: ContractOffer,
   day: number,
   availableCash: number,
+  serial: number,
 ): ContractRequest | null {
   const terms = evaluateContractForDemand(
     contract.builderNodes,
@@ -781,7 +782,9 @@ function buildRequest(
   );
   if (!terms) return null;
   return {
-    id: `request-${demand.id}-${contract.id}`,
+    // The serial keeps IDs unique when the same demand re-applies to the
+    // same contract after its pending request was released by an edit.
+    id: `request-${serial}-${demand.id}-${contract.id}`,
     demandId: demand.id,
     actor: demand.actor,
     day,
@@ -866,10 +869,17 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     if (stale.length === 0) return contract;
     for (const request of stale) {
       impatientDemandIds.add(request.demandId);
-      const actorName = request.actor.name;
+      const demand = demands.find(
+        (candidate) => candidate.id === request.demandId,
+      );
       log = pushEvent(
         log,
-        { day, kind: "demand-expired", actorName, amount: request.principal },
+        {
+          day,
+          kind: "demand-expired",
+          actorName: request.actor.name,
+          amount: demand?.amount ?? request.principal,
+        },
         `event-${request.id}-impatient`,
       );
     }
@@ -889,6 +899,7 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
   //    decision nodes settle each applicant on the spot: auto-accepted
   //    loans sign immediately, auto-rejected people return to browsing,
   //    and drafts wait in the request list for the banker.
+  let nextId = world.nextId;
   demands = demands.map((demand) => {
     if (demand.status !== "open") return demand;
     const fitting = contracts.filter((contract) =>
@@ -897,8 +908,9 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     if (fitting.length === 0) return demand;
     if (!roller.chance(DAILY_REQUEST_CHANCE)) return demand;
     const contract = roller.pick(fitting);
-    const request = buildRequest(demand, contract, day, cash);
+    const request = buildRequest(demand, contract, day, cash, nextId);
     if (!request) return demand;
+    nextId += 1;
 
     let outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
     if (outcome === "accept" && cash < request.principal) outcome = "draft";
@@ -963,8 +975,14 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     cursor: roller.cursor,
     day,
     cash,
+    nextId,
     demands: demands.filter(
-      (demand) => demand.status !== "expired" || demand.expiresDay + 5 > day,
+      // Settled people (served or expired) linger a few days for the map
+      // animation, then leave so the list does not grow forever.
+      (demand) =>
+        demand.status === "open" ||
+        demand.status === "requesting" ||
+        demand.expiresDay + 5 > day,
     ),
     contracts,
     loans,
@@ -1016,7 +1034,8 @@ export function postContract(
 
 /**
  * Rewrite a posted contract's terms.  Pending requests were filed against
- * the old terms, so their demands return to the open market.
+ * the old terms, so their demands return to the open market — and people
+ * the old terms turned away will reconsider the new ones.
  */
 export function updateContract(
   world: MarketWorld,
@@ -1045,11 +1064,19 @@ export function updateContract(
           }
         : candidate,
     ),
-    demands: world.demands.map((demand) =>
-      releasedDemandIds.has(demand.id) && demand.status === "requesting"
-        ? { ...demand, status: "open" as const }
-        : demand,
-    ),
+    demands: world.demands.map((demand) => {
+      const released =
+        releasedDemandIds.has(demand.id) && demand.status === "requesting";
+      const wasRejected = demand.rejectedContractIds.includes(contractId);
+      if (!released && !wasRejected) return demand;
+      return {
+        ...demand,
+        status: released ? ("open" as const) : demand.status,
+        rejectedContractIds: demand.rejectedContractIds.filter(
+          (id) => id !== contractId,
+        ),
+      };
+    }),
   };
 }
 
@@ -1099,7 +1126,13 @@ export function fileRequest(
   );
   if (!demand || !contract || demand.status !== "open") return world;
   if (!contractFitsDemand(contract, demand, world.cash)) return world;
-  const request = buildRequest(demand, contract, world.day, world.cash);
+  const request = buildRequest(
+    demand,
+    contract,
+    world.day,
+    world.cash,
+    world.nextId,
+  );
   if (!request) return world;
 
   let outcome = decideRequestOutcome(contract.builderNodes, demand, world.cash);
@@ -1107,6 +1140,7 @@ export function fileRequest(
   if (outcome === "reject")
     return {
       ...world,
+      nextId: world.nextId + 1,
       demands: world.demands.map((candidate) =>
         candidate.id === demandId
           ? {
@@ -1145,6 +1179,7 @@ export function fileRequest(
     : world.loans;
   return {
     ...world,
+    nextId: world.nextId + 1,
     cash: settled ? world.cash - request.principal : world.cash,
     loans,
     contracts: world.contracts.map((candidate) =>
