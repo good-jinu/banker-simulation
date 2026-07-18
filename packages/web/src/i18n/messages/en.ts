@@ -10,10 +10,22 @@ export const en = {
     assetValues: "Asset values",
     cash: "Cash",
     totalAssets: "Total assets",
+    openAssetValues: "View asset values",
+    closeAssetValues: "Close asset values",
+    loanTo: (name: string) => `Loan to ${name}`,
+    dueDay: (day: number) => `Due day ${day}`,
+    loanValueBasis: "Active loans are valued at outstanding principal.",
   },
   timebar: {
     gameCalendar: "Game calendar",
     dayN: (day: number) => `Day ${day}`,
+    objective: (focus: string, complete: number, target: number) =>
+      `Objective · ${focus} · ${complete}/${target} repaid`,
+    noRecentEvents: "No recent events",
+    displayBoard: "Display board",
+    currentObjective: "Current objective",
+    openDisplayBoard: "Open display board",
+    closeDisplayBoard: "Close display board",
     resume: "Resume time",
     pause: "Pause time",
     skip: "Skip to next event",
@@ -26,6 +38,7 @@ export const en = {
   builder: {
     clause: "Clause",
     nodeIssue: (title: string, issue: string) => `${title}: ${issue}`,
+    dismissTip: "Dismiss tip",
   },
   mine: {
     completeStage: (stageNumber: string) => `Complete Stage ${stageNumber}`,

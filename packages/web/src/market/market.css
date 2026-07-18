@@ -111,12 +111,15 @@
   padding: max(8px, env(safe-area-inset-top)) 12px 8px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   border-bottom: 1px solid rgba(214, 170, 82, 0.18);
   background: rgba(5, 14, 29, 0.92);
 }
 
-.mk-hud-actions,
+.mk-hud-with-back {
+  justify-content: space-between;
+}
+
 .mk-mini-balance,
 .mk-menu-panel {
   display: flex;
@@ -158,10 +161,230 @@
   font-weight: 900;
 }
 
+.mk-total-assets-button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  color: #f4e7c0;
+  border: 1px solid rgba(120, 140, 175, 0.27);
+  border-radius: 8px;
+  background: #102442;
+  font: inherit;
+  font-size: 0.67rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mk-total-assets-button:hover,
+.mk-total-assets-button[aria-expanded="true"] {
+  border-color: rgba(214, 170, 82, 0.72);
+  background: #173258;
+}
+
 .mk-mini-balance svg {
   width: 14px;
   height: 14px;
   color: #d6aa52;
+}
+
+.mk-asset-dialog-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: calc(max(8px, env(safe-area-inset-top)) + 52px) 12px 12px;
+  background: rgba(2, 8, 18, 0.45);
+}
+
+.mk-asset-dialog,
+.mk-info-board-dialog {
+  width: min(360px, 100%);
+  align-self: flex-start;
+  max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - 64px);
+  overflow: auto;
+  padding: 15px;
+  color: #e9edf5;
+  border: 1px solid rgba(214, 170, 82, 0.5);
+  border-radius: 14px;
+  background: #0c1c34;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.48);
+}
+
+.mk-asset-dialog-heading,
+.mk-asset-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mk-asset-dialog-heading small,
+.mk-asset-list-item small {
+  display: block;
+  color: #9eafca;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.mk-asset-dialog-heading strong {
+  display: block;
+  margin-top: 2px;
+  color: #f0cf82;
+  font-size: 1.2rem;
+}
+
+.mk-asset-dialog h2,
+.mk-info-board-dialog h2 {
+  margin: 16px 0 7px;
+  color: #f4e7c0;
+  font-size: 0.78rem;
+}
+
+.mk-asset-dialog-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #dce4f3;
+  border: 1px solid rgba(120, 140, 175, 0.45);
+  border-radius: 8px;
+  background: #102442;
+  cursor: pointer;
+}
+
+.mk-asset-dialog-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mk-asset-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mk-asset-list-item {
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid rgba(120, 140, 175, 0.25);
+  border-radius: 9px;
+  background: #102442;
+}
+
+.mk-asset-list-item strong {
+  display: block;
+  color: #e9edf5;
+  font-size: 0.74rem;
+}
+
+.mk-asset-list-item > span {
+  color: #f0cf82;
+  font-size: 0.77rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.mk-asset-valuation-note {
+  margin: 12px 0 0;
+  color: #9eafca;
+  font-size: 0.66rem;
+  line-height: 1.45;
+}
+
+.mk-info-board {
+  min-height: 48px;
+  padding: 6px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(214, 170, 82, 0.18);
+  background:
+    linear-gradient(90deg, rgba(13, 31, 53, 0.96), rgba(6, 16, 31, 0.98)),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 3px,
+      rgba(214, 170, 82, 0.025) 4px
+    );
+}
+
+.mk-info-board-trigger {
+  min-width: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mk-info-board-trigger:focus-visible {
+  outline: 2px solid #f0cf82;
+  outline-offset: 2px;
+}
+
+.mk-info-board-date {
+  color: #f0cf82;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.mk-info-board-window {
+  height: 28px;
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid rgba(214, 170, 82, 0.28);
+}
+
+.mk-info-board-message {
+  width: 100%;
+  margin: 0;
+  padding: 7px 0 0 9px;
+  overflow: hidden;
+  color: #b9c6dd;
+  font-size: 0.61rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: mk-info-board-rise 4.2s ease-in-out both;
+}
+
+@keyframes mk-info-board-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(120%);
+  }
+
+  14%,
+  78% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-120%);
+  }
+}
+
+.mk-info-board .cs-timebar-controls {
+  gap: 3px;
+}
+
+.mk-info-board-objective {
+  border-color: rgba(214, 170, 82, 0.36);
+  background: rgba(66, 50, 18, 0.34);
 }
 
 .mk-hud-panel,
@@ -331,8 +554,6 @@
 .mk-detail-scroll {
   flex: 1;
   overflow-y: auto;
-  /* Clear the floating back button in the overlay's top-left corner. */
-  padding-top: 52px;
   padding-bottom: 90px;
 }
 
@@ -826,35 +1047,58 @@
   line-height: 1.35;
   word-break: break-word;
 }
-.mk-overlay-back {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  z-index: 5;
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  color: #f4e7c0;
-  border: 1px solid rgba(214, 170, 82, 0.45);
-  border-radius: 50%;
-  background: rgba(7, 19, 40, 0.88);
-  cursor: pointer;
-}
-
-.mk-overlay-back svg {
-  width: 18px;
-  height: 18px;
-}
-
-.mk-overlay-back:hover {
-  border-color: #d6aa52;
-}
-
 .mk-graph-builder {
   position: relative;
   margin-top: 10px;
+}
+
+.mk-canvas-tip {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 7px 7px 10px;
+  color: #f4e7c0;
+  border: 1px solid rgba(214, 170, 82, 0.48);
+  border-radius: 10px;
+  background: rgba(36, 28, 12, 0.94);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
+}
+
+.mk-canvas-tip p {
+  flex: 1;
+  margin: 0;
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.mk-canvas-tip button {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  color: #f4e7c0;
+  border: 1px solid rgba(244, 231, 192, 0.28);
+  border-radius: 7px;
+  background: rgba(7, 19, 40, 0.62);
+  cursor: pointer;
+}
+
+.mk-canvas-tip button:hover {
+  border-color: #f0cf82;
+}
+
+.mk-canvas-tip button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .mk-builder-canvas-shell {

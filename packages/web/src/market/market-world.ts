@@ -377,10 +377,7 @@ export function staticContractTerms(
   }
 }
 
-export type LoanStatus = "active" | "repaid" | "defaulted";
-
 export interface Loan {
-  id: string;
   contractId: string;
   actor: ActorProfile;
   principal: number;
@@ -389,9 +386,41 @@ export interface Loan {
   dueDay: number;
   /** Chance rolled at the due date, fixed when the loan is signed. */
   defaultChanceBp: number;
-  status: LoanStatus;
   resolvedDay?: number;
 }
+
+/**
+ * A balance-sheet asset. Cash, loan receivables, and future instruments all
+ * use this single interface; `loan` is optional metadata for the loan type.
+ * `value` is the carrying value used by totals and the portfolio UI.
+ */
+export interface Asset {
+  id: string;
+  kind: string;
+  value: number;
+  status: "active" | "settled" | "defaulted";
+  loan?: Loan;
+}
+
+/** A balance-sheet obligation, ready for future payable/debt mechanics. */
+export interface Liability {
+  id: string;
+  kind: string;
+  value: number;
+  status: "active" | "settled";
+}
+
+export interface BalanceSheet {
+  assets: Asset[];
+  liabilities: Liability[];
+}
+
+/**
+ * A currently held asset that contributes to the bank's total assets.
+ *
+ * This helper filters historical zero-value records out of the live portfolio.
+ */
+export type ActiveAsset = Asset & { status: "active" };
 
 export type WorldEventKind =
   | "demand-appeared"
@@ -415,11 +444,10 @@ export interface MarketWorld {
   cursor: number;
   day: number;
   startingCash: number;
-  cash: number;
   nextId: number;
   demands: Demand[];
   contracts: ContractOffer[];
-  loans: Loan[];
+  balanceSheet: BalanceSheet;
   log: WorldEvent[];
 }
 
@@ -444,16 +472,51 @@ export function emptyWorld(
     cursor: 0,
     day: 0,
     startingCash,
-    cash: startingCash,
     nextId: 1,
     demands: [],
     contracts: [],
-    loans: [],
+    balanceSheet: {
+      assets: [
+        { id: "cash", kind: "cash", value: startingCash, status: "active" },
+      ],
+      liabilities: [],
+    },
     log: [],
   };
   // Open the doors with a populated street rather than an empty map.
   for (let index = 0; index < 4; index += 1) world = spawnDemand(world);
   return world;
+}
+
+function cashAsset(world: MarketWorld): Asset {
+  const asset = world.balanceSheet.assets.find(
+    (candidate) => candidate.id === "cash",
+  );
+  if (!asset) throw new Error("The balance sheet must contain a cash asset.");
+  return asset;
+}
+
+/** Liquid cash available to fund new contracts. */
+export function availableCash(world: MarketWorld): number {
+  return cashAsset(world).value;
+}
+
+function withCashValue(assets: Asset[], value: number): Asset[] {
+  return assets.map((asset) =>
+    asset.id === "cash" ? { ...asset, value } : asset,
+  );
+}
+
+/** Loan-receivable positions, including resolved records kept for history. */
+export function loanReceivables(world: MarketWorld): Asset[] {
+  return world.balanceSheet.assets.filter(
+    (asset) => asset.kind === "loan-receivable" && asset.loan,
+  );
+}
+
+/** Active loan-receivable positions that remain outstanding. */
+export function activeLoanReceivables(world: MarketWorld): Asset[] {
+  return loanReceivables(world).filter((asset) => asset.status === "active");
 }
 
 /** Deterministic roll in [0, 1) from the world seed and cursor. */
@@ -810,12 +873,19 @@ export function loanDefaultChanceBp(
 export function advanceWorldDay(world: MarketWorld): MarketWorld {
   const day = world.day + 1;
   const roller = new Roller(world.seed, world.cursor);
-  let cash = world.cash;
+  let cash = availableCash(world);
   let log = world.log;
 
-  // 1. Loans that come due today either repay or default.
-  let loans = world.loans.map((loan) => {
-    if (loan.status !== "active" || loan.dueDay > day) return loan;
+  // 1. Loan-receivable assets that come due today either repay or default.
+  let assets = world.balanceSheet.assets.map((asset) => {
+    const loan = asset.loan;
+    if (
+      asset.kind !== "loan-receivable" ||
+      !loan ||
+      asset.status !== "active" ||
+      loan.dueDay > day
+    )
+      return asset;
     const defaulted = roller.next() < loan.defaultChanceBp / 10_000;
     if (!defaulted) cash += loan.repayment;
     log = pushEvent(
@@ -826,12 +896,13 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
         actorName: loan.actor.name,
         amount: loan.repayment,
       },
-      `event-${loan.id}-due`,
+      `event-${asset.id}-due`,
     );
     return {
-      ...loan,
-      status: defaulted ? ("defaulted" as const) : ("repaid" as const),
-      resolvedDay: day,
+      ...asset,
+      value: 0,
+      status: defaulted ? ("defaulted" as const) : ("settled" as const),
+      loan: { ...loan, resolvedDay: day },
     };
   });
 
@@ -948,7 +1019,6 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     ...world,
     cursor: roller.cursor,
     day,
-    cash,
     nextId,
     demands: demands.filter(
       // Settled people (served or expired) linger a few days for the map
@@ -959,7 +1029,10 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
         demand.expiresDay + 5 > day,
     ),
     contracts,
-    loans,
+    balanceSheet: {
+      ...world.balanceSheet,
+      assets: withCashValue(assets, cash),
+    },
     log,
   };
 
@@ -1099,21 +1172,12 @@ export function fileRequest(
     (candidate) => candidate.id === contractId,
   );
   if (!demand || !contract || demand.status !== "open") return world;
-  if (!contractFitsDemand(contract, demand, world.cash)) return world;
-  const request = buildRequest(
-    demand,
-    contract,
-    world.day,
-    world.cash,
-    world.nextId,
-  );
+  const cash = availableCash(world);
+  if (!contractFitsDemand(contract, demand, cash)) return world;
+  const request = buildRequest(demand, contract, world.day, cash, world.nextId);
   if (!request) return world;
 
-  const outcome = decideRequestOutcome(
-    contract.builderNodes,
-    demand,
-    world.cash,
-  );
+  const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
   if (outcome === "reject")
     return {
       ...world,
@@ -1134,8 +1198,6 @@ export function fileRequest(
   return {
     ...world,
     nextId: world.nextId + 1,
-    cash: world.cash,
-    loans: world.loans,
     contracts: world.contracts.map((candidate) =>
       candidate.id === contractId
         ? { ...candidate, requests: [...candidate.requests, request] }
@@ -1183,10 +1245,9 @@ export function acceptRequest(
   );
   if (!contract || !request || request.status !== "pending")
     return { world, failure: "not-found" };
-  if (world.cash < request.principal)
-    return { world, failure: "insufficient-cash" };
+  const cash = availableCash(world);
+  if (cash < request.principal) return { world, failure: "insufficient-cash" };
   const loan: Loan = {
-    id: `loan-${request.id}`,
     contractId,
     actor: request.actor,
     principal: request.principal,
@@ -1194,14 +1255,25 @@ export function acceptRequest(
     signedDay: world.day,
     dueDay: world.day + request.termDays,
     defaultChanceBp: loanDefaultChanceBp(request.actor, request.repayment),
+  };
+  const loanAsset: Asset = {
+    id: `loan-${request.id}`,
+    kind: "loan-receivable",
+    value: request.principal,
     status: "active",
+    loan,
   };
   return {
     failure: null,
     world: {
       ...world,
-      cash: world.cash - request.principal,
-      loans: [...world.loans, loan],
+      balanceSheet: {
+        ...world.balanceSheet,
+        assets: [
+          ...withCashValue(world.balanceSheet.assets, cash - request.principal),
+          loanAsset,
+        ],
+      },
       contracts: world.contracts.map((candidate) =>
         candidate.id === contractId
           ? {
@@ -1227,7 +1299,7 @@ export function acceptRequest(
           actorName: request.actor.name,
           amount: request.principal,
         },
-        `event-${loan.id}`,
+        `event-${loanAsset.id}`,
       ),
     },
   };
@@ -1272,11 +1344,35 @@ export function rejectRequest(
   };
 }
 
+/** Every currently held asset; resolved records remain in the ledger only. */
+export function activeAssets(world: MarketWorld): ActiveAsset[] {
+  return world.balanceSheet.assets.filter(
+    (asset): asset is ActiveAsset => asset.status === "active",
+  );
+}
+
+/** Sum of the active assets on the balance sheet. */
+export function totalAssetValue(world: MarketWorld): number {
+  return activeAssets(world).reduce((total, asset) => total + asset.value, 0);
+}
+
+/** Sum of active obligations; liabilities do not contribute to total assets. */
+export function totalLiabilityValue(world: MarketWorld): number {
+  return world.balanceSheet.liabilities
+    .filter((liability) => liability.status === "active")
+    .reduce((total, liability) => total + liability.value, 0);
+}
+
+export function netWorth(world: MarketWorld): number {
+  return totalAssetValue(world) - totalLiabilityValue(world);
+}
+
 /** Sum of principal still deployed in active loans. */
 export function outstandingPrincipal(world: MarketWorld): number {
-  return world.loans
-    .filter((loan) => loan.status === "active")
-    .reduce((sum, loan) => sum + loan.principal, 0);
+  return activeLoanReceivables(world).reduce(
+    (sum, asset) => sum + asset.value,
+    0,
+  );
 }
 
 export function pendingRequestCount(contract: ContractOffer): number {

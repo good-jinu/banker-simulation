@@ -3,8 +3,10 @@ import { test } from "node:test";
 import { constant, operation, value } from "../src/market/market-recipe.ts";
 import {
   acceptRequest,
+  availableCash,
   decideRequestOutcome,
   fileRequest,
+  loanReceivables,
   type ContractOffer,
   type Demand,
   type DecisionOutcome,
@@ -95,11 +97,13 @@ function makeWorld(overrides: Partial<MarketWorld> = {}): MarketWorld {
     cursor: 0,
     day: 0,
     startingCash: 1_000,
-    cash: 1_000,
     nextId: 1,
     demands: [makeDemand()],
     contracts: [makeContract("draft")],
-    loans: [],
+    balanceSheet: {
+      assets: [{ id: "cash", kind: "cash", value: 1_000, status: "active" }],
+      liabilities: [],
+    },
     log: [],
     ...overrides,
   };
@@ -115,12 +119,12 @@ test("accepting a drafted request signs the loan and continues the contract", ()
   assert.equal(result.failure, null);
   const next = result.world;
 
-  assert.equal(next.cash, 900);
-  assert.equal(next.loans.length, 1);
-  assert.equal(next.loans[0]?.principal, 100);
-  assert.equal(next.loans[0]?.repayment, 150);
-  assert.equal(next.loans[0]?.dueDay, 10);
-  assert.equal(next.loans[0]?.status, "active");
+  assert.equal(availableCash(next), 900);
+  assert.equal(loanReceivables(next).length, 1);
+  assert.equal(loanReceivables(next)[0]?.loan?.principal, 100);
+  assert.equal(loanReceivables(next)[0]?.loan?.repayment, 150);
+  assert.equal(loanReceivables(next)[0]?.loan?.dueDay, 10);
+  assert.equal(loanReceivables(next)[0]?.status, "active");
   assert.equal(next.demands[0]?.status, "served");
   assert.equal(next.contracts[0]?.requests[0]?.status, "accepted");
   assert.equal(next.log.at(-1)?.kind, "loan-signed");
@@ -130,8 +134,12 @@ test("drop on a contract with no decision node files a pending request", () => {
   const world = makeWorld({ contracts: [makeContract(null)] });
   const next = fileRequest(world, "demand-1", "contract-1");
 
-  assert.equal(next.cash, 1_000, "no money moves until the banker accepts");
-  assert.equal(next.loans.length, 0);
+  assert.equal(
+    availableCash(next),
+    1_000,
+    "no money moves until the banker accepts",
+  );
+  assert.equal(loanReceivables(next).length, 0);
   assert.equal(next.demands[0]?.status, "requesting");
   assert.equal(next.contracts[0]?.requests[0]?.status, "pending");
   assert.equal(next.log.at(-1)?.kind, "request-filed");
@@ -170,14 +178,23 @@ test("rejecting drop keeps the demand open and bans this contract for it", () =>
   assert.equal(next.demands[0]?.status, "open");
   assert.deepEqual(next.demands[0]?.rejectedContractIds, ["contract-1"]);
   assert.equal(next.contracts[0]?.requests.length, 0);
-  assert.equal(next.cash, 1_000);
+  assert.equal(availableCash(next), 1_000);
 
   // The banned pair is a no-op from now on — the stage plays the reject X.
   assert.equal(fileRequest(next, "demand-1", "contract-1"), next);
 });
 
 test("accepting a drafted request fails when cash cannot cover it", () => {
-  const filed = fileRequest(makeWorld({ cash: 30 }), "demand-1", "contract-1");
+  const filed = fileRequest(
+    makeWorld({
+      balanceSheet: {
+        assets: [{ id: "cash", kind: "cash", value: 30, status: "active" }],
+        liabilities: [],
+      },
+    }),
+    "demand-1",
+    "contract-1",
+  );
   const result = acceptRequest(
     filed,
     "contract-1",
@@ -185,8 +202,8 @@ test("accepting a drafted request fails when cash cannot cover it", () => {
   );
   assert.equal(result.failure, "insufficient-cash");
   const next = result.world;
-  assert.equal(next.loans.length, 0);
-  assert.equal(next.cash, 30, "no partial payout");
+  assert.equal(loanReceivables(next).length, 0);
+  assert.equal(availableCash(next), 30, "no partial payout");
   assert.equal(next.demands[0]?.status, "requesting");
   assert.equal(next.contracts[0]?.requests[0]?.status, "pending");
 });

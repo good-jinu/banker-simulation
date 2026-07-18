@@ -6,10 +6,22 @@ export const ko: Messages = {
     assetValues: "자산 현황",
     cash: "현금",
     totalAssets: "총자산",
+    openAssetValues: "자산 현황 보기",
+    closeAssetValues: "자산 현황 닫기",
+    loanTo: (name) => `${name} 대출`,
+    dueDay: (day) => `상환 예정 ${day}일차`,
+    loanValueBasis: "진행 중인 대출은 미상환 원금으로 평가됩니다.",
   },
   timebar: {
     gameCalendar: "게임 달력",
     dayN: (day) => `${day}일차`,
+    objective: (focus, complete, target) =>
+      `목표 · ${focus} · ${complete}/${target}건 상환`,
+    noRecentEvents: "최근 이벤트 없음",
+    displayBoard: "정보 게시판",
+    currentObjective: "현재 목표",
+    openDisplayBoard: "정보 게시판 열기",
+    closeDisplayBoard: "정보 게시판 닫기",
     resume: "시간 재개",
     pause: "시간 정지",
     skip: "다음 이벤트로 건너뛰기",
@@ -22,6 +34,7 @@ export const ko: Messages = {
   builder: {
     clause: "조항",
     nodeIssue: (title, issue) => `${title}: ${issue}`,
+    dismissTip: "도움말 닫기",
   },
   mine: {
     completeStage: (stageNumber) => `스테이지 ${stageNumber} 완료`,

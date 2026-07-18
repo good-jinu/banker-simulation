@@ -1,8 +1,6 @@
 import {
   ArrowLeft,
-  CalendarDays,
   Check,
-  CircleDollarSign,
   Info,
   Landmark,
   LogOut,
@@ -11,11 +9,9 @@ import {
   Play,
   Plus,
   Settings,
-  SkipForward,
-  Target,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor, type Messages } from "../i18n/messages/index.ts";
@@ -33,15 +29,18 @@ import { MarketStageView } from "./components/MarketStageView.tsx";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
   acceptRequest,
+  activeAssets,
   advanceWorldDay,
+  availableCash,
   contractFitsDemand,
   decideRequestOutcome,
   emptyWorld,
   fileRequest,
+  loanReceivables,
   MARKET_START_DATE,
-  outstandingPrincipal,
   postContract,
   rejectRequest,
+  totalAssetValue,
   updateContract,
   withdrawContract,
   type ContractOffer,
@@ -79,6 +78,13 @@ function eventText(event: WorldEvent, m: Messages): string {
   }
 }
 
+function boardOrder(id: string): number {
+  let value = 0;
+  for (let index = 0; index < id.length; index += 1)
+    value = (value * 31 + id.charCodeAt(index)) >>> 0;
+  return value;
+}
+
 export function MarketApp({
   locale,
   onBack,
@@ -110,6 +116,9 @@ export function MarketApp({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [hudPanel, setHudPanel] = useState<"menu" | "objective" | null>(null);
+  const [assetPanelOpen, setAssetPanelOpen] = useState(false);
+  const [boardPanelOpen, setBoardPanelOpen] = useState(false);
+  const [boardMessageIndex, setBoardMessageIndex] = useState(0);
   const [clockView, setClockView] = useState<{
     paused: boolean;
     speed: ClockSpeed;
@@ -143,6 +152,17 @@ export function MarketApp({
     return () => clearTimeout(handle);
   }, [notice]);
 
+  useEffect(() => {
+    if (!assetPanelOpen && !boardPanelOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setAssetPanelOpen(false);
+      setBoardPanelOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [assetPanelOpen, boardPanelOpen]);
+
   function togglePaused(): void {
     const clock = clockRef.current;
     if (!clock) return;
@@ -156,17 +176,10 @@ export function MarketApp({
     setClockView((current) => ({ ...current, speed }));
   }
 
-  function skipToNextDue(): void {
-    setWorld((current) => {
-      const dueDays = current.loans
-        .filter((loan) => loan.status === "active")
-        .map((loan) => loan.dueDay);
-      if (dueDays.length === 0) return current;
-      const target = Math.min(...dueDays);
-      let next = current;
-      while (next.day < target) next = advanceWorldDay(next);
-      return next;
-    });
+  function openDisplayBoard(): void {
+    setAssetPanelOpen(false);
+    setBoardPanelOpen(true);
+    setHudPanel(null);
   }
 
   const selectedDemand =
@@ -174,15 +187,64 @@ export function MarketApp({
   const selectedContract =
     world.contracts.find((contract) => contract.id === selectedContractId) ??
     null;
-  const deployed = outstandingPrincipal(world);
-  const ticker = world.log[world.log.length - 1] ?? null;
-  const nextDueExists = world.loans.some((loan) => loan.status === "active");
-  const repaidLoans = world.loans.filter(
-    (loan) => loan.status === "repaid",
+  const assets = activeAssets(world);
+  const loanAssets = loanReceivables(world);
+  const cash = availableCash(world);
+  const totalAssets = totalAssetValue(world);
+  const repaidLoans = loanAssets.filter(
+    (asset) => asset.status === "settled",
   ).length;
   const stageComplete = Boolean(
-    stage && repaidLoans >= stage.repaidLoans && world.cash >= stage.cashTarget,
+    stage && repaidLoans >= stage.repaidLoans && cash >= stage.cashTarget,
   );
+  const boardMessages = useMemo(() => {
+    const recentEvents = world.log
+      .filter(
+        (event) =>
+          event.day >= Math.max(0, world.day - 1) &&
+          event.kind !== "demand-appeared",
+      )
+      .map((event) => ({ id: event.id, text: eventText(event, m) }));
+    const messages = [
+      ...(stage
+        ? [
+            {
+              id: `objective-${repaidLoans}`,
+              text: m.timebar.objective(
+                localize(stage.focus, locale),
+                repaidLoans,
+                stage.repaidLoans,
+              ),
+            },
+          ]
+        : []),
+      ...recentEvents,
+    ];
+    return messages.length > 0
+      ? messages.sort(
+          (left, right) => boardOrder(left.id) - boardOrder(right.id),
+        )
+      : [{ id: "no-recent-events", text: m.timebar.noRecentEvents }];
+  }, [locale, m, repaidLoans, stage, world.day, world.log]);
+  const boardMessageSignature = boardMessages
+    .map((message) => message.id)
+    .join(",");
+  const boardMessage =
+    boardMessages[boardMessageIndex % boardMessages.length] ??
+    boardMessages[0]!;
+  const boardHistoryEvents = [...world.log]
+    .filter((event) => event.kind !== "demand-appeared")
+    .reverse();
+
+  useEffect(() => {
+    setBoardMessageIndex(0);
+    const interval = window.setInterval(
+      () =>
+        setBoardMessageIndex((current) => (current + 1) % boardMessages.length),
+      4_200,
+    );
+    return () => window.clearInterval(interval);
+  }, [boardMessageSignature, boardMessages.length]);
 
   // Surface the win the moment the objective is reached: pause the clock and
   // open the objective panel, which holds the complete-stage button.  Guarded
@@ -276,12 +338,8 @@ export function MarketApp({
       (candidate) => candidate.id === contractId,
     );
     if (!demand || !contract || demand.status !== "open") return false;
-    if (!contractFitsDemand(contract, demand, world.cash)) return false;
-    const outcome = decideRequestOutcome(
-      contract.builderNodes,
-      demand,
-      world.cash,
-    );
+    if (!contractFitsDemand(contract, demand, cash)) return false;
+    const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
     setWorld((current) => fileRequest(current, demandId, contractId));
     // An automated rejection reads as a mismatch to the player: same X.
     return outcome !== "reject";
@@ -303,7 +361,7 @@ export function MarketApp({
       setNotice(t.requestGone);
       return;
     }
-    if (world.cash < request.principal) {
+    if (cash < request.principal) {
       setNotice(t.insufficientCash(request.principal));
       return;
     }
@@ -315,40 +373,166 @@ export function MarketApp({
 
   return (
     <main className="cs-shell mk-shell">
-      <div className="mk-hud">
-        <div className="mk-hud-actions">
+      <div className={`mk-hud${view !== "map" ? " mk-hud-with-back" : ""}`}>
+        {view !== "map" && (
           <button
             className="mk-hud-icon"
-            onClick={() =>
-              setHudPanel((current) => (current === "menu" ? null : "menu"))
-            }
+            onClick={closeOverlay}
+            aria-label={t.backToMap}
+          >
+            <ArrowLeft aria-hidden="true" />
+          </button>
+        )}
+        <div className="mk-mini-balance" aria-label={m.balance.assetValues}>
+          <button
+            className="mk-total-assets-button"
+            onClick={() => {
+              setAssetPanelOpen((current) => !current);
+              setBoardPanelOpen(false);
+              setHudPanel(null);
+            }}
+            aria-expanded={assetPanelOpen}
+            aria-haspopup="dialog"
+            aria-controls="asset-values-dialog"
+            aria-label={m.balance.openAssetValues}
+            title={m.balance.openAssetValues}
+          >
+            <Landmark aria-hidden="true" />${totalAssets.toLocaleString()}
+          </button>
+          <button
+            className="mk-hud-icon"
+            onClick={() => {
+              setAssetPanelOpen(false);
+              setBoardPanelOpen(false);
+              setHudPanel((current) => (current === "menu" ? null : "menu"));
+            }}
             aria-label="Menu"
           >
             <Menu aria-hidden="true" />
           </button>
-          <button
-            className="mk-hud-icon"
-            onClick={() =>
-              setHudPanel((current) =>
-                current === "objective" ? null : "objective",
-              )
-            }
-            aria-label="Objective"
-          >
-            <Target aria-hidden="true" />
-          </button>
-        </div>
-        <div className="mk-mini-balance" aria-label={m.balance.assetValues}>
-          <span title={m.balance.cash}>
-            <CircleDollarSign aria-hidden="true" />$
-            {world.cash.toLocaleString()}
-          </span>
-          <span title={m.balance.totalAssets}>
-            <Landmark aria-hidden="true" />$
-            {(world.cash + deployed).toLocaleString()}
-          </span>
         </div>
       </div>
+
+      {assetPanelOpen && (
+        <div
+          className="mk-asset-dialog-backdrop"
+          onMouseDown={() => setAssetPanelOpen(false)}
+        >
+          <section
+            id="asset-values-dialog"
+            className="mk-asset-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="asset-values-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="mk-asset-dialog-heading">
+              <div>
+                <small>{m.balance.totalAssets}</small>
+                <strong>${totalAssets.toLocaleString()}</strong>
+              </div>
+              <button
+                className="mk-asset-dialog-close"
+                onClick={() => setAssetPanelOpen(false)}
+                aria-label={m.balance.closeAssetValues}
+                autoFocus
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+            <h2 id="asset-values-title">{m.balance.assetValues}</h2>
+            <ul className="mk-asset-list">
+              {assets.map((asset) => (
+                <li key={asset.id} className="mk-asset-list-item">
+                  <div>
+                    <strong>
+                      {asset.kind === "cash"
+                        ? m.balance.cash
+                        : asset.kind === "loan-receivable" && asset.loan
+                          ? m.balance.loanTo(asset.loan.actor.name)
+                          : asset.kind}
+                    </strong>
+                    {asset.kind === "loan-receivable" && asset.loan && (
+                      <small>{m.balance.dueDay(asset.loan.dueDay)}</small>
+                    )}
+                  </div>
+                  <span>${asset.value.toLocaleString()}</span>
+                </li>
+              ))}
+            </ul>
+            {assets.some((asset) => asset.kind === "loan-receivable") && (
+              <p className="mk-asset-valuation-note">
+                {m.balance.loanValueBasis}
+              </p>
+            )}
+          </section>
+        </div>
+      )}
+
+      {boardPanelOpen && (
+        <div
+          className="mk-asset-dialog-backdrop"
+          onMouseDown={() => setBoardPanelOpen(false)}
+        >
+          <section
+            id="display-board-dialog"
+            className="mk-info-board-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="display-board-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="mk-asset-dialog-heading">
+              <div>
+                <small>{m.timebar.displayBoard}</small>
+                <strong>
+                  {formatGameDate(MARKET_START_DATE, world.day, locale)}
+                </strong>
+              </div>
+              <button
+                className="mk-asset-dialog-close"
+                onClick={() => setBoardPanelOpen(false)}
+                aria-label={m.timebar.closeDisplayBoard}
+                autoFocus
+              >
+                <X aria-hidden="true" />
+              </button>
+            </div>
+            <h2 id="display-board-title">{m.timebar.displayBoard}</h2>
+            <ul className="mk-asset-list">
+              {stage && (
+                <li className="mk-asset-list-item mk-info-board-objective">
+                  <div>
+                    <strong>{m.timebar.currentObjective}</strong>
+                    <small>
+                      {m.timebar.objective(
+                        localize(stage.focus, locale),
+                        repaidLoans,
+                        stage.repaidLoans,
+                      )}
+                    </small>
+                  </div>
+                </li>
+              )}
+              {boardHistoryEvents.map((event) => (
+                <li key={event.id} className="mk-asset-list-item">
+                  <div>
+                    <strong>{eventText(event, m)}</strong>
+                    <small>
+                      {formatGameDate(MARKET_START_DATE, event.day, locale)}
+                    </small>
+                  </div>
+                </li>
+              ))}
+              {boardHistoryEvents.length === 0 && (
+                <li className="mk-asset-list-item">
+                  <strong>{m.timebar.noRecentEvents}</strong>
+                </li>
+              )}
+            </ul>
+          </section>
+        </div>
+      )}
 
       {hudPanel === "menu" && (
         <div
@@ -399,19 +583,23 @@ export function MarketApp({
         </section>
       )}
 
-      <section className="cs-timebar" aria-label={m.timebar.gameCalendar}>
-        <div className="cs-timebar-date">
-          <CalendarDays aria-hidden="true" />
-          <div>
-            <strong>
-              {formatGameDate(MARKET_START_DATE, world.day, locale)}
-            </strong>
-            <small>
-              {m.timebar.dayN(world.day)}
-              {ticker ? ` · ${eventText(ticker, m)}` : ""}
-            </small>
+      <section className="mk-info-board" aria-label={m.timebar.gameCalendar}>
+        <button
+          className="mk-info-board-trigger"
+          onClick={openDisplayBoard}
+          aria-label={m.timebar.openDisplayBoard}
+          aria-haspopup="dialog"
+          aria-controls="display-board-dialog"
+        >
+          <strong className="mk-info-board-date">
+            {formatGameDate(MARKET_START_DATE, world.day, locale)}
+          </strong>
+          <div className="mk-info-board-window" aria-live="polite">
+            <p key={boardMessage.id} className="mk-info-board-message">
+              {boardMessage.text}
+            </p>
           </div>
-        </div>
+        </button>
         <div className="cs-timebar-controls">
           <button
             className="cs-clock-toggle"
@@ -434,14 +622,6 @@ export function MarketApp({
               {speed}x
             </button>
           ))}
-          <button
-            className="cs-clock-skip"
-            onClick={skipToNextDue}
-            disabled={!nextDueExists}
-            aria-label={m.timebar.skip}
-          >
-            <SkipForward aria-hidden="true" />
-          </button>
         </div>
       </section>
 
@@ -469,13 +649,6 @@ export function MarketApp({
 
         {view === "demand" && selectedDemand && (
           <div className="mk-overlay">
-            <button
-              className="mk-overlay-back"
-              onClick={closeOverlay}
-              aria-label={t.backToMap}
-            >
-              <ArrowLeft aria-hidden="true" />
-            </button>
             <DemandDetail
               demand={selectedDemand}
               locale={locale}
@@ -486,13 +659,6 @@ export function MarketApp({
 
         {view === "contract" && selectedContract && (
           <div className="mk-overlay">
-            <button
-              className="mk-overlay-back"
-              onClick={closeOverlay}
-              aria-label={t.backToMap}
-            >
-              <ArrowLeft aria-hidden="true" />
-            </button>
             <ContractDetail
               contract={selectedContract}
               locale={locale}
@@ -505,13 +671,6 @@ export function MarketApp({
 
         {view === "builder" && (
           <div className="mk-overlay">
-            <button
-              className="mk-overlay-back"
-              onClick={closeOverlay}
-              aria-label={t.backToMap}
-            >
-              <ArrowLeft aria-hidden="true" />
-            </button>
             <MarketBuilder
               nodes={builderNodes}
               locale={locale}

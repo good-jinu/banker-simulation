@@ -1,5 +1,5 @@
 import { Send, Trash2, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { playerLabel } from "../../i18n/local-text.ts";
 import type { Locale } from "../../i18n/locale.ts";
 import { messagesFor } from "../../i18n/messages/index.ts";
@@ -48,6 +48,7 @@ export function MarketBuilder({
     [nodes],
   );
   const issue = validateDraft(nodes, m);
+  const [dismissedIssue, setDismissedIssue] = useState<string | null>(null);
   const [insertMenu, setInsertMenu] = useState<{
     target: BuilderInsertTarget;
     x: number;
@@ -59,6 +60,10 @@ export function MarketBuilder({
   const selectedContext = findBuilderNodeContext(nodes, selectedNodeId);
   const partyName = (id: string | undefined): string =>
     id === "player" ? playerLabel(locale) : t.borrower;
+
+  useEffect(() => {
+    if (!issue) setDismissedIssue(null);
+  }, [issue]);
 
   function insertNode(
     target: BuilderInsertTarget,
@@ -197,6 +202,18 @@ export function MarketBuilder({
             setInsertMenu({ target, ...position })
           }
         />
+        {issue && dismissedIssue !== issue && (
+          <aside className="mk-canvas-tip" role="status">
+            <p>{issue}</p>
+            <button
+              type="button"
+              onClick={() => setDismissedIssue(issue)}
+              aria-label={m.builder.dismissTip}
+            >
+              <X aria-hidden="true" />
+            </button>
+          </aside>
+        )}
         {insertMenu && (
           <div
             className="mk-node-picker"
@@ -253,7 +270,6 @@ export function MarketBuilder({
         />
       )}
 
-      {issue && <p className="cs-builder-feedback issue">{issue}</p>}
       {!issue && <p className="cs-builder-feedback ready">{t.builderReady}</p>}
 
       <button className="cs-offer-button" onClick={onSubmit}>
