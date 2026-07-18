@@ -8,10 +8,12 @@ export function DemandDetail({
   demand,
   locale,
   onDraft,
+  highlightDraftAction = false,
 }: {
   demand: Demand;
   locale: Locale;
   onDraft?: (() => void) | undefined;
+  highlightDraftAction?: boolean;
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
@@ -76,7 +78,12 @@ export function DemandDetail({
         </div>
       </article>
       {onDraft && (
-        <button className="cs-build-button mk-demand-cta" onClick={onDraft}>
+        <button
+          className={`cs-build-button mk-demand-cta${
+            highlightDraftAction ? " mk-tutorial-target" : ""
+          }`}
+          onClick={onDraft}
+        >
           <Send aria-hidden="true" /> {t.draftContract}
         </button>
       )}

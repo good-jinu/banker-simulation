@@ -167,6 +167,28 @@ export const en = {
       timePaused: "Time is paused until you close this event.",
       closeEvent: "Close event and continue",
     },
+    tutorial: {
+      label: (step: number, total: number) => `GUIDED RUN · ${step}/${total}`,
+      inspectRequest: "Choose the highlighted request.",
+      openBuilder: "Turn this request into a contract.",
+      buildContract:
+        "Add a transfer out, a wait, and a transfer back. The builder will confirm when it is ready.",
+      postContract: "Your contract is ready. Post it to the market.",
+      awaitRequest:
+        "A matching request is being routed into the highlighted contract.",
+      approveRequest:
+        "The request is waiting. Open the contract and approve it.",
+      collectRepayment:
+        "Start time and watch the contract collect its repayment.",
+      rewardEyebrow: "FIRST AUTOMATION COMPLETE",
+      rewardTitle: "Your first yield is working.",
+      rewardBody: (cash: number) =>
+        `You now have $${cash.toLocaleString()} in cash and a proven contract loop.`,
+      rewardName: "Founder's Contract Stamp",
+      rewardDescription:
+        "Permanent proof that you built a working financial machine.",
+      rewardAction: "Unlock Stage 02",
+    },
   },
   gameApp: {
     stageSelection: "Stage selection",

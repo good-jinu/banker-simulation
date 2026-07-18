@@ -1,5 +1,10 @@
 import type { LocalText } from "../i18n/local-text.ts";
 
+export type TutorialDefinition = {
+  kind: "first-yield";
+  targetDemandId: string;
+};
+
 export type MarketCampaignStage = {
   id: string;
   number: number;
@@ -13,6 +18,8 @@ export type MarketCampaignStage = {
   cashTarget: number;
   rewardId: string;
   image: string;
+  /** Optional UI-only guidance. It never changes simulation rules. */
+  tutorial?: TutorialDefinition;
 };
 
 const text = (en: string, ko: string): LocalText => ({ en, ko });
@@ -36,7 +43,11 @@ export const marketCampaignStages: readonly MarketCampaignStage[] = [
     repaidLoans: 1,
     cashTarget: 1000,
     rewardId: "contract-stamp",
-    image: "/assets/stage-one/customers/elena.webp",
+    image: "/assets/stages/stage-01.webp",
+    tutorial: {
+      kind: "first-yield",
+      targetDemandId: "demand-1",
+    },
   },
   {
     id: "room-to-breathe",

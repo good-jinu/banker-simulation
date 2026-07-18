@@ -10,12 +10,14 @@ export function ContractDetail({
   onDecide,
   onOpenActor,
   onEdit,
+  highlightAcceptRequestId,
 }: {
   contract: ContractOffer;
   locale: Locale;
   onDecide: (requestId: string, accept: boolean) => void;
   onOpenActor: (demandId: string) => void;
   onEdit: () => void;
+  highlightAcceptRequestId?: string | undefined;
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
@@ -73,7 +75,11 @@ export function ContractDetail({
               </em>
               <span className="mk-request-actions">
                 <button
-                  className="accept"
+                  className={`accept${
+                    request.id === highlightAcceptRequestId
+                      ? " mk-tutorial-target"
+                      : ""
+                  }`}
                   onClick={() => onDecide(request.id, true)}
                   aria-label={`${t.accept} · ${request.actor.name}`}
                 >

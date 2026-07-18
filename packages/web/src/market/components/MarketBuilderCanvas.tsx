@@ -50,6 +50,8 @@ interface Props {
   ) => void;
   /** Rendered as a panel attached to the selected node's box. */
   overlay?: ReactNode;
+  /** Brighten the real canvas plus controls during guided play. */
+  highlightAddControls?: boolean;
 }
 
 /** Screen-space box of the selected node, for anchoring the HTML overlay. */
@@ -140,6 +142,7 @@ class BuilderCanvasScene {
   private nodeLabel: Props["nodeLabel"] = () => "";
   private onSelectNode: Props["onSelectNode"] = () => undefined;
   private onRequestInsert: Props["onRequestInsert"] = () => undefined;
+  private highlightAddControls = false;
   private pointerStart: Point | null = null;
   private worldStart: Point | null = null;
   private moved = false;
@@ -206,13 +209,15 @@ class BuilderCanvasScene {
     const needsRender =
       this.nodes !== props.nodes ||
       this.selectedNodeId !== props.selectedNodeId ||
-      this.labels === null;
+      this.labels === null ||
+      this.highlightAddControls !== Boolean(props.highlightAddControls);
     this.nodes = props.nodes;
     this.selectedNodeId = props.selectedNodeId;
     this.labels = props.labels;
     this.nodeLabel = props.nodeLabel;
     this.onSelectNode = props.onSelectNode;
     this.onRequestInsert = props.onRequestInsert;
+    this.highlightAddControls = Boolean(props.highlightAddControls);
     if (this.ready && needsRender) this.render();
   }
 
@@ -698,7 +703,10 @@ class BuilderCanvasScene {
     const circle = new Graphics()
       .circle(0, 0, 13)
       .fill(COLOR.panel)
-      .stroke({ color: COLOR.gold, width: 2 });
+      .stroke({
+        color: this.highlightAddControls ? COLOR.green : COLOR.gold,
+        width: this.highlightAddControls ? 4 : 2,
+      });
     const mark = new Graphics()
       .moveTo(-5, 0)
       .lineTo(5, 0)

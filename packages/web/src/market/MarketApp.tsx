@@ -4,7 +4,6 @@ import {
   Info,
   Landmark,
   LogOut,
-  MapPin,
   Menu,
   Pause,
   Play,
@@ -26,22 +25,23 @@ import {
 import { ContractDetail } from "./components/ContractDetail.tsx";
 import { DemandDetail } from "./components/DemandDetail.tsx";
 import { MarketBuilder } from "./components/MarketBuilder.tsx";
-import { MarketStageView } from "./components/MarketStageView.tsx";
+import {
+  MarketStageView,
+  type DemandAbsorption,
+} from "./components/MarketStageView.tsx";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
   acceptRequest,
   activeAssets,
   advanceWorldDay,
   availableCash,
-  contractFitsDemand,
-  decideRequestOutcome,
   emptyWorld,
   fileRequest,
   loanReceivables,
   MARKET_START_DATE,
+  matchingOpenDemandIds,
   moveContract,
   postContract,
-  recordSpecialEvent,
   rejectRequest,
   totalAssetValue,
   updateContract,
@@ -52,6 +52,10 @@ import {
   type MarketWorld,
   type WorldEvent,
 } from "./market-world.ts";
+import {
+  deriveFirstYieldTutorialStep,
+  type FirstYieldTutorialStep,
+} from "./tutorial-flow.ts";
 import "./campaign-stage.css";
 import "./market.css";
 
@@ -59,15 +63,41 @@ const MARKET_MS_PER_DAY = 1_200;
 
 type View = "map" | "demand" | "contract" | "builder";
 
-type MarketSpecialEvent = {
-  kind: "first-yield-tutorial";
-  targetDemandId: string;
-};
-
-const FIRST_TUTORIAL_DEMAND_ID = "demand-1";
-
 function newWorldSeed(): string {
   return Math.random().toString(36).slice(2);
+}
+
+function tutorialPromptDetails(
+  step: FirstYieldTutorialStep,
+  tutorial: Messages["marketSim"]["tutorial"],
+): { step: number; body: string } {
+  switch (step) {
+    case "inspect-request":
+      return {
+        step: 1,
+        body: tutorial.inspectRequest,
+      };
+    case "open-builder":
+      return {
+        step: 2,
+        body: tutorial.openBuilder,
+      };
+    case "build-contract":
+      return { step: 3, body: tutorial.buildContract };
+    case "post-contract":
+      return { step: 3, body: tutorial.postContract };
+    case "await-request":
+      return { step: 4, body: tutorial.awaitRequest };
+    case "approve-request":
+      return {
+        step: 5,
+        body: tutorial.approveRequest,
+      };
+    case "collect-repayment":
+      return { step: 6, body: tutorial.collectRepayment };
+    case "claim-reward":
+      return { step: 6, body: "" };
+  }
 }
 
 function eventText(event: WorldEvent, m: Messages): string {
@@ -112,31 +142,9 @@ export function MarketApp({
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
-  const [world, setWorld] = useState<MarketWorld>(() => {
-    const initialWorld = emptyWorld(
-      stage?.seed ?? newWorldSeed(),
-      stage?.startingCash,
-    );
-    if (stage?.id !== "first-yield") return initialWorld;
-    const tutorialDemand = initialWorld.demands.find(
-      (demand) => demand.id === FIRST_TUTORIAL_DEMAND_ID,
-    );
-    return recordSpecialEvent(
-      initialWorld,
-      "first-yield-tutorial",
-      tutorialDemand?.actor.name ?? t.borrower,
-    );
-  });
-  const [eventPopup, setEventPopup] = useState<MarketSpecialEvent | null>(() =>
-    stage?.id === "first-yield"
-      ? {
-          kind: "first-yield-tutorial",
-          targetDemandId: FIRST_TUTORIAL_DEMAND_ID,
-        }
-      : null,
-  );
-  const [guidedDemandId, setGuidedDemandId] = useState<string | null>(() =>
-    stage?.id === "first-yield" ? FIRST_TUTORIAL_DEMAND_ID : null,
+  const tutorial = stage?.tutorial;
+  const [world, setWorld] = useState<MarketWorld>(() =>
+    emptyWorld(stage?.seed ?? newWorldSeed(), stage?.startingCash),
   );
   const [view, setView] = useState<View>("map");
   const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null);
@@ -159,7 +167,11 @@ export function MarketApp({
   const [clockView, setClockView] = useState<{
     paused: boolean;
     speed: ClockSpeed;
-  }>({ paused: stage?.id === "first-yield", speed: 1 });
+  }>({ paused: Boolean(tutorial), speed: 1 });
+  const [rewardOverlayOpen, setRewardOverlayOpen] = useState(false);
+  const [pendingAbsorptions, setPendingAbsorptions] = useState<
+    DemandAbsorption[]
+  >([]);
   const clockRef = useRef<GameClock | null>(null);
 
   useEffect(() => {
@@ -168,7 +180,8 @@ export function MarketApp({
       return true;
     }, MARKET_MS_PER_DAY);
     clockRef.current = clock;
-    if (!eventPopup) clock.play();
+    if (tutorial) clock.pause();
+    else clock.play();
     clock.start();
     const pauseWhenHidden = () => {
       if (document.hidden) {
@@ -183,14 +196,6 @@ export function MarketApp({
       clockRef.current = null;
     };
   }, []);
-
-  useEffect(() => {
-    if (!eventPopup) return;
-    clockRef.current?.pause();
-    setClockView((current) =>
-      current.paused ? current : { ...current, paused: true },
-    );
-  }, [eventPopup]);
 
   useEffect(() => {
     if (!notice) return;
@@ -210,7 +215,6 @@ export function MarketApp({
   }, [assetPanelOpen, boardPanelOpen]);
 
   function togglePaused(): void {
-    if (eventPopup) return;
     const clock = clockRef.current;
     if (!clock) return;
     if (clock.paused) clock.play();
@@ -229,20 +233,6 @@ export function MarketApp({
     setHudPanel(null);
   }
 
-  function closeEventPopup(): void {
-    if (!eventPopup) return;
-    setEventPopup(null);
-    const clock = clockRef.current;
-    if (!clock) return;
-    clock.play();
-    setClockView((current) => ({ ...current, paused: false }));
-  }
-
-  const tutorialDemand = eventPopup
-    ? (world.demands.find(
-        (demand) => demand.id === eventPopup.targetDemandId,
-      ) ?? null)
-    : null;
   const selectedDemand =
     world.demands.find((demand) => demand.id === selectedDemandId) ?? null;
   const selectedContract =
@@ -258,6 +248,40 @@ export function MarketApp({
   const stageComplete = Boolean(
     stage && repaidLoans >= stage.repaidLoans && cash >= stage.cashTarget,
   );
+  const targetDemand = tutorial
+    ? (world.demands.find((demand) => demand.id === tutorial.targetDemandId) ??
+      null)
+    : null;
+  const targetRequestContract = tutorial
+    ? (world.contracts.find((contract) =>
+        contract.requests.some(
+          (request) => request.demandId === tutorial.targetDemandId,
+        ),
+      ) ?? null)
+    : null;
+  const targetRequest = targetRequestContract?.requests.find(
+    (request) => request.demandId === tutorial?.targetDemandId,
+  );
+  const hasActiveTargetLoan = loanAssets.some(
+    (asset) =>
+      asset.status === "active" &&
+      asset.loan?.actor.id === targetDemand?.actor.id,
+  );
+  const tutorialStep =
+    tutorial?.kind === "first-yield"
+      ? deriveFirstYieldTutorialStep({
+          view,
+          hasPostedContract: world.contracts.length > 0,
+          targetRequestStatus:
+            targetRequest?.status === "pending" ||
+            targetRequest?.status === "accepted"
+              ? targetRequest.status
+              : null,
+          hasActiveTargetLoan,
+          repaidLoans,
+          draftIsReady: validateDraft(builderNodes, m) === null,
+        })
+      : null;
   const boardMessages = useMemo(() => {
     const recentEvents = world.log
       .filter(
@@ -311,26 +335,25 @@ export function MarketApp({
     return () => window.clearInterval(interval);
   }, [boardMessageSignature, boardMessages.length]);
 
-  // Surface the win the moment the objective is reached: pause the clock and
-  // open the objective panel, which holds the complete-stage button.  Guarded
-  // so a cash dip and recovery does not replay the celebration.
+  // Surface the win once. Tutorial stages use their reward screen; all other
+  // stages retain the existing objective-panel completion flow.
   const celebratedRef = useRef(false);
   useEffect(() => {
     if (!stageComplete || celebratedRef.current) return;
     celebratedRef.current = true;
     clockRef.current?.pause();
     setClockView((current) => ({ ...current, paused: true }));
-    setHudPanel("objective");
-  }, [stageComplete]);
+    if (tutorial) setRewardOverlayOpen(true);
+    else setHudPanel("objective");
+  }, [stageComplete, tutorial]);
 
   const openDemandDetail = useCallback(
     (demandId: string, origin: "map" | "contract") => {
-      if (guidedDemandId === demandId) setGuidedDemandId(null);
       setSelectedDemandId(demandId);
       setDemandOrigin(origin);
       setView("demand");
     },
-    [guidedDemandId],
+    [],
   );
 
   const openContractDetail = useCallback((contractId: string) => {
@@ -365,7 +388,21 @@ export function MarketApp({
       setNotice(t.updated);
       setView("contract");
     } else {
-      setWorld((current) => postContract(current, builderNodes));
+      const postedWorld = postContract(world, builderNodes);
+      const postedContract = postedWorld.contracts.at(-1);
+      const demandIds = postedContract
+        ? matchingOpenDemandIds(postedWorld, postedContract.id)
+        : [];
+      setWorld(postedWorld);
+      if (postedContract) {
+        setPendingAbsorptions(
+          demandIds.map((demandId) => ({
+            id: `${postedContract.id}:${demandId}`,
+            demandId,
+            contractId: postedContract.id,
+          })),
+        );
+      }
       setNotice(t.posted);
       setView("map");
     }
@@ -393,23 +430,14 @@ export function MarketApp({
     setView("map");
   }
 
-  /**
-   * A demand node was dropped on a contract square.  The synchronous
-   * verdict drives the stage's success or reject animation; the request
-   * itself lands through the world update.
-   */
-  function dropDemand(demandId: string, contractId: string): boolean {
-    const demand = world.demands.find((candidate) => candidate.id === demandId);
-    const contract = world.contracts.find(
-      (candidate) => candidate.id === contractId,
+  const completeAbsorption = useCallback((absorption: DemandAbsorption) => {
+    setWorld((current) =>
+      fileRequest(current, absorption.demandId, absorption.contractId),
     );
-    if (!demand || !contract || demand.status !== "open") return false;
-    if (!contractFitsDemand(contract, demand, cash)) return false;
-    const outcome = decideRequestOutcome(contract.builderNodes, demand, cash);
-    setWorld((current) => fileRequest(current, demandId, contractId));
-    // An automated rejection reads as a mismatch to the player: same X.
-    return outcome !== "reject";
-  }
+    setPendingAbsorptions((current) =>
+      current.filter((candidate) => candidate.id !== absorption.id),
+    );
+  }, []);
 
   function decideRequest(requestId: string, accept: boolean): void {
     if (!selectedContract) return;
@@ -436,6 +464,11 @@ export function MarketApp({
       return result.failure ? current : result.world;
     });
   }
+
+  const tutorialPrompt =
+    tutorialStep && tutorialStep !== "claim-reward"
+      ? tutorialPromptDetails(tutorialStep, t.tutorial)
+      : null;
 
   return (
     <main className="cs-shell mk-shell">
@@ -649,45 +682,34 @@ export function MarketApp({
         </section>
       )}
 
-      {eventPopup && (
-        <div className="mk-event-backdrop">
+      {tutorialPrompt && (
+        <aside className="mk-tutorial-callout" aria-live="polite">
+          <small>{t.tutorial.label(tutorialPrompt.step, 6)}</small>
+          <p>{tutorialPrompt.body}</p>
+        </aside>
+      )}
+
+      {tutorial && rewardOverlayOpen && stageComplete && onComplete && (
+        <div className="mk-reward-backdrop">
           <section
-            className="mk-event-dialog"
+            className="mk-reward-dialog"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="mk-event-title"
-            aria-describedby="mk-event-body"
+            aria-labelledby="mk-reward-title"
           >
-            <div className="mk-event-tag">
-              <MapPin aria-hidden="true" />
-              <span>{t.specialEvents.tutorialTag}</span>
+            <div className="mk-reward-mark" aria-hidden="true">
+              <Landmark />
+              <Check />
             </div>
-            {tutorialDemand && (
-              <img
-                className="mk-event-portrait"
-                src={tutorialDemand.actor.image}
-                alt=""
-              />
-            )}
-            <h2 id="mk-event-title">{t.specialEvents.firstYieldTitle}</h2>
-            <p id="mk-event-body">
-              {t.specialEvents.firstYieldBody(
-                tutorialDemand?.actor.name ?? t.borrower,
-              )}
-            </p>
-            <ol className="mk-event-steps">
-              <li>{t.specialEvents.firstYieldInspect}</li>
-              <li>{t.specialEvents.firstYieldBuild}</li>
-              <li>{t.specialEvents.firstYieldPost}</li>
-            </ol>
-            <p className="mk-event-paused">{t.specialEvents.timePaused}</p>
-            <button
-              type="button"
-              className="mk-event-close"
-              onClick={closeEventPopup}
-              autoFocus
-            >
-              {t.specialEvents.closeEvent}
+            <small>{t.tutorial.rewardEyebrow}</small>
+            <h2 id="mk-reward-title">{t.tutorial.rewardTitle}</h2>
+            <p>{t.tutorial.rewardBody(cash)}</p>
+            <div className="mk-reward-card">
+              <strong>{t.tutorial.rewardName}</strong>
+              <span>{t.tutorial.rewardDescription}</span>
+            </div>
+            <button type="button" onClick={onComplete} autoFocus>
+              {t.tutorial.rewardAction}
             </button>
           </section>
         </div>
@@ -712,9 +734,12 @@ export function MarketApp({
         </button>
         <div className="cs-timebar-controls">
           <button
-            className="cs-clock-toggle"
             onClick={togglePaused}
-            disabled={eventPopup !== null}
+            className={`cs-clock-toggle${
+              tutorialStep === "collect-repayment" && clockView.paused
+                ? " mk-tutorial-target"
+                : ""
+            }`}
             aria-label={clockView.paused ? m.timebar.resume : m.timebar.pause}
           >
             {clockView.paused ? (
@@ -746,10 +771,26 @@ export function MarketApp({
             world={world}
             suspended={view !== "map"}
             timeFlowing={!clockView.paused}
-            highlightedDemandId={guidedDemandId}
+            highlightedDemandId={
+              tutorial &&
+              tutorialStep !== "claim-reward" &&
+              targetDemand?.status === "open"
+                ? tutorial.targetDemandId
+                : null
+            }
+            highlightedContractId={
+              tutorialStep === "await-request" ||
+              tutorialStep === "approve-request"
+                ? (targetRequestContract?.id ??
+                  (tutorialStep === "await-request"
+                    ? (world.contracts[0]?.id ?? null)
+                    : null))
+                : null
+            }
             onTapDemand={(id) => openDemandDetail(id, "map")}
             onTapContract={openContractDetail}
-            onDropDemand={dropDemand}
+            pendingAbsorptions={pendingAbsorptions}
+            onAbsorptionComplete={completeAbsorption}
             onMoveContract={(id, x, y) =>
               setWorld((current) => moveContract(current, id, x, y))
             }
@@ -768,6 +809,7 @@ export function MarketApp({
             <DemandDetail
               demand={selectedDemand}
               locale={locale}
+              highlightDraftAction={tutorialStep === "open-builder"}
               onDraft={demandOrigin === "map" ? () => openBuilder() : undefined}
             />
           </div>
@@ -781,6 +823,11 @@ export function MarketApp({
               onDecide={decideRequest}
               onOpenActor={(demandId) => openDemandDetail(demandId, "contract")}
               onEdit={() => openBuilderForContract(selectedContract)}
+              highlightAcceptRequestId={
+                tutorialStep === "approve-request"
+                  ? targetRequest?.id
+                  : undefined
+              }
             />
           </div>
         )}
@@ -796,6 +843,7 @@ export function MarketApp({
               onChangeNodes={setBuilderNodes}
               onSubmit={submitDraft}
               onWithdraw={editingContractId ? removeContract : undefined}
+              tutorialStep={tutorialStep}
             />
           </div>
         )}

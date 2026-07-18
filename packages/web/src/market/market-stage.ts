@@ -10,21 +10,18 @@ import {
 } from "pixi.js";
 import type { ContractOffer, MarketWorld } from "./market-world.ts";
 import { pendingRequestCount, staticContractTerms } from "./market-world.ts";
-import { nearestDropTarget } from "./drop-target.ts";
 
 /**
  * PixiJS scene for the open-market map.  Demand nodes are draggable portrait
- * circles; contract offers are squares with a pending-request badge.  A small
- * pointer movement is a tap (opens a detail page); a real drag hands the
- * demand to `onDropDemand` when it lands on a contract, and the stage plays
- * the matching success pulse or the reject X before snapping the node home.
+ * circles; contract offers are squares with a pending-request badge. Matching
+ * demands animate into a newly posted contract and file their request after
+ * the visual arrival. Demand nodes remain tap-only; contract squares can be
+ * dragged to reposition them.
  */
 
 export interface MarketStageCallbacks {
   onTapDemand(demandId: string): void;
   onTapContract(contractId: string): void;
-  /** Return true when the demand fit and a request was filed. */
-  onDropDemand(demandId: string, contractId: string): boolean;
   /** A contract square was dragged; coordinates are normalized to [0, 1]. */
   onMoveContract(contractId: string, x: number, y: number): void;
 }
@@ -59,6 +56,7 @@ interface DemandNode {
 
 interface ContractNode {
   root: Container;
+  highlight: Graphics;
   badge: Container;
   badgeText: Text;
   termsText: Text;
@@ -66,7 +64,7 @@ interface ContractNode {
 }
 
 interface DragState {
-  kind: "demand" | "contract";
+  kind: "contract";
   id: string;
   node: Container;
   originX: number;
@@ -104,12 +102,16 @@ export class MarketStage {
   private readonly fxLayer = new Container();
   private readonly demandNodes = new Map<string, DemandNode>();
   private readonly contractNodes = new Map<string, ContractNode>();
+  private readonly absorbingDemandIds = new Set<string>();
   private drag: DragState | null = null;
   private animations: Animation[] = [];
   private suspended = false;
   private timeFlowing = false;
   private highlightedDemandId: string | null = null;
+  private highlightedContractId: string | null = null;
   private jitterClock = 0;
+  /** Runs even when game time is paused so tutorial targets stay unmistakable. */
+  private highlightClock = 0;
 
   async init(
     host: HTMLElement,
@@ -180,7 +182,54 @@ export class MarketStage {
       node.highlight.visible = id === demandId;
   }
 
+  /** Draw attention to a tutorial contract without changing its hit target. */
+  setHighlightedContract(contractId: string | null): void {
+    this.highlightedContractId = contractId;
+    for (const [id, node] of this.contractNodes)
+      node.highlight.visible = id === contractId;
+  }
+
+  /** Animate a matching demand into its contract before filing the request. */
+  absorbDemand(
+    demandId: string,
+    contractId: string,
+    onComplete: () => void,
+  ): void {
+    if (this.absorbingDemandIds.has(demandId)) return;
+    const demand = this.demandNodes.get(demandId);
+    const contract = this.contractNodes.get(contractId);
+    if (!demand || !contract) return;
+    this.absorbingDemandIds.add(demandId);
+    const root = demand.root;
+    const fromX = root.x;
+    const fromY = root.y;
+    const startScale = root.scale.x;
+    const duration = 620;
+    let elapsed = 0;
+    this.animations.push((deltaMs) => {
+      if (root.destroyed) return false;
+      elapsed += deltaMs;
+      const progress = Math.min(1, elapsed / duration);
+      const eased = easeOutCubic(progress);
+      root.position.set(
+        fromX + (contract.root.x - fromX) * eased,
+        fromY + (contract.root.y - fromY) * eased,
+      );
+      root.scale.set(Math.max(0.03, startScale * (1 - eased)));
+      root.alpha = 1 - progress * 0.4;
+      if (progress < 1) return true;
+      root.visible = false;
+      this.demandNodes.delete(demandId);
+      this.absorbingDemandIds.delete(demandId);
+      root.destroy({ children: true });
+      this.playMatchPulse(contract.root.x, contract.root.y);
+      onComplete();
+      return false;
+    });
+  }
+
   private applyJitter(deltaMs: number): void {
+    this.highlightClock += deltaMs;
     if (this.timeFlowing) this.jitterClock += deltaMs;
     const nodes: Array<{ root: Container; jitterPhase: number }> = [
       ...this.demandNodes.values(),
@@ -201,13 +250,21 @@ export class MarketStage {
         Math.cos(t * 11.7 + jitterPhase * 1.9) * 1.1,
       );
     }
-    const pulse = (Math.sin(this.jitterClock / 260) + 1) / 2;
+    const pulse = (Math.sin(this.highlightClock / 170) + 1) / 2;
     for (const [id, node] of this.demandNodes) {
       const highlighted = id === this.highlightedDemandId;
       node.highlight.visible = highlighted;
       if (highlighted) {
-        node.highlight.alpha = 0.58 + pulse * 0.32;
-        node.highlight.scale.set(1 + pulse * 0.12);
+        node.highlight.alpha = 0.2 + pulse * 0.8;
+        node.highlight.scale.set(1 + pulse * 0.28);
+      }
+    }
+    for (const [id, node] of this.contractNodes) {
+      const highlighted = id === this.highlightedContractId;
+      node.highlight.visible = highlighted;
+      if (highlighted) {
+        node.highlight.alpha = 0.2 + pulse * 0.8;
+        node.highlight.scale.set(1 + pulse * 0.28);
       }
     }
   }
@@ -262,6 +319,7 @@ export class MarketStage {
     this.gridLayer.destroy();
     this.demandNodes.clear();
     this.contractNodes.clear();
+    this.absorbingDemandIds.clear();
     // Remove this view without releasing Pixi's process-wide pools: during a
     // React view transition another canvas may already be using them.
     this.app.destroy({ removeView: true });
@@ -279,15 +337,8 @@ export class MarketStage {
     );
     const contractIds = new Set(world.contracts.map((contract) => contract.id));
 
-    // A dragged node whose subject left the world (auto-request fired,
-    // expiry, withdrawal, or the drop just succeeded) ends its drag.
-    if (
-      this.drag &&
-      !(this.drag.kind === "demand"
-        ? openDemandIds.has(this.drag.id)
-        : contractIds.has(this.drag.id))
-    )
-      this.drag = null;
+    // A dragged contract that leaves the world ends its drag.
+    if (this.drag && !contractIds.has(this.drag.id)) this.drag = null;
 
     for (const [id, node] of this.demandNodes) {
       if (openDemandIds.has(id)) continue;
@@ -313,15 +364,15 @@ export class MarketStage {
       node.badge.visible = pending > 0;
       node.badgeText.text = pending > 9 ? "9+" : String(pending);
       node.termsText.text = contractMapLabel(contract);
+      node.highlight.visible = contract.id === this.highlightedContractId;
     }
 
     for (const demand of world.demands) {
       if (demand.status !== "open") continue;
       const existing = this.demandNodes.get(demand.id);
       if (existing) {
-        // A drop optimistically hides the node; if the request did not land
-        // (the world changed under the drag), the demand is still open and
-        // must stay visible and clickable.
+        if (this.absorbingDemandIds.has(demand.id)) continue;
+        // A surviving open demand remains visible and tap-ready.
         existing.root.visible = true;
         continue;
       }
@@ -362,7 +413,7 @@ export class MarketStage {
       if (demand.status !== "open") continue;
       const node = this.demandNodes.get(demand.id);
       if (!node) continue;
-      if (this.drag?.kind === "demand" && this.drag.id === demand.id) continue;
+      if (this.absorbingDemandIds.has(demand.id)) continue;
       node.root.position.set(this.px(demand.x), this.py(demand.y));
     }
   }
@@ -425,19 +476,7 @@ export class MarketStage {
       sprite.height = (DEMAND_RADIUS - 2) * 2;
     });
 
-    root.on("pointerdown", (event: FederatedPointerEvent) => {
-      if (this.drag) return;
-      this.drag = {
-        kind: "demand",
-        id: demandId,
-        node: root,
-        originX: root.x,
-        originY: root.y,
-        startGlobalX: event.global.x,
-        startGlobalY: event.global.y,
-        moved: false,
-      };
-    });
+    root.on("pointertap", () => this.callbacks?.onTapDemand(demandId));
 
     return {
       root,
@@ -451,6 +490,18 @@ export class MarketStage {
     const root = new Container();
     root.eventMode = "static";
     root.cursor = "pointer";
+
+    const highlight = new Graphics()
+      .roundRect(
+        -CONTRACT_HALF - 8,
+        -CONTRACT_HALF - 8,
+        (CONTRACT_HALF + 8) * 2,
+        (CONTRACT_HALF + 8) * 2,
+        16,
+      )
+      .stroke({ width: 3, color: GOLD_BRIGHT });
+    highlight.visible = contractId === this.highlightedContractId;
+    root.addChild(highlight);
 
     const body = new Graphics()
       .roundRect(
@@ -512,6 +563,7 @@ export class MarketStage {
 
     return {
       root,
+      highlight,
       badge,
       badgeText,
       termsText,
@@ -538,76 +590,20 @@ export class MarketStage {
     this.drag = null;
 
     if (!drag.moved) {
-      if (drag.kind === "demand") this.callbacks?.onTapDemand(drag.id);
-      else this.callbacks?.onTapContract(drag.id);
+      this.callbacks?.onTapContract(drag.id);
       return;
     }
 
-    if (drag.kind === "contract") {
-      // Persist the drop point in normalized world coordinates so the square
-      // stays where the player left it across resizes and re-syncs.
-      const spanX = Math.max(1, this.app.screen.width - 88);
-      const spanY = Math.max(1, this.app.screen.height - 104);
-      this.callbacks?.onMoveContract(
-        drag.id,
-        (drag.node.x - 44) / spanX,
-        (drag.node.y - 48) / spanY,
-      );
-      return;
-    }
-
-    const target = this.dropTarget(drag.node.x, drag.node.y);
-    if (!target) {
-      this.snapBack(drag);
-      return;
-    }
-    const accepted =
-      this.callbacks?.onDropDemand(drag.id, target.contractId) ?? false;
-    if (accepted) {
-      // The world update removes the node on the next sync; hide it now so
-      // it does not flash back to its map spot first.
-      drag.node.visible = false;
-      this.playMatchPulse(target.node.root.x, target.node.root.y);
-    } else {
-      this.playRejectX(target.node.root.x, target.node.root.y);
-      this.snapBack(drag);
-    }
-    void event;
-  }
-
-  private dropTarget(
-    x: number,
-    y: number,
-  ): { contractId: string; node: ContractNode } | null {
-    const contractId = nearestDropTarget(
-      x,
-      y,
-      [...this.contractNodes].map(([id, node]) => ({
-        id,
-        x: node.root.x,
-        y: node.root.y,
-      })),
+    // Persist the drop point in normalized world coordinates so the square
+    // stays where the player left it across resizes and re-syncs.
+    const spanX = Math.max(1, this.app.screen.width - 88);
+    const spanY = Math.max(1, this.app.screen.height - 104);
+    this.callbacks?.onMoveContract(
+      drag.id,
+      (drag.node.x - 44) / spanX,
+      (drag.node.y - 48) / spanY,
     );
-    const node = contractId ? this.contractNodes.get(contractId) : undefined;
-    return contractId && node ? { contractId, node } : null;
-  }
-
-  private snapBack(drag: DragState): void {
-    const { node, originX, originY } = drag;
-    const fromX = node.x;
-    const fromY = node.y;
-    const duration = 260;
-    let elapsed = 0;
-    this.animations.push((deltaMs) => {
-      if (node.destroyed) return false;
-      elapsed += deltaMs;
-      const t = easeOutCubic(Math.min(1, elapsed / duration));
-      node.position.set(
-        fromX + (originX - fromX) * t,
-        fromY + (originY - fromY) * t,
-      );
-      return elapsed < duration;
-    });
+    void event;
   }
 
   /** Expanding green ring: the borrower liked the contract. */
@@ -626,33 +622,6 @@ export class MarketStage {
       ring.alpha = 1 - t;
       if (t >= 1) {
         ring.destroy();
-        return false;
-      }
-      return true;
-    });
-  }
-
-  /** Red X flash: the contract does not satisfy the demand. */
-  private playRejectX(x: number, y: number): void {
-    const size = 16;
-    const cross = new Graphics()
-      .moveTo(-size, -size)
-      .lineTo(size, size)
-      .moveTo(size, -size)
-      .lineTo(-size, size)
-      .stroke({ width: 6, color: RED, cap: "round" });
-    cross.position.set(x, y);
-    cross.scale.set(0.5);
-    this.fxLayer.addChild(cross);
-    const duration = 550;
-    let elapsed = 0;
-    this.animations.push((deltaMs) => {
-      elapsed += deltaMs;
-      const t = Math.min(1, elapsed / duration);
-      cross.scale.set(0.5 + easeOutCubic(t) * 0.7);
-      cross.alpha = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
-      if (t >= 1) {
-        cross.destroy();
         return false;
       }
       return true;

@@ -2,14 +2,22 @@ import { useEffect, useRef } from "react";
 import { MarketStage } from "../market-stage.ts";
 import type { MarketWorld } from "../market-world.ts";
 
+export type DemandAbsorption = {
+  id: string;
+  demandId: string;
+  contractId: string;
+};
+
 export function MarketStageView({
   world,
   suspended,
   timeFlowing,
   highlightedDemandId,
+  highlightedContractId,
+  pendingAbsorptions,
   onTapDemand,
   onTapContract,
-  onDropDemand,
+  onAbsorptionComplete,
   onMoveContract,
 }: {
   world: MarketWorld;
@@ -19,9 +27,12 @@ export function MarketStageView({
   timeFlowing: boolean;
   /** Optional demand node to call out for a tutorial. */
   highlightedDemandId: string | null;
+  /** Optional contract node to call out for a tutorial. */
+  highlightedContractId: string | null;
+  pendingAbsorptions: readonly DemandAbsorption[];
   onTapDemand: (demandId: string) => void;
   onTapContract: (contractId: string) => void;
-  onDropDemand: (demandId: string, contractId: string) => boolean;
+  onAbsorptionComplete: (absorption: DemandAbsorption) => void;
   onMoveContract: (contractId: string, x: number, y: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -31,13 +42,11 @@ export function MarketStageView({
   const callbacksRef = useRef({
     onTapDemand,
     onTapContract,
-    onDropDemand,
     onMoveContract,
   });
   callbacksRef.current = {
     onTapDemand,
     onTapContract,
-    onDropDemand,
     onMoveContract,
   };
   const worldRef = useRef(world);
@@ -52,8 +61,6 @@ export function MarketStageView({
       .init(host, {
         onTapDemand: (id) => callbacksRef.current.onTapDemand(id),
         onTapContract: (id) => callbacksRef.current.onTapContract(id),
-        onDropDemand: (demandId, contractId) =>
-          callbacksRef.current.onDropDemand(demandId, contractId),
         onMoveContract: (contractId, x, y) =>
           callbacksRef.current.onMoveContract(contractId, x, y),
       })
@@ -79,6 +86,19 @@ export function MarketStageView({
   useEffect(() => {
     stageRef.current?.setHighlightedDemand(highlightedDemandId);
   }, [highlightedDemandId]);
+
+  useEffect(() => {
+    stageRef.current?.setHighlightedContract(highlightedContractId);
+  }, [highlightedContractId]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || suspended) return;
+    for (const absorption of pendingAbsorptions)
+      stage.absorbDemand(absorption.demandId, absorption.contractId, () =>
+        onAbsorptionComplete(absorption),
+      );
+  }, [onAbsorptionComplete, pendingAbsorptions, suspended]);
 
   return (
     <div

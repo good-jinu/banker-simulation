@@ -861,6 +861,30 @@ export function contractFitsDemand(
   );
 }
 
+/**
+ * Open demands that should automatically apply when a contract enters the
+ * market. This is the same fit and decision logic used by fileRequest; the
+ * caller may animate the visual arrival before filing each request.
+ */
+export function matchingOpenDemandIds(
+  world: MarketWorld,
+  contractId: string,
+): string[] {
+  const contract = world.contracts.find(
+    (candidate) => candidate.id === contractId,
+  );
+  if (!contract) return [];
+  const cash = availableCash(world);
+  return world.demands
+    .filter(
+      (demand) =>
+        demand.status === "open" &&
+        contractFitsDemand(contract, demand, cash) &&
+        decideRequestOutcome(contract.builderNodes, demand, cash) !== "reject",
+    )
+    .map((demand) => demand.id);
+}
+
 /** Build the request a demand files on a contract, terms snapshotted now. */
 function buildRequest(
   demand: Demand,

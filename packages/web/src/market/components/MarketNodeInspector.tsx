@@ -17,12 +17,14 @@ export function MarketNodeInspector({
   locale,
   onUpdate,
   onDelete,
+  highlightRecipient = false,
 }: {
   node: MarketBuilderNode;
   names: readonly string[];
   locale: Locale;
   onUpdate: (id: string, patch: Partial<MarketBuilderNode>) => void;
   onDelete: () => void;
+  highlightRecipient?: boolean;
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
@@ -59,7 +61,7 @@ export function MarketNodeInspector({
               <option value="customer">{t.borrower}</option>
             </select>
           </label>
-          <label>
+          <label className={highlightRecipient ? "mk-tutorial-target" : ""}>
             <span>{m.inspector.transferRecipient}</span>
             <select
               value={node.recipientId}

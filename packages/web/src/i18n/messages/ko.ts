@@ -164,6 +164,27 @@ export const ko: Messages = {
       timePaused: "이 이벤트를 닫을 때까지 시간이 멈춥니다.",
       closeEvent: "이벤트 닫고 계속하기",
     },
+    tutorial: {
+      label: (step, total) => `가이드 진행 · ${step}/${total}`,
+      inspectRequest: "강조된 요청을 선택하세요.",
+      openBuilder: "이 요청을 컨트랙트로 만들어 보세요.",
+      buildContract:
+        "송금, 대기, 회수 송금을 추가하세요. 준비되면 빌더가 알려드립니다.",
+      postContract: "컨트랙트가 준비되었습니다. 마켓에 게시하세요.",
+      awaitRequest:
+        "조건이 맞는 요청이 강조된 컨트랙트로 자동 연결되고 있습니다.",
+      approveRequest: "요청이 도착했습니다. 컨트랙트를 열어 승인하세요.",
+      collectRepayment:
+        "시간을 시작하고 컨트랙트가 상환을 회수하는 모습을 확인하세요.",
+      rewardEyebrow: "첫 자동화 완료",
+      rewardTitle: "첫 수익 계약이 작동했습니다.",
+      rewardBody: (cash) =>
+        `현재 현금은 $${cash.toLocaleString()}이며, 작동하는 컨트랙트 흐름을 만들었습니다.`,
+      rewardName: "창립자 컨트랙트 스탬프",
+      rewardDescription:
+        "작동하는 금융 시스템을 만들었다는 영구적인 증표입니다.",
+      rewardAction: "스테이지 02 해금",
+    },
   },
   gameApp: {
     stageSelection: "스테이지 선택",

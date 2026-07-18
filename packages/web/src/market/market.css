@@ -432,6 +432,193 @@
   width: 15px;
 }
 
+.mk-tutorial-callout {
+  position: fixed;
+  z-index: 60;
+  top: calc(max(8px, env(safe-area-inset-top)) + 112px);
+  left: 50%;
+  width: min(360px, calc(100% - 52px));
+  padding: 8px 11px;
+  color: #e9edf5;
+  border-left: 3px solid #72d8b4;
+  border-radius: 0 9px 9px 0;
+  background: rgba(7, 19, 39, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.36);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.mk-tutorial-callout small {
+  display: block;
+  color: #8fe1c3;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+}
+
+.mk-tutorial-callout p {
+  margin: 5px 0 0;
+  color: #e5edf7;
+  font-size: 0.73rem;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.mk-reward-dialog > button {
+  min-height: 38px;
+  margin-top: 9px;
+  padding: 0 12px;
+  color: #081226;
+  border: 0;
+  border-radius: 8px;
+  background: #72d8b4;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+
+.mk-tutorial-target {
+  position: relative;
+  z-index: 2;
+  outline: 3px solid #72d8b4 !important;
+  outline-offset: 3px;
+  animation: mk-tutorial-target-pulse 900ms ease-out infinite;
+}
+
+@keyframes mk-tutorial-target-pulse {
+  0% {
+    outline-color: rgba(114, 216, 180, 1);
+    box-shadow: 0 0 0 1px rgba(114, 216, 180, 0.75);
+  }
+
+  70% {
+    outline-color: rgba(240, 207, 130, 0.95);
+    box-shadow: 0 0 0 11px rgba(114, 216, 180, 0);
+  }
+
+  100% {
+    outline-color: rgba(114, 216, 180, 0.3);
+    box-shadow: 0 0 0 11px rgba(114, 216, 180, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mk-tutorial-target {
+    animation: none;
+  }
+}
+
+.mk-reward-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 8, 18, 0.82);
+  backdrop-filter: blur(10px);
+}
+
+.mk-reward-dialog {
+  width: min(100%, 370px);
+  padding: 24px 20px 20px;
+  color: #e9edf5;
+  border: 1px solid rgba(114, 216, 180, 0.68);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      circle at 50% 0,
+      rgba(114, 216, 180, 0.22),
+      transparent 38%
+    ),
+    linear-gradient(145deg, #183954, #0a1d38);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.64);
+  text-align: center;
+}
+
+.mk-reward-mark {
+  position: relative;
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 15px;
+  color: #f0cf82;
+  border: 2px solid #f0cf82;
+  border-radius: 50%;
+  background: #0b213c;
+  box-shadow: 0 0 0 8px rgba(240, 207, 130, 0.08);
+}
+
+.mk-reward-mark > svg:first-child {
+  width: 33px;
+  height: 33px;
+}
+
+.mk-reward-mark > svg:last-child {
+  position: absolute;
+  right: -7px;
+  bottom: -5px;
+  width: 25px;
+  height: 25px;
+  padding: 3px;
+  color: #08221d;
+  border-radius: 50%;
+  background: #72d8b4;
+}
+
+.mk-reward-dialog > small {
+  color: #8fe1c3;
+  font-size: 0.59rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.mk-reward-dialog h2 {
+  margin: 9px 0 7px;
+  color: #f4e7c0;
+  font-size: 1.25rem;
+}
+
+.mk-reward-dialog > p {
+  margin: 0;
+  color: #c1ccdc;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.mk-reward-card {
+  margin: 16px 0 4px;
+  padding: 12px;
+  border: 1px solid rgba(240, 207, 130, 0.33);
+  border-radius: 11px;
+  background: rgba(4, 15, 29, 0.36);
+}
+
+.mk-reward-card strong,
+.mk-reward-card span {
+  display: block;
+}
+
+.mk-reward-card strong {
+  color: #f0cf82;
+  font-size: 0.77rem;
+}
+
+.mk-reward-card span {
+  margin-top: 4px;
+  color: #b9c6dd;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.mk-reward-dialog > button {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 16px;
+}
+
 .mk-event-backdrop {
   position: fixed;
   z-index: 100;

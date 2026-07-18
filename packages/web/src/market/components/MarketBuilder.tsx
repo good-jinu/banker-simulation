@@ -16,6 +16,7 @@ import {
   evaluateTermsWithVariables,
   type MarketBuilderNode,
 } from "../market-world.ts";
+import type { FirstYieldTutorialStep } from "../tutorial-flow.ts";
 import {
   MarketBuilderCanvas,
   type BuilderInsertTarget,
@@ -31,6 +32,7 @@ export function MarketBuilder({
   onChangeNodes,
   onSubmit,
   onWithdraw,
+  tutorialStep = null,
 }: {
   nodes: MarketBuilderNode[];
   locale: Locale;
@@ -40,6 +42,7 @@ export function MarketBuilder({
   onChangeNodes: (nodes: MarketBuilderNode[]) => void;
   onSubmit: () => void;
   onWithdraw?: (() => void) | undefined;
+  tutorialStep?: FirstYieldTutorialStep | null;
 }) {
   const m = messagesFor(locale);
   const t = m.marketSim;
@@ -58,6 +61,28 @@ export function MarketBuilder({
     null,
   );
   const selectedContext = findBuilderNodeContext(nodes, selectedNodeId);
+  const hasOutgoingTransfer = nodes.some(
+    (node) => node.kind === "transfer" && node.senderId === "player",
+  );
+  const hasWait = nodes.some((node) => node.kind === "wait");
+  const hasIncomingTransfer = nodes.some(
+    (node) => node.kind === "transfer" && node.recipientId === "player",
+  );
+  const transferCount = nodes.filter((node) => node.kind === "transfer").length;
+  const nextTutorialNode = (() => {
+    if (tutorialStep !== "build-contract") return null;
+    if (!hasOutgoingTransfer) return "transfer";
+    if (!hasWait) return "wait";
+    if (!hasIncomingTransfer && transferCount < 2) return "transfer";
+    return null;
+  })();
+  const highlightReturnRecipient =
+    tutorialStep === "build-contract" &&
+    hasOutgoingTransfer &&
+    hasWait &&
+    !hasIncomingTransfer &&
+    transferCount >= 2 &&
+    selectedContext?.node.kind === "transfer";
   const partyName = (id: string | undefined): string =>
     id === "player" ? playerLabel(locale) : t.borrower;
 
@@ -189,6 +214,7 @@ export function MarketBuilder({
                 node={selectedContext.node}
                 names={selectedContext.names}
                 locale={locale}
+                highlightRecipient={highlightReturnRecipient}
                 onUpdate={updateNode}
                 onDelete={() => requestDelete(selectedContext.node)}
               />
@@ -208,6 +234,7 @@ export function MarketBuilder({
             fit: t.fitGraph,
           }}
           nodeLabel={nodeLabel}
+          highlightAddControls={tutorialStep === "build-contract"}
           onSelectNode={onSelectNode}
           onRequestInsert={(target, position) =>
             setInsertMenu({ target, ...position })
@@ -257,6 +284,9 @@ export function MarketBuilder({
                 <button
                   key={kind}
                   type="button"
+                  className={
+                    kind === nextTutorialNode ? "mk-tutorial-target" : ""
+                  }
                   onClick={() => insertNode(insertMenu.target, kind)}
                 >
                   <span aria-hidden="true">
@@ -281,7 +311,12 @@ export function MarketBuilder({
         )}
       </div>
 
-      <button className="cs-offer-button" onClick={onSubmit}>
+      <button
+        className={`cs-offer-button${
+          tutorialStep === "post-contract" ? " mk-tutorial-target" : ""
+        }`}
+        onClick={onSubmit}
+      >
         <Send aria-hidden="true" /> {editing ? t.saveChanges : t.postToMarket}
       </button>
       {pendingDelete && (

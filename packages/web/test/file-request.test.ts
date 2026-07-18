@@ -7,6 +7,7 @@ import {
   decideRequestOutcome,
   fileRequest,
   loanReceivables,
+  matchingOpenDemandIds,
   type ContractOffer,
   type Demand,
   type DecisionOutcome,
@@ -14,8 +15,8 @@ import {
   type MarketWorld,
 } from "../src/market/market-world.ts";
 
-// Spec for what a demand-onto-contract drop MEANS (`fileRequest` is the
-// handler behind the stage's `onDropDemand` callback):
+// Spec for what an automatically matched demand MEANS (`fileRequest` is the
+// state transition after its map absorption animation):
 //   draft  → request waits pending, nothing moves yet
 //   reject → demand returns to the map and never asks this contract again
 //   no-op  → unknown ids, non-open demands, and unfit contracts change nothing
@@ -128,6 +129,22 @@ test("accepting a drafted request signs the loan and continues the contract", ()
   assert.equal(next.demands[0]?.status, "served");
   assert.equal(next.contracts[0]?.requests[0]?.status, "accepted");
   assert.equal(next.log.at(-1)?.kind, "loan-signed");
+});
+
+test("a new contract routes only matching open demands into absorption", () => {
+  assert.deepEqual(matchingOpenDemandIds(makeWorld(), "contract-1"), [
+    "demand-1",
+  ]);
+
+  const unavailable = makeWorld({
+    demands: [makeDemand({ status: "served" })],
+  });
+  assert.deepEqual(matchingOpenDemandIds(unavailable, "contract-1"), []);
+
+  const rejected = makeWorld({
+    contracts: [makeContract("reject")],
+  });
+  assert.deepEqual(matchingOpenDemandIds(rejected, "contract-1"), []);
 });
 
 test("drop on a contract with no decision node files a pending request", () => {
