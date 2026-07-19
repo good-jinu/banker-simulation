@@ -10,6 +10,7 @@ import {
   isZoneUnlocked,
   matchingOpenDemandIds,
   moveContract,
+  loanDefaultChanceBp,
   postContract,
   totalAssetValue,
   totalLiabilityValue,
@@ -18,6 +19,13 @@ import {
 } from "../src/market/market-world.ts";
 
 const firstStage = marketCampaignStages[0]!;
+
+test("only the redesigned first campaign stage is available", () => {
+  assert.deepEqual(
+    marketCampaignStages.map((stage) => stage.id),
+    ["first-yield"],
+  );
+});
 
 function depositNodes(): MarketBuilderNode[] {
   return [
@@ -61,7 +69,7 @@ function firstLoanNodes(): MarketBuilderNode[] {
   ];
 }
 
-test("stage one zones keep loan demand under $500 and deposits locked", () => {
+test("stage one tutorial borrowers earn at least $2,000 and always repay", () => {
   const world = emptyWorld(
     firstStage.seed,
     firstStage.startingCash,
@@ -78,7 +86,10 @@ test("stage one zones keep loan demand under $500 and deposits locked", () => {
       (demand) =>
         demand.kind === "loan" &&
         demand.zoneId === "neighborhood-credit" &&
-        demand.amount <= 500,
+        demand.amount <= 500 &&
+        demand.actor.monthlyIncome >= 2_000 &&
+        loanDefaultChanceBp(demand.actor, demand.maxRepayment) === 0 &&
+        demand.maxRepayment <= Math.ceil(demand.amount * 1.1),
     ),
   );
   assert.equal(world.demands[0]?.amount, 300);

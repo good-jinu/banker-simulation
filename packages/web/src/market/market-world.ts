@@ -24,6 +24,8 @@ export interface ActorProfile {
   image: string;
   /** Hidden default risk in basis points, derived from the profile. */
   riskBp: number;
+  /** Tutorial or authored actors who are guaranteed to repay their loan. */
+  repaymentGuaranteed?: boolean;
 }
 
 export type DemandStatus = "open" | "requesting" | "served" | "expired";
@@ -42,6 +44,11 @@ export interface DemandSpawnRule {
   /** Loan: maximum repayment. Deposit: minimum maturity payout. */
   returnRate: { min: number; max: number };
   firstDemand?: { amount: number; termDays: number; returnRate: number };
+  /** Optional borrower guarantees for authored demand pools. */
+  borrowerProfile?: {
+    minimumMonthlyIncome?: number;
+    repaymentGuaranteed?: boolean;
+  };
 }
 
 export interface MarketZoneDefinition {
@@ -829,6 +836,22 @@ function generateActor(roller: Roller, id: string): ActorProfile {
   };
 }
 
+function applyBorrowerProfile(
+  actor: ActorProfile,
+  rule: DemandSpawnRule | null,
+): ActorProfile {
+  const profile = rule?.borrowerProfile;
+  if (!profile) return actor;
+  return {
+    ...actor,
+    monthlyIncome: Math.max(
+      actor.monthlyIncome,
+      profile.minimumMonthlyIncome ?? 0,
+    ),
+    ...(profile.repaymentGuaranteed ? { repaymentGuaranteed: true } : {}),
+  };
+}
+
 /**
  * Draw candidate positions until one keeps clear of every occupied node, so
  * map circles and squares do not stack on each other.  Gives up after a few
@@ -974,7 +997,7 @@ function spawnDemand(world: MarketWorld): MarketWorld {
   const roller = new Roller(world.seed, world.cursor);
   const actorId = `actor-${world.nextId}`;
   const demandId = `demand-${world.nextId}`;
-  const actor = generateActor(roller, actorId);
+  const generatedActor = generateActor(roller, actorId);
   const availableZones = world.market?.zones.filter(
     (zone) =>
       isZoneUnlocked(world, zone) &&
@@ -994,6 +1017,7 @@ function spawnDemand(world: MarketWorld): MarketWorld {
       : null;
   if (world.market && !zone) return { ...world, cursor: roller.cursor };
   const rule = zone ? weightedRule(roller, zone.spawnRules) : null;
+  const actor = applyBorrowerProfile(generatedActor, rule);
   const isFirstForRule = Boolean(
     rule?.firstDemand &&
     !world.demands.some(
@@ -1183,6 +1207,7 @@ export function loanDefaultChanceBp(
   actor: ActorProfile,
   repayment: number,
 ): number {
+  if (actor.repaymentGuaranteed) return 0;
   let chanceBp = actor.riskBp;
   if (actor.monthlyIncome > 0) {
     const burden = repayment / actor.monthlyIncome;
