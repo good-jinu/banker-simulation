@@ -444,6 +444,15 @@ button {
   font-size: 12px;
   white-space: nowrap;
 }
+.customer-node.accepted > strong,
+.lender-node > strong {
+  color: #70dab9;
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+.lender-node > strong {
+  color: #efaa67;
+}
 .map-node small {
   margin-top: 2px;
   color: #8297af;

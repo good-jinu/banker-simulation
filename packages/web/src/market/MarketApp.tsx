@@ -326,7 +326,9 @@ export function MarketApp({
   function borrow(lender: Funding): void {
     setFunding((current) =>
       current.map((item) =>
-        item.id === lender.id ? { ...item, accepted: true } : item,
+        item.id === lender.id
+          ? { ...item, accepted: true, dueDay: day + item.dueDay }
+          : item,
       ),
     );
     setCash((value) => value + lender.amount);
@@ -558,8 +560,8 @@ export function MarketApp({
           <span className="bank-icon">
             <Landmark />
           </span>
-          <strong>나의 은행</strong>
-          <small>보유 현금 {money(cash)}</small>
+          <strong>{money(cash)}</strong>
+          <small>현재 현금</small>
         </div>
 
         {visibleCustomers.map((customer) => (
@@ -570,17 +572,21 @@ export function MarketApp({
           >
             {customer.status === "waiting" && (
               <span className="request-tag">
-                {money(customer.amount)} 필요!
+                D+{Math.max(day - customer.appears, 0)} 대기
               </span>
             )}
             <span className="portrait">
               <img src={customer.avatar} alt="" />
             </span>
-            <strong>{customer.name}</strong>
+            <strong>
+              {customer.status === "waiting"
+                ? money(customer.amount)
+                : `D-${Math.max(customer.dueDay - day, 0)}`}
+            </strong>
             <small>
               {customer.status === "waiting"
-                ? "대출 요청"
-                : `DAY ${customer.dueDay + 1} 상환`}
+                ? `대출 요청 · 이자 ${customer.rate}%`
+                : `${money(customer.amount * (1 + customer.rate / 100))} 상환 예정`}
             </small>
             {customer.status === "waiting" && (
               <button onClick={() => setSelected(customer)}>상세보기</button>
@@ -599,9 +605,9 @@ export function MarketApp({
               <span className="bank-icon small">
                 <Landmark />
               </span>
-              <strong>{lender.name}</strong>
+              <strong>D-{Math.max(lender.dueDay - day, 0)}</strong>
               <small>
-                {money(lender.amount)} · {lender.rate}%
+                {money(lender.amount * (1 + lender.rate / 100))} 상환 예정
               </small>
             </div>
           ))}
