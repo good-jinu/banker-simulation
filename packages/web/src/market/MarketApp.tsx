@@ -239,6 +239,14 @@ export function MarketApp({
     return () => window.clearTimeout(handle);
   }, [transfer]);
 
+  useEffect(() => {
+    if (!selected && !fundingOpen && !assetsOpen) return;
+    const clock = clockRef.current;
+    if (!clock || clock.paused) return;
+    clock.pause();
+    setClockView((current) => ({ ...current, paused: true }));
+  }, [assetsOpen, fundingOpen, selected]);
+
   const loanReceivables = customers
     .filter((customer) => customer.status === "accepted")
     .reduce(
