@@ -13,6 +13,10 @@ const snapshot = (
   targetRequestStatus: null,
   hasActiveTargetLoan: false,
   repaidLoans: 0,
+  totalAssets: 1_000,
+  assetTarget: 3_000,
+  selectedDemandKind: null,
+  hasDepositContract: false,
   draftIsReady: false,
   ...overrides,
 });
@@ -55,6 +59,22 @@ test("the first-yield tutorial follows the real market lifecycle", () => {
   );
   assert.equal(
     deriveFirstYieldTutorialStep(snapshot({ repaidLoans: 1 })),
+    "inspect-deposit",
+  );
+  assert.equal(
+    deriveFirstYieldTutorialStep(
+      snapshot({
+        repaidLoans: 1,
+        selectedDemandKind: "deposit",
+        view: "demand",
+      }),
+    ),
+    "open-builder",
+  );
+  assert.equal(
+    deriveFirstYieldTutorialStep(
+      snapshot({ repaidLoans: 1, totalAssets: 3_000 }),
+    ),
     "claim-reward",
   );
 });
@@ -62,7 +82,12 @@ test("the first-yield tutorial follows the real market lifecycle", () => {
 test("a completed repayment always wins over stale UI state", () => {
   assert.equal(
     deriveFirstYieldTutorialStep(
-      snapshot({ view: "builder", repaidLoans: 1, draftIsReady: false }),
+      snapshot({
+        view: "builder",
+        repaidLoans: 1,
+        totalAssets: 3_000,
+        draftIsReady: false,
+      }),
     ),
     "claim-reward",
   );

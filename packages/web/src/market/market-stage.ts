@@ -8,8 +8,14 @@ import {
   type FederatedPointerEvent,
   type TextStyleOptions,
 } from "pixi.js";
+import { localize } from "../i18n/local-text.ts";
+import type { Locale } from "../i18n/locale.ts";
 import type { ContractOffer, MarketWorld } from "./market-world.ts";
-import { pendingRequestCount, staticContractTerms } from "./market-world.ts";
+import {
+  isZoneUnlocked,
+  pendingRequestCount,
+  staticContractTerms,
+} from "./market-world.ts";
 
 /**
  * PixiJS scene for the open-market map.  Demand nodes are draggable portrait
@@ -63,7 +69,7 @@ interface ContractNode {
   jitterPhase: number;
 }
 
-interface DragState {
+interface ContractDragState {
   kind: "contract";
   id: string;
   node: Container;
@@ -73,6 +79,16 @@ interface DragState {
   startGlobalY: number;
   moved: boolean;
 }
+
+interface CameraDragState {
+  kind: "camera";
+  originX: number;
+  originY: number;
+  startGlobalX: number;
+  startGlobalY: number;
+}
+
+type DragState = ContractDragState | CameraDragState;
 
 /** A per-frame animation; returns false once finished. */
 type Animation = (deltaMs: number) => boolean;
@@ -93,7 +109,9 @@ export class MarketStage {
   private world: MarketWorld | null = null;
   private ready = false;
   private destroyed = false;
+  private readonly worldLayer = new Container();
   private readonly gridLayer = new Graphics();
+  private readonly zoneLayer = new Container();
   // Keep one render group (the stage itself). Updating nested render groups
   // after the first frame can leave Pixi with stale batch instructions and
   // blank the scene when the first contract is added.
@@ -112,12 +130,19 @@ export class MarketStage {
   private jitterClock = 0;
   /** Runs even when game time is paused so tutorial targets stay unmistakable. */
   private highlightClock = 0;
+  private cameraScale = 1;
+  private cameraInitialized = false;
+  private readonly unlockedZoneIds = new Set<string>();
+  private locale: Locale = "en";
+  private wheelHandler: ((event: WheelEvent) => void) | null = null;
 
   async init(
     host: HTMLElement,
     callbacks: MarketStageCallbacks,
+    locale: Locale,
   ): Promise<void> {
     this.callbacks = callbacks;
+    this.locale = locale;
     await this.app.init({
       resizeTo: host,
       background: 0x071328,
@@ -130,8 +155,10 @@ export class MarketStage {
       return;
     }
     host.appendChild(this.app.canvas);
-    this.app.stage.addChild(
+    this.app.stage.addChild(this.worldLayer);
+    this.worldLayer.addChild(
       this.gridLayer,
+      this.zoneLayer,
       this.contractLayer,
       this.nodeLayer,
       this.fxLayer,
@@ -141,14 +168,21 @@ export class MarketStage {
     // that leave the node's own hit area.
     this.app.stage.eventMode = "static";
     this.app.stage.hitArea = this.app.screen;
+    this.app.stage.on("pointerdown", (event) => this.onPointerDown(event));
     this.app.stage.on("pointermove", (event) => this.onPointerMove(event));
     this.app.stage.on("pointerup", (event) => this.onPointerUp(event));
     this.app.stage.on("pointerupoutside", (event) => this.onPointerUp(event));
+    this.wheelHandler = (event) => this.onWheel(event);
+    this.app.canvas.addEventListener("wheel", this.wheelHandler, {
+      passive: false,
+    });
 
     this.app.renderer.on("resize", () => {
       this.app.stage.hitArea = this.app.screen;
       this.drawGrid();
+      this.drawZones();
       this.layout();
+      this.clampCamera();
     });
     this.app.ticker.add((ticker) => {
       if (this.animations.length > 0)
@@ -160,6 +194,12 @@ export class MarketStage {
     this.drawGrid();
     if (this.world) this.syncWorld(this.world);
     if (this.suspended) this.app.ticker.stop();
+  }
+
+  setLocale(locale: Locale): void {
+    if (this.locale === locale) return;
+    this.locale = locale;
+    this.drawZones();
   }
 
   /** Stop rendering while an opaque overlay covers the map. */
@@ -238,7 +278,10 @@ export class MarketStage {
     for (const { root, jitterPhase } of nodes) {
       if (root.destroyed) continue;
       // The dragged node stays glued to the pointer.
-      if (!this.timeFlowing || this.drag?.node === root) {
+      if (
+        !this.timeFlowing ||
+        (this.drag?.kind === "contract" && this.drag.node === root)
+      ) {
         root.pivot.set(0, 0);
         continue;
       }
@@ -310,13 +353,17 @@ export class MarketStage {
     if (!this.ready) return; // init() finishes the cleanup when it resolves
     this.drag = null;
     this.animations = [];
+    if (this.wheelHandler)
+      this.app.canvas.removeEventListener("wheel", this.wheelHandler);
     // Destroy display objects while the renderer still lives: Text unload
     // returns pooled textures, which crashes once the pool itself is gone.
     this.app.stage.removeChildren();
     this.contractLayer.destroy({ children: true });
     this.nodeLayer.destroy({ children: true });
     this.fxLayer.destroy({ children: true });
+    this.zoneLayer.destroy({ children: true });
     this.gridLayer.destroy();
+    this.worldLayer.destroy();
     this.demandNodes.clear();
     this.contractNodes.clear();
     this.absorbingDemandIds.clear();
@@ -338,7 +385,21 @@ export class MarketStage {
     const contractIds = new Set(world.contracts.map((contract) => contract.id));
 
     // A dragged contract that leaves the world ends its drag.
-    if (this.drag && !contractIds.has(this.drag.id)) this.drag = null;
+    if (this.drag?.kind === "contract" && !contractIds.has(this.drag.id))
+      this.drag = null;
+
+    const unlockedNow = new Set(
+      world.market?.zones
+        .filter((zone) => isZoneUnlocked(world, zone))
+        .map((zone) => zone.id) ?? [],
+    );
+    const newlyUnlocked = world.market?.zones.find(
+      (zone) => unlockedNow.has(zone.id) && !this.unlockedZoneIds.has(zone.id),
+    );
+    this.unlockedZoneIds.clear();
+    for (const id of unlockedNow) this.unlockedZoneIds.add(id);
+    this.drawGrid();
+    this.drawZones();
 
     for (const [id, node] of this.demandNodes) {
       if (openDemandIds.has(id)) continue;
@@ -380,6 +441,7 @@ export class MarketStage {
         demand.id,
         demand.actor.image,
         demand.amount,
+        demand.kind ?? "loan",
       );
       this.demandNodes.set(demand.id, node);
       this.nodeLayer.addChild(node.root);
@@ -389,14 +451,24 @@ export class MarketStage {
     }
 
     this.layout();
+    if (!this.cameraInitialized) {
+      this.cameraInitialized = true;
+      const initialZone = world.market?.zones.find((zone) =>
+        isZoneUnlocked(world, zone),
+      );
+      if (initialZone) this.focusZone(initialZone.id, false);
+      else this.clampCamera();
+    } else if (newlyUnlocked && newlyUnlocked.unlock.type !== "always") {
+      this.focusZone(newlyUnlocked.id, true);
+    }
   }
 
   private px(nx: number): number {
-    return 44 + nx * (this.app.screen.width - 88);
+    return nx * (this.world?.market?.width ?? this.app.screen.width);
   }
 
   private py(ny: number): number {
-    return 48 + ny * (this.app.screen.height - 104);
+    return ny * (this.world?.market?.height ?? this.app.screen.height);
   }
 
   private layout(): void {
@@ -419,7 +491,8 @@ export class MarketStage {
   }
 
   private drawGrid(): void {
-    const { width, height } = this.app.screen;
+    const width = this.world?.market?.width ?? this.app.screen.width;
+    const height = this.world?.market?.height ?? this.app.screen.height;
     const grid = this.gridLayer;
     grid.clear();
     const cell = 34;
@@ -430,10 +503,62 @@ export class MarketStage {
     grid.stroke({ width: 1, color: 0x788caf, alpha: 0.08 });
   }
 
+  private drawZones(): void {
+    for (const child of this.zoneLayer.removeChildren())
+      child.destroy({ children: true });
+    if (!this.world?.market) return;
+    const { width, height } = this.world.market;
+    for (const zone of this.world.market.zones) {
+      const unlocked = isZoneUnlocked(this.world, zone);
+      const x = zone.bounds.x * width;
+      const y = zone.bounds.y * height;
+      const w = zone.bounds.width * width;
+      const h = zone.bounds.height * height;
+      const root = new Container();
+      root.position.set(x, y);
+      const plate = new Graphics()
+        .roundRect(0, 0, w, h, 38)
+        .fill({ color: unlocked ? 0x102c48 : 0x0b172a, alpha: 0.82 })
+        .stroke({
+          width: unlocked ? 3 : 2,
+          color: unlocked ? GOLD : 0x5d6a7f,
+          alpha: unlocked ? 0.62 : 0.42,
+        });
+      root.addChild(plate);
+      if (!unlocked) {
+        const veil = new Graphics()
+          .roundRect(0, 0, w, h, 38)
+          .fill({ color: 0x020814, alpha: 0.58 });
+        root.addChild(veil);
+      }
+      const title = new Text({
+        text: `${unlocked ? "◈" : "🔒"} ${localize(zone.label, this.locale)}`,
+        style: {
+          ...LABEL_STYLE,
+          fontSize: 20,
+          fill: unlocked ? GOLD_BRIGHT : MIST,
+        },
+      });
+      title.position.set(30, 24);
+      const description = new Text({
+        text: unlocked
+          ? localize(zone.description, this.locale)
+          : this.locale === "ko"
+            ? "첫 대출 상환 후 해금"
+            : "Unlock after the first loan repayment",
+        style: { ...LABEL_STYLE, fontSize: 12, fill: MIST, fontWeight: "600" },
+      });
+      description.position.set(32, 56);
+      root.addChild(title, description);
+      this.zoneLayer.addChild(root);
+    }
+  }
+
   private buildDemandNode(
     demandId: string,
     imageUrl: string,
     amount: number,
+    kind: "loan" | "deposit",
   ): DemandNode {
     const root = new Container();
     root.eventMode = "static";
@@ -464,7 +589,13 @@ export class MarketStage {
       .stroke({ width: 2, color: GOLD });
     root.addChild(ring);
 
-    const label = new Text({ text: `$${amount}`, style: LABEL_STYLE });
+    const label = new Text({
+      text: `${kind === "deposit" ? "↓" : "↑"} $${amount}`,
+      style: {
+        ...LABEL_STYLE,
+        fill: kind === "deposit" ? GREEN : CREAM,
+      },
+    });
     label.anchor.set(0.5, 0);
     label.y = DEMAND_RADIUS + 5;
     root.addChild(label);
@@ -576,18 +707,38 @@ export class MarketStage {
     if (!drag) return;
     const dx = event.global.x - drag.startGlobalX;
     const dy = event.global.y - drag.startGlobalY;
+    if (drag.kind === "camera") {
+      this.worldLayer.position.set(drag.originX + dx, drag.originY + dy);
+      this.clampCamera();
+      return;
+    }
     if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
     if (!drag.moved) {
       drag.moved = true;
       drag.node.parent?.addChild(drag.node); // lift above its layer siblings
     }
-    drag.node.position.set(drag.originX + dx, drag.originY + dy);
+    drag.node.position.set(
+      drag.originX + dx / this.cameraScale,
+      drag.originY + dy / this.cameraScale,
+    );
+  }
+
+  private onPointerDown(event: FederatedPointerEvent): void {
+    if (this.drag) return;
+    this.drag = {
+      kind: "camera",
+      originX: this.worldLayer.x,
+      originY: this.worldLayer.y,
+      startGlobalX: event.global.x,
+      startGlobalY: event.global.y,
+    };
   }
 
   private onPointerUp(event: FederatedPointerEvent): void {
     const drag = this.drag;
     if (!drag) return;
     this.drag = null;
+    if (drag.kind === "camera") return;
 
     if (!drag.moved) {
       this.callbacks?.onTapContract(drag.id);
@@ -596,14 +747,106 @@ export class MarketStage {
 
     // Persist the drop point in normalized world coordinates so the square
     // stays where the player left it across resizes and re-syncs.
-    const spanX = Math.max(1, this.app.screen.width - 88);
-    const spanY = Math.max(1, this.app.screen.height - 104);
+    const spanX = Math.max(
+      1,
+      this.world?.market?.width ?? this.app.screen.width,
+    );
+    const spanY = Math.max(
+      1,
+      this.world?.market?.height ?? this.app.screen.height,
+    );
     this.callbacks?.onMoveContract(
       drag.id,
-      (drag.node.x - 44) / spanX,
-      (drag.node.y - 48) / spanY,
+      drag.node.x / spanX,
+      drag.node.y / spanY,
     );
     void event;
+  }
+
+  private onWheel(event: WheelEvent): void {
+    if (!this.ready || this.suspended) return;
+    event.preventDefault();
+    const rect = this.app.canvas.getBoundingClientRect();
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const oldScale = this.cameraScale;
+    const nextScale = Math.min(
+      1.65,
+      Math.max(0.52, oldScale * Math.exp(-event.deltaY * 0.0012)),
+    );
+    if (Math.abs(nextScale - oldScale) < 0.001) return;
+    const localX = (pointerX - this.worldLayer.x) / oldScale;
+    const localY = (pointerY - this.worldLayer.y) / oldScale;
+    this.cameraScale = nextScale;
+    this.worldLayer.scale.set(nextScale);
+    this.worldLayer.position.set(
+      pointerX - localX * nextScale,
+      pointerY - localY * nextScale,
+    );
+    this.clampCamera();
+  }
+
+  private clampCamera(): void {
+    const width = this.world?.market?.width ?? this.app.screen.width;
+    const height = this.world?.market?.height ?? this.app.screen.height;
+    const scaledWidth = width * this.cameraScale;
+    const scaledHeight = height * this.cameraScale;
+    const screenWidth = this.app.screen.width;
+    const screenHeight = this.app.screen.height;
+    const x =
+      scaledWidth <= screenWidth
+        ? (screenWidth - scaledWidth) / 2
+        : Math.min(0, Math.max(screenWidth - scaledWidth, this.worldLayer.x));
+    const y =
+      scaledHeight <= screenHeight
+        ? (screenHeight - scaledHeight) / 2
+        : Math.min(0, Math.max(screenHeight - scaledHeight, this.worldLayer.y));
+    this.worldLayer.position.set(x, y);
+  }
+
+  private focusZone(zoneId: string, animated: boolean): void {
+    const market = this.world?.market;
+    const zone = market?.zones.find((candidate) => candidate.id === zoneId);
+    if (!market || !zone) return;
+    const zoneWidth = zone.bounds.width * market.width;
+    const zoneHeight = zone.bounds.height * market.height;
+    const nextScale = Math.min(
+      1.08,
+      Math.max(
+        0.54,
+        Math.min(
+          this.app.screen.width / (zoneWidth + 150),
+          this.app.screen.height / (zoneHeight + 110),
+        ),
+      ),
+    );
+    const centerX = (zone.bounds.x + zone.bounds.width / 2) * market.width;
+    const centerY = (zone.bounds.y + zone.bounds.height / 2) * market.height;
+    const targetX = this.app.screen.width / 2 - centerX * nextScale;
+    const targetY = this.app.screen.height / 2 - centerY * nextScale;
+    if (!animated) {
+      this.cameraScale = nextScale;
+      this.worldLayer.scale.set(nextScale);
+      this.worldLayer.position.set(targetX, targetY);
+      this.clampCamera();
+      return;
+    }
+    const startX = this.worldLayer.x;
+    const startY = this.worldLayer.y;
+    const startScale = this.cameraScale;
+    let elapsed = 0;
+    this.animations.push((deltaMs) => {
+      elapsed += deltaMs;
+      const t = easeOutCubic(Math.min(1, elapsed / 820));
+      this.cameraScale = startScale + (nextScale - startScale) * t;
+      this.worldLayer.scale.set(this.cameraScale);
+      this.worldLayer.position.set(
+        startX + (targetX - startX) * t,
+        startY + (targetY - startY) * t,
+      );
+      if (t >= 1) this.clampCamera();
+      return t < 1;
+    });
   }
 
   /** Expanding green ring: the borrower liked the contract. */

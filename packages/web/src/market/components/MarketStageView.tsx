@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { Locale } from "../../i18n/locale.ts";
 import { MarketStage } from "../market-stage.ts";
 import type { MarketWorld } from "../market-world.ts";
 
@@ -10,6 +11,7 @@ export type DemandAbsorption = {
 
 export function MarketStageView({
   world,
+  locale,
   suspended,
   timeFlowing,
   highlightedDemandId,
@@ -21,6 +23,7 @@ export function MarketStageView({
   onMoveContract,
 }: {
   world: MarketWorld;
+  locale: Locale;
   /** True while an opaque overlay covers the map; pauses Pixi rendering. */
   suspended: boolean;
   /** True while the game clock advances; map nodes vibrate to show it. */
@@ -58,18 +61,26 @@ export function MarketStageView({
     const stage = new MarketStage();
     stageRef.current = stage;
     void stage
-      .init(host, {
-        onTapDemand: (id) => callbacksRef.current.onTapDemand(id),
-        onTapContract: (id) => callbacksRef.current.onTapContract(id),
-        onMoveContract: (contractId, x, y) =>
-          callbacksRef.current.onMoveContract(contractId, x, y),
-      })
+      .init(
+        host,
+        {
+          onTapDemand: (id) => callbacksRef.current.onTapDemand(id),
+          onTapContract: (id) => callbacksRef.current.onTapContract(id),
+          onMoveContract: (contractId, x, y) =>
+            callbacksRef.current.onMoveContract(contractId, x, y),
+        },
+        locale,
+      )
       .then(() => stage.syncWorld(worldRef.current));
     return () => {
       stageRef.current = null;
       stage.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    stageRef.current?.setLocale(locale);
+  }, [locale]);
 
   useEffect(() => {
     stageRef.current?.syncWorld(world);

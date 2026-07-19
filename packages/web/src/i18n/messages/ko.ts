@@ -6,9 +6,12 @@ export const ko: Messages = {
     assetValues: "자산 현황",
     cash: "현금",
     totalAssets: "총자산",
+    liabilities: "부채",
+    totalLiabilities: "총부채",
     openAssetValues: "자산 현황 보기",
     closeAssetValues: "자산 현황 닫기",
     loanTo: (name) => `${name} 대출`,
+    depositFrom: (name) => `${name} 예금`,
     dueDay: (day) => `상환 예정 ${day}일차`,
     loanValueBasis: "진행 중인 대출은 미상환 원금으로 평가됩니다.",
   },
@@ -72,11 +75,22 @@ export const ko: Messages = {
     perMonth: (amount) => `월 $${amount.toLocaleString()}`,
     demandBadge: "요청 내용",
     demandNeedTitle: "수요",
+    depositBadge: "제공 내용",
+    depositNeedTitle: "저축 의향",
     needsNow: (amount) => `현금 $${amount.toLocaleString()}`,
+    depositsNow: (amount) => `예치할 현금 $${amount.toLocaleString()}`,
     payableAfter: (days) =>
       `${Math.round(days / 30)}개월(${days}일) 후 상환 가능`,
+    depositTerm: (days) =>
+      `${Math.round(days / 30)}개월(${days}일) 동안 예치 희망`,
     maxRepayment: (amount) =>
       `총 $${amount.toLocaleString()}까지 상환 의사 있음`,
+    minimumPayout: (amount) =>
+      `만기에 최소 $${amount.toLocaleString()} 수령 희망`,
+    objectiveFirstRepayment: (complete, target) =>
+      `Objective · 첫 대출 상환 받기 · ${complete}/${target}`,
+    objectiveAssets: (current, target) =>
+      `Objective · Total Assets $${target.toLocaleString()} 모으기 · $${current.toLocaleString()}/$${target.toLocaleString()}`,
     draftContract: "맞춤 컨트랙트 작성",
     lends: "빌려주는 금액",
     termLabel: "기간",
@@ -122,6 +136,10 @@ export const ko: Messages = {
     postToMarket: "마켓에 게시",
     saveChanges: "변경 사항 저장",
     posted: "컨트랙트가 게시되었습니다. 지도에서 요청을 기다리세요.",
+    outsideActiveZone:
+      "활성 수요 Zone 밖입니다. 이 컨트랙트에는 고객이 유입되지 않습니다.",
+    contractDoesNotFit:
+      "아직 이 컨트랙트가 선택한 고객의 조건을 충족하지 못합니다.",
     updated:
       "컨트랙트가 수정되었습니다. 대기 중이던 요청자는 마켓으로 돌아갑니다.",
     withdrawn: "컨트랙트를 마켓에서 내렸습니다.",
@@ -161,6 +179,11 @@ export const ko: Messages = {
         `${name} 상환 · +$${amount.toLocaleString()}`,
       loanDefaulted: (name, amount) =>
         `${name} 채무 불이행 · $${amount.toLocaleString()}`,
+      depositSigned: (name, amount) =>
+        `${name} 예금 가입 · +$${amount.toLocaleString()}`,
+      depositMatured: (name, amount) =>
+        `${name} 예금 만기 · -$${amount.toLocaleString()}`,
+      zoneUnlocked: "저축 금융 지구 해금",
     },
     specialEvents: {
       tutorialTag: "특별 이벤트 · 튜토리얼",
@@ -188,14 +211,24 @@ export const ko: Messages = {
       approveRequest: "요청이 도착했습니다. 컨트랙트를 열어 승인하세요.",
       collectRepayment:
         "시간을 시작하고 컨트랙트가 상환을 회수하는 모습을 확인하세요.",
+      inspectDeposit:
+        "저축 금융 지구가 열렸습니다. 강조된 예금 고객을 선택하세요.",
+      buildDeposit:
+        "현금 흐름을 반대로 만드세요. amount를 받고 days만큼 기다린 뒤 최소 amount × 1.06을 돌려줍니다.",
+      postDeposit: "예금 컨트랙트를 저축 금융 지구에 게시하세요.",
+      growAssets: "예금 고객을 유치해 Total Assets를 $3,000까지 키우세요.",
       rewardEyebrow: "첫 자동화 완료",
       rewardTitle: "첫 수익 계약이 작동했습니다.",
-      rewardBody: (cash) =>
-        `현재 현금은 $${cash.toLocaleString()}이며, 작동하는 컨트랙트 흐름을 만들었습니다.`,
+      rewardBody: (assets) =>
+        `대출과 예금을 갖춘 은행을 만들고 Total Assets $${assets.toLocaleString()}을 달성했습니다.`,
       rewardName: "창립자 컨트랙트 스탬프",
       rewardDescription:
         "작동하는 금융 시스템을 만들었다는 영구적인 증표입니다.",
       rewardAction: "스테이지 02 해금",
+      statTotalAssets: "Total Assets",
+      statCash: "모은 현금",
+      statDeals: "체결한 거래",
+      statDays: "소요 일수",
     },
   },
   gameApp: {

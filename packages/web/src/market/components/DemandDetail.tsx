@@ -60,20 +60,36 @@ export function DemandDetail({
         </div>
       </dl>
       <article className="cs-need-card">
-        <span>{t.demandBadge}</span>
-        <h2>{t.demandNeedTitle}</h2>
+        <span>
+          {demand.kind === "deposit" ? t.depositBadge : t.demandBadge}
+        </span>
+        <h2>
+          {demand.kind === "deposit" ? t.depositNeedTitle : t.demandNeedTitle}
+        </h2>
         <div>
           <p>
             <small>{m.customer.neededNow}</small>
-            <strong>{t.needsNow(demand.amount)}</strong>
+            <strong>
+              {demand.kind === "deposit"
+                ? t.depositsNow(demand.amount)
+                : t.needsNow(demand.amount)}
+            </strong>
           </p>
           <p>
             <small>{m.customer.returnLabel}</small>
-            <strong>{t.payableAfter(demand.payableAfterDays)}</strong>
+            <strong>
+              {demand.kind === "deposit"
+                ? t.depositTerm(demand.payableAfterDays)
+                : t.payableAfter(demand.payableAfterDays)}
+            </strong>
           </p>
           <p>
             <small>{m.customer.termsLabel}</small>
-            <strong>{t.maxRepayment(demand.maxRepayment)}</strong>
+            <strong>
+              {demand.kind === "deposit"
+                ? t.minimumPayout(demand.minimumPayout ?? demand.maxRepayment)
+                : t.maxRepayment(demand.maxRepayment)}
+            </strong>
           </p>
         </div>
       </article>

@@ -28,8 +28,45 @@ export interface ActorProfile {
 
 export type DemandStatus = "open" | "requesting" | "served" | "expired";
 
+export type DemandKind = "loan" | "deposit";
+
+export type ZoneUnlockCondition =
+  { type: "always" } | { type: "repaid-loans"; count: number };
+
+export interface DemandSpawnRule {
+  id: string;
+  kind: DemandKind;
+  weight: number;
+  amount: { min: number; max: number; step: number };
+  termDays: { min: number; max: number; step: number };
+  /** Loan: maximum repayment. Deposit: minimum maturity payout. */
+  returnRate: { min: number; max: number };
+  firstDemand?: { amount: number; termDays: number; returnRate: number };
+}
+
+export interface MarketZoneDefinition {
+  id: string;
+  label: LocalText;
+  description: LocalText;
+  /** Normalized rectangle in the persistent world coordinate space. */
+  bounds: { x: number; y: number; width: number; height: number };
+  unlock: ZoneUnlockCondition;
+  spawnRules: DemandSpawnRule[];
+  maxOpenDemands: number;
+}
+
+export interface MarketMapDefinition {
+  width: number;
+  height: number;
+  zones: MarketZoneDefinition[];
+}
+
 export interface Demand {
   id: string;
+  /** Defaults to loan for legacy/open-market content. */
+  kind?: DemandKind;
+  /** Omitted only by legacy worlds that do not use configured zones. */
+  zoneId?: string;
   actor: ActorProfile;
   /** Cash the actor needs now. */
   amount: number;
@@ -37,6 +74,8 @@ export interface Demand {
   payableAfterDays: number;
   /** The largest total repayment the actor will agree to. */
   maxRepayment: number;
+  /** Deposit demand only: the least cash expected at maturity. */
+  minimumPayout?: number;
   /** Normalized map position in [0, 1]. */
   x: number;
   y: number;
@@ -56,6 +95,7 @@ export interface ContractRequest {
   id: string;
   demandId: string;
   actor: ActorProfile;
+  kind?: DemandKind;
   day: number;
   status: RequestStatus;
   /** Present when automatic processing could not safely complete. */
@@ -157,10 +197,14 @@ export interface RequesterContractState {
   funded: number;
   /** All funds paid back to the player during this contract. */
   repaid: number;
+  /** Customer cash received by the bank at contract day zero. */
+  receivedAtStart: number;
   /** The simulated contract clock. */
   day: number;
   /** A payment was requested before this demand says the requester can pay. */
   paidTooEarly: boolean;
+  /** The bank paid the customer before their requested deposit term. */
+  bankPaidTooEarly: boolean;
 }
 
 function compareValues(
@@ -256,8 +300,10 @@ export function simulateContractForDemand(
       fundedAtStart: 0,
       funded: 0,
       repaid: 0,
+      receivedAtStart: 0,
       day: 0,
       paidTooEarly: false,
+      bankPaidTooEarly: false,
     };
     walkContract(nodes, demandVariables(demand, availableCash), {
       wait: (days) => {
@@ -270,9 +316,12 @@ export function simulateContractForDemand(
           state.cash += amount;
           state.funded += amount;
           if (state.day === 0) state.fundedAtStart += amount;
+          if (state.day < demand.payableAfterDays)
+            state.bankPaidTooEarly = true;
         } else if (node.recipientId === "player") {
           state.cash -= amount;
           state.repaid += amount;
+          if (state.day === 0) state.receivedAtStart += amount;
           if (state.day < demand.payableAfterDays) state.paidTooEarly = true;
         }
       },
@@ -292,6 +341,12 @@ export function requesterStateSatisfiesDemand(
   state: RequesterContractState,
   demand: Demand,
 ): boolean {
+  if (demand.kind === "deposit")
+    return (
+      state.receivedAtStart >= demand.amount &&
+      state.funded >= (demand.minimumPayout ?? demand.amount) &&
+      !state.bankPaidTooEarly
+    );
   return (
     state.fundedAtStart >= demand.amount &&
     state.repaid <= demand.maxRepayment &&
@@ -350,6 +405,12 @@ export function evaluateContractForDemand(
   const state = simulateContractForDemand(nodes, demand, availableCash);
   if (!state || state.funded <= 0 || state.repaid <= 0 || state.day <= 0)
     return null;
+  if (demand.kind === "deposit")
+    return {
+      principal: Math.round(state.repaid),
+      termDays: state.day,
+      repayment: Math.round(state.funded),
+    };
   return {
     principal: Math.round(state.funded),
     termDays: state.day,
@@ -417,6 +478,15 @@ export interface Liability {
   kind: string;
   value: number;
   status: "active" | "settled";
+  deposit?: {
+    contractId: string;
+    actor: ActorProfile;
+    principal: number;
+    payout: number;
+    signedDay: number;
+    dueDay: number;
+    resolvedDay?: number;
+  };
 }
 
 export interface BalanceSheet {
@@ -438,6 +508,9 @@ export type WorldEventKind =
   | "loan-signed"
   | "loan-repaid"
   | "loan-defaulted"
+  | "deposit-signed"
+  | "deposit-matured"
+  | "zone-unlocked"
   | "special-event";
 
 export type SpecialEventId = "first-yield-tutorial";
@@ -458,6 +531,8 @@ export interface MarketWorld {
   day: number;
   startingCash: number;
   nextId: number;
+  /** Optional level-authored market. Omitted by the endless legacy market. */
+  market?: MarketMapDefinition;
   demands: Demand[];
   contracts: ContractOffer[];
   balanceSheet: BalanceSheet;
@@ -479,6 +554,7 @@ const MAX_LOG_ENTRIES = 120;
 export function emptyWorld(
   seed: string,
   startingCash = MARKET_STARTING_CASH,
+  market?: MarketMapDefinition,
 ): MarketWorld {
   let world: MarketWorld = {
     seed,
@@ -486,6 +562,7 @@ export function emptyWorld(
     day: 0,
     startingCash,
     nextId: 1,
+    ...(market ? { market } : {}),
     demands: [],
     contracts: [],
     balanceSheet: {
@@ -499,6 +576,35 @@ export function emptyWorld(
   // Open the doors with a populated street rather than an empty map.
   for (let index = 0; index < 4; index += 1) world = spawnDemand(world);
   return world;
+}
+
+export function repaidLoanCount(world: MarketWorld): number {
+  return loanReceivables(world).filter((asset) => asset.status === "settled")
+    .length;
+}
+
+export function isZoneUnlocked(
+  world: MarketWorld,
+  zone: MarketZoneDefinition,
+): boolean {
+  if (zone.unlock.type === "always") return true;
+  return repaidLoanCount(world) >= zone.unlock.count;
+}
+
+export function zoneAtPosition(
+  market: MarketMapDefinition | undefined,
+  x: number,
+  y: number,
+): MarketZoneDefinition | null {
+  return (
+    market?.zones.find(
+      (zone) =>
+        x >= zone.bounds.x &&
+        x <= zone.bounds.x + zone.bounds.width &&
+        y >= zone.bounds.y &&
+        y <= zone.bounds.y + zone.bounds.height,
+    ) ?? null
+  );
 }
 
 function cashAsset(world: MarketWorld): Asset {
@@ -747,6 +853,57 @@ function pickPosition(
   return candidate;
 }
 
+function pickPositionInZone(
+  roller: Roller,
+  occupied: ReadonlyArray<{ x: number; y: number }>,
+  zone: MarketZoneDefinition,
+): { x: number; y: number } {
+  const insetX = Math.min(0.04, zone.bounds.width * 0.14);
+  const insetY = Math.min(0.07, zone.bounds.height * 0.18);
+  let candidate = {
+    x: zone.bounds.x + zone.bounds.width / 2,
+    y: zone.bounds.y + zone.bounds.height / 2,
+  };
+  for (let attempt = 0; attempt < 18; attempt += 1) {
+    candidate = {
+      x:
+        zone.bounds.x +
+        insetX +
+        roller.next() * Math.max(0.01, zone.bounds.width - insetX * 2),
+      y:
+        zone.bounds.y +
+        insetY +
+        roller.next() * Math.max(0.01, zone.bounds.height - insetY * 2),
+    };
+    const clear = occupied.every(
+      (node) => Math.hypot(node.x - candidate.x, node.y - candidate.y) > 0.075,
+    );
+    if (clear) return candidate;
+  }
+  return candidate;
+}
+
+function steppedValue(
+  roller: Roller,
+  range: { min: number; max: number; step: number },
+): number {
+  const steps = Math.max(0, Math.floor((range.max - range.min) / range.step));
+  return range.min + roller.int(0, steps) * range.step;
+}
+
+function weightedRule(
+  roller: Roller,
+  rules: readonly DemandSpawnRule[],
+): DemandSpawnRule {
+  const total = rules.reduce((sum, rule) => sum + Math.max(0, rule.weight), 0);
+  let roll = roller.next() * total;
+  for (const rule of rules) {
+    roll -= Math.max(0, rule.weight);
+    if (roll <= 0) return rule;
+  }
+  return rules.at(-1)!;
+}
+
 function occupiedPositions(
   world: MarketWorld,
 ): Array<{ x: number; y: number }> {
@@ -756,6 +913,20 @@ function occupiedPositions(
       .map((demand) => ({ x: demand.x, y: demand.y })),
     ...world.contracts.map((contract) => ({ x: contract.x, y: contract.y })),
   ];
+}
+
+function contractSharesDemandZone(
+  world: MarketWorld,
+  contract: ContractOffer,
+  demand: Demand,
+): boolean {
+  if (!world.market) return true;
+  const contractZone = zoneAtPosition(world.market, contract.x, contract.y);
+  return (
+    contractZone !== null &&
+    contractZone.id === demand.zoneId &&
+    isZoneUnlocked(world, contractZone)
+  );
 }
 
 function pushEvent(
@@ -804,21 +975,65 @@ function spawnDemand(world: MarketWorld): MarketWorld {
   const actorId = `actor-${world.nextId}`;
   const demandId = `demand-${world.nextId}`;
   const actor = generateActor(roller, actorId);
-  const amount = roller.int(4, 40) * 10;
-  const payableAfterDays = roller.int(1, 12) * 30;
-  // The margin an actor tolerates grows with the borrowing horizon.
-  const marginPct =
-    0.04 + (payableAfterDays / 360) * 0.22 + roller.next() * 0.08;
-  const position = pickPosition(roller, occupiedPositions(world), {
-    min: 0.06,
-    size: 0.88,
-  });
+  const availableZones = world.market?.zones.filter(
+    (zone) =>
+      isZoneUnlocked(world, zone) &&
+      zone.spawnRules.length > 0 &&
+      world.demands.filter(
+        (demand) => demand.zoneId === zone.id && demand.status === "open",
+      ).length < zone.maxOpenDemands,
+  );
+  const neverSpawnedZones = availableZones?.filter(
+    (candidate) =>
+      !world.demands.some((demand) => demand.zoneId === candidate.id),
+  );
+  const zone = neverSpawnedZones?.length
+    ? roller.pick(neverSpawnedZones)
+    : availableZones?.length
+      ? roller.pick(availableZones)
+      : null;
+  if (world.market && !zone) return { ...world, cursor: roller.cursor };
+  const rule = zone ? weightedRule(roller, zone.spawnRules) : null;
+  const isFirstForRule = Boolean(
+    rule?.firstDemand &&
+    !world.demands.some(
+      (demand) => demand.zoneId === zone?.id && demand.kind === rule.kind,
+    ),
+  );
+  const first = isFirstForRule ? rule!.firstDemand! : null;
+  const amount = first
+    ? first.amount
+    : rule
+      ? steppedValue(roller, rule.amount)
+      : roller.int(4, 40) * 10;
+  const payableAfterDays = first
+    ? first.termDays
+    : rule
+      ? steppedValue(roller, rule.termDays)
+      : roller.int(1, 12) * 30;
+  const marginPct = first
+    ? first.returnRate
+    : rule
+      ? rule.returnRate.min +
+        roller.next() * (rule.returnRate.max - rule.returnRate.min)
+      : 0.04 + (payableAfterDays / 360) * 0.22 + roller.next() * 0.08;
+  const position = zone
+    ? pickPositionInZone(roller, occupiedPositions(world), zone)
+    : pickPosition(roller, occupiedPositions(world), {
+        min: 0.06,
+        size: 0.88,
+      });
   const demand: Demand = {
     id: demandId,
+    kind: rule?.kind ?? "loan",
+    ...(zone ? { zoneId: zone.id } : {}),
     actor,
     amount,
     payableAfterDays,
     maxRepayment: Math.ceil(amount * (1 + marginPct)),
+    ...(rule?.kind === "deposit"
+      ? { minimumPayout: Math.ceil(amount * (1 + marginPct)) }
+      : {}),
     x: position.x,
     y: position.y,
     createdDay: world.day,
@@ -862,7 +1077,6 @@ export function contractFitsDemand(
   );
   return (
     state !== null &&
-    // A match must also be signable by the current loan lifecycle.
     state.funded > 0 &&
     state.repaid > 0 &&
     state.day > 0 &&
@@ -900,6 +1114,7 @@ export function matchingOpenDemandIds(
   return world.demands
     .filter((demand) => {
       if (demand.status !== "open") return false;
+      if (!contractSharesDemandZone(world, contract, demand)) return false;
       // Evaluation failures always surface for review, even if a decision
       // would otherwise reject the applicant. Silently dropping a broken
       // contract would hide a configuration or requester-data problem.
@@ -932,6 +1147,7 @@ function buildRequest(
     id: `request-${serial}-${demand.id}-${contract.id}`,
     demandId: demand.id,
     actor: demand.actor,
+    kind: demand.kind ?? "loan",
     day,
     status: "pending",
     principal: terms.principal,
@@ -950,6 +1166,7 @@ function buildReviewRequest(
     id: `request-${serial}-${demand.id}-${contract.id}`,
     demandId: demand.id,
     actor: demand.actor,
+    kind: demand.kind ?? "loan",
     day,
     status: "review",
     issue: "evaluation-error",
@@ -981,6 +1198,7 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
   const roller = new Roller(world.seed, world.cursor);
   let cash = availableCash(world);
   let log = world.log;
+  let liabilities = world.balanceSheet.liabilities;
 
   // 1. Loan-receivable assets that come due today either repay or default.
   let assets = world.balanceSheet.assets.map((asset) => {
@@ -1009,6 +1227,36 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
       value: 0,
       status: defaulted ? ("defaulted" as const) : ("settled" as const),
       loan: { ...loan, resolvedDay: day },
+    };
+  });
+
+  // 1b. Mature deposits return principal plus interest and settle the bank's
+  // obligation. They intentionally affect cash, not total assets twice.
+  liabilities = liabilities.map((liability) => {
+    const deposit = liability.deposit;
+    if (
+      liability.kind !== "deposit-liability" ||
+      !deposit ||
+      liability.status !== "active" ||
+      deposit.dueDay > day
+    )
+      return liability;
+    cash -= deposit.payout;
+    log = pushEvent(
+      log,
+      {
+        day,
+        kind: "deposit-matured",
+        actorName: deposit.actor.name,
+        amount: deposit.payout,
+      },
+      `event-${liability.id}-due`,
+    );
+    return {
+      ...liability,
+      value: 0,
+      status: "settled" as const,
+      deposit: { ...deposit, resolvedDay: day },
     };
   });
 
@@ -1076,8 +1324,9 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     if (demand.status !== "open") return demand;
     const candidates = contracts.filter(
       (contract) =>
-        contractFitsDemand(contract, demand, cash) ||
-        contractHasEvaluationError(contract, demand, cash),
+        contractSharesDemandZone(world, contract, demand) &&
+        (contractFitsDemand(contract, demand, cash) ||
+          contractHasEvaluationError(contract, demand, cash)),
     );
     if (candidates.length === 0) return demand;
     if (!roller.chance(DAILY_REQUEST_CHANCE)) return demand;
@@ -1117,10 +1366,24 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
         rejectedContractIds: [...demand.rejectedContractIds, contract.id],
       };
 
-    if (outcome === "auto" && cash >= request.principal) {
-      const loanAsset = loanAssetForRequest(contract.id, request, day);
-      cash -= request.principal;
-      assets = [...assets, loanAsset];
+    if (
+      outcome === "auto" &&
+      (request.kind === "deposit" || cash >= request.principal)
+    ) {
+      const signedId =
+        request.kind === "deposit"
+          ? `deposit-${request.id}`
+          : `loan-${request.id}`;
+      if (request.kind === "deposit") {
+        cash += request.principal;
+        liabilities = [
+          ...liabilities,
+          depositLiabilityForRequest(contract.id, request, day),
+        ];
+      } else {
+        cash -= request.principal;
+        assets = [...assets, loanAssetForRequest(contract.id, request, day)];
+      }
       contracts = contracts.map((candidate) =>
         candidate.id === contract.id
           ? {
@@ -1136,11 +1399,11 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
         log,
         {
           day,
-          kind: "loan-signed",
+          kind: request.kind === "deposit" ? "deposit-signed" : "loan-signed",
           actorName: request.actor.name,
           amount: request.principal,
         },
-        `event-${loanAsset.id}`,
+        `event-${signedId}`,
       );
       return { ...demand, status: "served" as const };
     }
@@ -1201,9 +1464,29 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
     balanceSheet: {
       ...world.balanceSheet,
       assets: withCashValue(assets, cash),
+      liabilities,
     },
     log,
   };
+
+  const newlyUnlockedZones =
+    next.market?.zones.filter(
+      (zone) => !isZoneUnlocked(world, zone) && isZoneUnlocked(next, zone),
+    ) ?? [];
+  for (const zone of newlyUnlockedZones)
+    next = {
+      ...next,
+      log: pushEvent(
+        next.log,
+        {
+          day,
+          kind: "zone-unlocked",
+          actorName: zone.id,
+          amount: 0,
+        },
+        `event-zone-${zone.id}-unlocked`,
+      ),
+    };
 
   // 6. New demand walks in when the street has room.
   const openCount = next.demands.filter(
@@ -1216,7 +1499,8 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
         ? DAILY_SPAWN_CHANCE * 2
         : DAILY_SPAWN_CHANCE;
   const spawnRoller = new Roller(next.seed, next.cursor);
-  const shouldSpawn = spawnRoller.chance(spawnChance);
+  const shouldSpawn =
+    newlyUnlockedZones.length > 0 || spawnRoller.chance(spawnChance);
   next = { ...next, cursor: spawnRoller.cursor };
   if (shouldSpawn) next = spawnDemand(next);
   return next;
@@ -1226,12 +1510,22 @@ export function advanceWorldDay(world: MarketWorld): MarketWorld {
 export function postContract(
   world: MarketWorld,
   builderNodes: MarketBuilderNode[],
+  preferredZoneId?: string,
 ): MarketWorld {
   const roller = new Roller(world.seed, world.cursor);
-  const position = pickPosition(roller, occupiedPositions(world), {
-    min: 0.14,
-    size: 0.72,
-  });
+  const preferredZone = world.market?.zones.find(
+    (zone) => zone.id === preferredZoneId && isZoneUnlocked(world, zone),
+  );
+  const fallbackZone = world.market?.zones.find((zone) =>
+    isZoneUnlocked(world, zone),
+  );
+  const targetZone = preferredZone ?? fallbackZone;
+  const position = targetZone
+    ? pickPositionInZone(roller, occupiedPositions(world), targetZone)
+    : pickPosition(roller, occupiedPositions(world), {
+        min: 0.14,
+        size: 0.72,
+      });
   const contract: ContractOffer = {
     id: `contract-${world.nextId}`,
     x: position.x,
@@ -1368,6 +1662,7 @@ export function fileRequest(
     (candidate) => candidate.id === contractId,
   );
   if (!demand || !contract || demand.status !== "open") return world;
+  if (!contractSharesDemandZone(world, contract, demand)) return world;
   const cash = availableCash(world);
   const evaluationFailed = contractHasEvaluationError(contract, demand, cash);
   if (!evaluationFailed && !contractFitsDemand(contract, demand, cash))
@@ -1476,7 +1771,28 @@ function loanAssetForRequest(
   };
 }
 
-/** Accept a pending request: cash goes out now, the loan starts today. */
+function depositLiabilityForRequest(
+  contractId: string,
+  request: ContractRequest,
+  day: number,
+): Liability {
+  return {
+    id: `deposit-${request.id}`,
+    kind: "deposit-liability",
+    value: request.repayment,
+    status: "active",
+    deposit: {
+      contractId,
+      actor: request.actor,
+      principal: request.principal,
+      payout: request.repayment,
+      signedDay: day,
+      dueDay: day + request.termDays,
+    },
+  };
+}
+
+/** Accept a pending request and book its direction on the balance sheet. */
 export function acceptRequest(
   world: MarketWorld,
   contractId: string,
@@ -1491,18 +1807,30 @@ export function acceptRequest(
   if (!contract || !request || request.status !== "pending")
     return { world, failure: "not-found" };
   const cash = availableCash(world);
-  if (cash < request.principal) return { world, failure: "insufficient-cash" };
-  const loanAsset = loanAssetForRequest(contractId, request, world.day);
+  const isDeposit = request.kind === "deposit";
+  if (!isDeposit && cash < request.principal)
+    return { world, failure: "insufficient-cash" };
+  const signedPosition = isDeposit
+    ? depositLiabilityForRequest(contractId, request, world.day)
+    : loanAssetForRequest(contractId, request, world.day);
   return {
     failure: null,
     world: {
       ...world,
       balanceSheet: {
         ...world.balanceSheet,
-        assets: [
-          ...withCashValue(world.balanceSheet.assets, cash - request.principal),
-          loanAsset,
-        ],
+        assets: isDeposit
+          ? withCashValue(world.balanceSheet.assets, cash + request.principal)
+          : [
+              ...withCashValue(
+                world.balanceSheet.assets,
+                cash - request.principal,
+              ),
+              signedPosition as Asset,
+            ],
+        liabilities: isDeposit
+          ? [...world.balanceSheet.liabilities, signedPosition as Liability]
+          : world.balanceSheet.liabilities,
       },
       contracts: world.contracts.map((candidate) =>
         candidate.id === contractId
@@ -1525,11 +1853,11 @@ export function acceptRequest(
         world.log,
         {
           day: world.day,
-          kind: "loan-signed",
+          kind: isDeposit ? "deposit-signed" : "loan-signed",
           actorName: request.actor.name,
           amount: request.principal,
         },
-        `event-${loanAsset.id}`,
+        `event-${signedPosition.id}`,
       ),
     },
   };

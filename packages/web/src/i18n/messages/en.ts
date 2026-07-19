@@ -10,9 +10,12 @@ export const en = {
     assetValues: "Asset values",
     cash: "Cash",
     totalAssets: "Total assets",
+    liabilities: "Liabilities",
+    totalLiabilities: "Total liabilities",
     openAssetValues: "View asset values",
     closeAssetValues: "Close asset values",
     loanTo: (name: string) => `Loan to ${name}`,
+    depositFrom: (name: string) => `Deposit from ${name}`,
     dueDay: (day: number) => `Due day ${day}`,
     loanValueBasis: "Active loans are valued at outstanding principal.",
   },
@@ -76,11 +79,22 @@ export const en = {
     perMonth: (amount: number) => `$${amount.toLocaleString()} / mo`,
     demandBadge: "What they ask",
     demandNeedTitle: "The demand",
+    depositBadge: "What they offer",
+    depositNeedTitle: "Savings intent",
     needsNow: (amount: number) => `$${amount.toLocaleString()} in cash`,
+    depositsNow: (amount: number) => `$${amount.toLocaleString()} to deposit`,
     payableAfter: (days: number) =>
       `Can pay back after ${Math.round(days / 30)} months (${days} days)`,
+    depositTerm: (days: number) =>
+      `Will keep it deposited for ${Math.round(days / 30)} months (${days} days)`,
     maxRepayment: (amount: number) =>
       `Will repay up to $${amount.toLocaleString()} total`,
+    minimumPayout: (amount: number) =>
+      `Expects at least $${amount.toLocaleString()} at maturity`,
+    objectiveFirstRepayment: (complete: number, target: number) =>
+      `Objective · Receive the first loan repayment · ${complete}/${target}`,
+    objectiveAssets: (current: number, target: number) =>
+      `Objective · Build $${target.toLocaleString()} total assets · $${current.toLocaleString()}/$${target.toLocaleString()}`,
     draftContract: "Draft a matching contract",
     lends: "You lend",
     termLabel: "Term",
@@ -126,6 +140,10 @@ export const en = {
     postToMarket: "Post to market",
     saveChanges: "Save changes",
     posted: "Contract posted. Watch the map for requests.",
+    outsideActiveZone:
+      "Outside an active demand zone — this contract will receive no customers.",
+    contractDoesNotFit:
+      "These terms do not yet satisfy the customer you started from.",
     updated: "Contract updated. Pending requesters returned to the market.",
     withdrawn: "Contract withdrawn from the market.",
     withdrawContract: "Withdraw this contract",
@@ -164,6 +182,11 @@ export const en = {
         `${name} repaid · +$${amount.toLocaleString()}`,
       loanDefaulted: (name: string, amount: number) =>
         `${name} defaulted on $${amount.toLocaleString()}`,
+      depositSigned: (name: string, amount: number) =>
+        `${name} deposited · +$${amount.toLocaleString()}`,
+      depositMatured: (name: string, amount: number) =>
+        `${name}'s deposit matured · −$${amount.toLocaleString()}`,
+      zoneUnlocked: "Savings Quarter unlocked",
     },
     specialEvents: {
       tutorialTag: "SPECIAL EVENT · TUTORIAL",
@@ -192,14 +215,25 @@ export const en = {
         "The request is waiting. Open the contract and approve it.",
       collectRepayment:
         "Start time and watch the contract collect its repayment.",
+      inspectDeposit:
+        "The Savings Quarter is open. Choose a highlighted depositor there.",
+      buildDeposit:
+        "Reverse the flow: receive amount, wait days, then return at least amount × 1.06.",
+      postDeposit: "Post this savings contract inside the Savings Quarter.",
+      growAssets:
+        "Bring depositors into savings contracts until total assets reach $3,000.",
       rewardEyebrow: "FIRST AUTOMATION COMPLETE",
       rewardTitle: "Your first yield is working.",
-      rewardBody: (cash: number) =>
-        `You now have $${cash.toLocaleString()} in cash and a proven contract loop.`,
+      rewardBody: (assets: number) =>
+        `You built a two-sided bank with $${assets.toLocaleString()} in total assets.`,
       rewardName: "Founder's Contract Stamp",
       rewardDescription:
         "Permanent proof that you built a working financial machine.",
       rewardAction: "Unlock Stage 02",
+      statTotalAssets: "Total assets",
+      statCash: "Cash collected",
+      statDeals: "Deals signed",
+      statDays: "Days used",
     },
   },
   gameApp: {

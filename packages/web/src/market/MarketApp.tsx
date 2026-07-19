@@ -11,7 +11,14 @@ import {
   Settings,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor, type Messages } from "../i18n/messages/index.ts";
@@ -35,8 +42,10 @@ import {
   activeAssets,
   advanceWorldDay,
   availableCash,
+  contractFitsDemand,
   emptyWorld,
   fileRequest,
+  isZoneUnlocked,
   loanReceivables,
   MARKET_START_DATE,
   matchingOpenDemandIds,
@@ -44,6 +53,8 @@ import {
   postContract,
   rejectRequest,
   totalAssetValue,
+  totalLiabilityValue,
+  zoneAtPosition,
   updateContract,
   withdrawContract,
   type ContractOffer,
@@ -95,8 +106,16 @@ function tutorialPromptDetails(
       };
     case "collect-repayment":
       return { step: 6, body: tutorial.collectRepayment };
+    case "inspect-deposit":
+      return { step: 7, body: tutorial.inspectDeposit };
+    case "build-deposit":
+      return { step: 8, body: tutorial.buildDeposit };
+    case "post-deposit":
+      return { step: 8, body: tutorial.postDeposit };
+    case "grow-assets":
+      return { step: 9, body: tutorial.growAssets };
     case "claim-reward":
-      return { step: 6, body: "" };
+      return { step: 10, body: "" };
   }
 }
 
@@ -115,6 +134,12 @@ function eventText(event: WorldEvent, m: Messages): string {
       return t.loanRepaid(event.actorName, event.amount);
     case "loan-defaulted":
       return t.loanDefaulted(event.actorName, event.amount);
+    case "deposit-signed":
+      return t.depositSigned(event.actorName, event.amount);
+    case "deposit-matured":
+      return t.depositMatured(event.actorName, event.amount);
+    case "zone-unlocked":
+      return t.zoneUnlocked;
     case "special-event":
       return event.specialEventId === "first-yield-tutorial"
         ? m.marketSim.specialEvents.firstYieldTitle
@@ -144,7 +169,11 @@ export function MarketApp({
   const t = m.marketSim;
   const tutorial = stage?.tutorial;
   const [world, setWorld] = useState<MarketWorld>(() =>
-    emptyWorld(stage?.seed ?? newWorldSeed(), stage?.startingCash),
+    emptyWorld(
+      stage?.seed ?? newWorldSeed(),
+      stage?.startingCash,
+      stage?.market,
+    ),
   );
   const [view, setView] = useState<View>("map");
   const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null);
@@ -158,6 +187,9 @@ export function MarketApp({
   const [editingContractId, setEditingContractId] = useState<string | null>(
     null,
   );
+  const [builderTargetDemandId, setBuilderTargetDemandId] = useState<
+    string | null
+  >(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [hudPanel, setHudPanel] = useState<"menu" | "objective" | null>(null);
   const [assetPanelOpen, setAssetPanelOpen] = useState(false);
@@ -241,11 +273,25 @@ export function MarketApp({
   const loanAssets = loanReceivables(world);
   const cash = availableCash(world);
   const totalAssets = totalAssetValue(world);
+  const activeLiabilities = world.balanceSheet.liabilities.filter(
+    (liability) => liability.status === "active",
+  );
+  const totalLiabilities = totalLiabilityValue(world);
+  const builderTargetDemand =
+    world.demands.find((demand) => demand.id === builderTargetDemandId) ?? null;
   const repaidLoans = loanAssets.filter(
     (asset) => asset.status === "settled",
   ).length;
+  const assetTarget = stage?.assetTarget ?? stage?.cashTarget ?? 0;
+  const inAssetObjective = Boolean(stage && repaidLoans >= stage.repaidLoans);
+  const objectiveText = inAssetObjective
+    ? t.objectiveAssets(totalAssets, assetTarget)
+    : t.objectiveFirstRepayment(repaidLoans, stage?.repaidLoans ?? 1);
   const stageComplete = Boolean(
-    stage && repaidLoans >= stage.repaidLoans && cash >= stage.cashTarget,
+    stage &&
+    repaidLoans >= stage.repaidLoans &&
+    cash >= stage.cashTarget &&
+    totalAssets >= assetTarget,
   );
   const targetDemand = tutorial
     ? (world.demands.find((demand) => demand.id === tutorial.targetDemandId) ??
@@ -266,6 +312,24 @@ export function MarketApp({
       asset.status === "active" &&
       asset.loan?.actor.id === targetDemand?.actor.id,
   );
+  const depositDemand = world.demands.find(
+    (demand) => demand.kind === "deposit" && demand.status === "open",
+  );
+  const hasDepositContract = Boolean(
+    tutorial &&
+    world.contracts.some(
+      (contract) =>
+        zoneAtPosition(world.market, contract.x, contract.y)?.id ===
+        tutorial.depositZoneId,
+    ),
+  );
+  const signedDeals = world.contracts.reduce(
+    (count, contract) =>
+      count +
+      contract.requests.filter((request) => request.status === "accepted")
+        .length,
+    0,
+  );
   const tutorialStep =
     tutorial?.kind === "first-yield"
       ? deriveFirstYieldTutorialStep({
@@ -278,7 +342,25 @@ export function MarketApp({
               : null,
           hasActiveTargetLoan,
           repaidLoans,
-          draftIsReady: validateDraft(builderNodes, m) === null,
+          totalAssets,
+          assetTarget,
+          selectedDemandKind: selectedDemand?.kind ?? null,
+          hasDepositContract,
+          draftIsReady:
+            validateDraft(builderNodes, m) === null &&
+            (!builderTargetDemand ||
+              contractFitsDemand(
+                {
+                  id: "draft-preview",
+                  x: 0,
+                  y: 0,
+                  postedDay: world.day,
+                  requests: [],
+                  builderNodes,
+                },
+                builderTargetDemand,
+                cash,
+              )),
         })
       : null;
   const boardMessages = useMemo(() => {
@@ -295,11 +377,7 @@ export function MarketApp({
         ? [
             {
               id: `objective-${repaidLoans}`,
-              text: m.timebar.objective(
-                localize(stage.focus, locale),
-                repaidLoans,
-                stage.repaidLoans,
-              ),
+              text: objectiveText,
             },
           ]
         : []),
@@ -310,7 +388,7 @@ export function MarketApp({
           (left, right) => boardOrder(left.id) - boardOrder(right.id),
         )
       : [{ id: "no-recent-events", text: m.timebar.noRecentEvents }];
-  }, [locale, m, repaidLoans, stage, world.day, world.log]);
+  }, [m, objectiveText, repaidLoans, stage, world.day, world.log]);
   const boardMessageSignature = boardMessages
     .map((message) => message.id)
     .join(",");
@@ -360,15 +438,17 @@ export function MarketApp({
     setView("contract");
   }, []);
 
-  function openBuilder(): void {
+  function openBuilder(targetDemandId: string | null = null): void {
     setBuilderNodes(emptyDraftNodes());
     setEditingContractId(null);
+    setBuilderTargetDemandId(targetDemandId);
     setView("builder");
   }
 
   function openBuilderForContract(contract: ContractOffer): void {
     setBuilderNodes(withoutEndNodes(contract.builderNodes));
     setEditingContractId(contract.id);
+    setBuilderTargetDemandId(null);
     setView("builder");
   }
 
@@ -378,6 +458,24 @@ export function MarketApp({
       setNotice(issue);
       return;
     }
+    if (
+      builderTargetDemand &&
+      !contractFitsDemand(
+        {
+          id: "draft-preview",
+          x: 0,
+          y: 0,
+          postedDay: world.day,
+          requests: [],
+          builderNodes,
+        },
+        builderTargetDemand,
+        cash,
+      )
+    ) {
+      setNotice(t.contractDoesNotFit);
+      return;
+    }
     if (editingContractId) {
       setWorld((current) =>
         updateContract(current, editingContractId, builderNodes),
@@ -385,7 +483,8 @@ export function MarketApp({
       setNotice(t.updated);
       setView("contract");
     } else {
-      const postedWorld = postContract(world, builderNodes);
+      const targetZoneId = builderTargetDemand?.zoneId;
+      const postedWorld = postContract(world, builderNodes, targetZoneId);
       const postedContract = postedWorld.contracts.at(-1);
       const demandIds = postedContract
         ? matchingOpenDemandIds(postedWorld, postedContract.id)
@@ -453,6 +552,13 @@ export function MarketApp({
       return;
     }
     if (cash < request.principal) {
+      if (request.kind === "deposit") {
+        setWorld((current) => {
+          const result = acceptRequest(current, contractId, requestId);
+          return result.failure ? current : result.world;
+        });
+        return;
+      }
       setNotice(t.insufficientCash(request.principal));
       return;
     }
@@ -460,6 +566,12 @@ export function MarketApp({
       const result = acceptRequest(current, contractId, requestId);
       return result.failure ? current : result.world;
     });
+  }
+
+  function repositionContract(contractId: string, x: number, y: number): void {
+    const zone = zoneAtPosition(world.market, x, y);
+    if (!zone || !isZoneUnlocked(world, zone)) setNotice(t.outsideActiveZone);
+    setWorld((current) => moveContract(current, contractId, x, y));
   }
 
   const tutorialPrompt =
@@ -561,6 +673,36 @@ export function MarketApp({
                 {m.balance.loanValueBasis}
               </p>
             )}
+            {activeLiabilities.length > 0 && (
+              <>
+                <h2>{m.balance.liabilities}</h2>
+                <ul className="mk-asset-list">
+                  {activeLiabilities.map((liability) => (
+                    <li key={liability.id} className="mk-asset-list-item">
+                      <div>
+                        <strong>
+                          {liability.deposit
+                            ? m.balance.depositFrom(
+                                liability.deposit.actor.name,
+                              )
+                            : liability.kind}
+                        </strong>
+                        {liability.deposit && (
+                          <small>
+                            {m.balance.dueDay(liability.deposit.dueDay)}
+                          </small>
+                        )}
+                      </div>
+                      <span>−${liability.value.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mk-asset-valuation-note">
+                  {m.balance.totalLiabilities}: $
+                  {totalLiabilities.toLocaleString()}
+                </p>
+              </>
+            )}
           </section>
         </div>
       )}
@@ -600,13 +742,7 @@ export function MarketApp({
                 <li className="mk-asset-list-item mk-info-board-objective">
                   <div>
                     <strong>{m.timebar.currentObjective}</strong>
-                    <small>
-                      {m.timebar.objective(
-                        localize(stage.focus, locale),
-                        repaidLoans,
-                        stage.repaidLoans,
-                      )}
-                    </small>
+                    <small>{objectiveText}</small>
                   </div>
                 </li>
               )}
@@ -667,9 +803,7 @@ export function MarketApp({
           </button>
           <strong>{localize(stage.subtitle, locale)}</strong>
           <p>{localize(stage.briefing, locale)}</p>
-          <small>
-            {localize(stage.focus, locale)} · {repaidLoans}/{stage.repaidLoans}
-          </small>
+          <small>{objectiveText}</small>
           {stageComplete && onComplete && (
             <button className="mk-stage-complete" onClick={onComplete}>
               <Check aria-hidden="true" />{" "}
@@ -681,13 +815,18 @@ export function MarketApp({
 
       {tutorialPrompt && (
         <aside className="mk-tutorial-callout" aria-live="polite">
-          <small>{t.tutorial.label(tutorialPrompt.step, 6)}</small>
+          <small>{t.tutorial.label(tutorialPrompt.step, 10)}</small>
           <p>{tutorialPrompt.body}</p>
         </aside>
       )}
 
       {tutorial && rewardOverlayOpen && stageComplete && onComplete && (
         <div className="mk-reward-backdrop">
+          <div className="mk-celebration-burst" aria-hidden="true">
+            {Array.from({ length: 28 }, (_, index) => (
+              <i key={index} style={{ "--spark": index } as CSSProperties} />
+            ))}
+          </div>
           <section
             className="mk-reward-dialog"
             role="dialog"
@@ -700,10 +839,24 @@ export function MarketApp({
             </div>
             <small>{t.tutorial.rewardEyebrow}</small>
             <h2 id="mk-reward-title">{t.tutorial.rewardTitle}</h2>
-            <p>{t.tutorial.rewardBody(cash)}</p>
-            <div className="mk-reward-card">
-              <strong>{t.tutorial.rewardName}</strong>
-              <span>{t.tutorial.rewardDescription}</span>
+            <p>{t.tutorial.rewardBody(totalAssets)}</p>
+            <div className="mk-success-stats">
+              <div>
+                <span>{t.tutorial.statTotalAssets}</span>
+                <strong>${totalAssets.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>{t.tutorial.statCash}</span>
+                <strong>${cash.toLocaleString()}</strong>
+              </div>
+              <div>
+                <span>{t.tutorial.statDeals}</span>
+                <strong>{signedDeals}</strong>
+              </div>
+              <div>
+                <span>{t.tutorial.statDays}</span>
+                <strong>{world.day}</strong>
+              </div>
             </div>
             <button type="button" onClick={onComplete} autoFocus>
               {t.tutorial.rewardAction}
@@ -766,13 +919,16 @@ export function MarketApp({
         <div className="mk-map">
           <MarketStageView
             world={world}
+            locale={locale}
             suspended={view !== "map"}
             timeFlowing={!clockView.paused}
             highlightedDemandId={
-              tutorial &&
-              tutorialStep !== "claim-reward" &&
-              targetDemand?.status === "open"
-                ? tutorial.targetDemandId
+              tutorial && tutorialStep !== "claim-reward"
+                ? tutorialStep === "inspect-deposit"
+                  ? (depositDemand?.id ?? null)
+                  : targetDemand?.status === "open"
+                    ? tutorial.targetDemandId
+                    : null
                 : null
             }
             highlightedContractId={
@@ -788,13 +944,11 @@ export function MarketApp({
             onTapContract={openContractDetail}
             pendingAbsorptions={pendingAbsorptions}
             onAbsorptionComplete={completeAbsorption}
-            onMoveContract={(id, x, y) =>
-              setWorld((current) => moveContract(current, id, x, y))
-            }
+            onMoveContract={repositionContract}
           />
           <button
             className="mk-fab"
-            onClick={() => openBuilder()}
+            onClick={() => openBuilder(null)}
             aria-label={t.postContract}
           >
             <Plus aria-hidden="true" />
@@ -807,7 +961,11 @@ export function MarketApp({
               demand={selectedDemand}
               locale={locale}
               highlightDraftAction={tutorialStep === "open-builder"}
-              onDraft={demandOrigin === "map" ? () => openBuilder() : undefined}
+              onDraft={
+                demandOrigin === "map"
+                  ? () => openBuilder(selectedDemand.id)
+                  : undefined
+              }
             />
           </div>
         )}

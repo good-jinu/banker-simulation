@@ -13,6 +13,10 @@ export type FirstYieldTutorialStep =
   | "await-request"
   | "approve-request"
   | "collect-repayment"
+  | "inspect-deposit"
+  | "build-deposit"
+  | "post-deposit"
+  | "grow-assets"
   | "claim-reward";
 
 export type FirstYieldTutorialSnapshot = {
@@ -21,6 +25,10 @@ export type FirstYieldTutorialSnapshot = {
   targetRequestStatus: "pending" | "accepted" | null;
   hasActiveTargetLoan: boolean;
   repaidLoans: number;
+  totalAssets: number;
+  assetTarget: number;
+  selectedDemandKind: "loan" | "deposit" | null;
+  hasDepositContract: boolean;
   draftIsReady: boolean;
 };
 
@@ -30,9 +38,21 @@ export function deriveFirstYieldTutorialStep({
   targetRequestStatus,
   hasActiveTargetLoan,
   repaidLoans,
+  totalAssets,
+  assetTarget,
+  selectedDemandKind,
+  hasDepositContract,
   draftIsReady,
 }: FirstYieldTutorialSnapshot): FirstYieldTutorialStep {
-  if (repaidLoans > 0) return "claim-reward";
+  if (repaidLoans > 0) {
+    if (totalAssets >= assetTarget) return "claim-reward";
+    if (view === "builder")
+      return draftIsReady ? "post-deposit" : "build-deposit";
+    if (hasDepositContract) return "grow-assets";
+    if (view === "demand" && selectedDemandKind === "deposit")
+      return "open-builder";
+    return "inspect-deposit";
+  }
   if (hasActiveTargetLoan || targetRequestStatus === "accepted")
     return "collect-repayment";
   if (targetRequestStatus === "pending") return "approve-request";

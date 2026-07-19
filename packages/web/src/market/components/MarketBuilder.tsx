@@ -59,19 +59,27 @@ export function MarketBuilder({
     (node) => node.kind === "transfer" && node.recipientId === "player",
   );
   const transferCount = nodes.filter((node) => node.kind === "transfer").length;
+  const buildingDeposit = tutorialStep === "build-deposit";
   const nextTutorialNode = (() => {
-    if (tutorialStep !== "build-contract") return null;
-    if (!hasOutgoingTransfer) return "transfer";
+    if (tutorialStep !== "build-contract" && !buildingDeposit) return null;
+    if (buildingDeposit && !hasIncomingTransfer) return "transfer";
+    if (!buildingDeposit && !hasOutgoingTransfer) return "transfer";
     if (!hasWait) return "wait";
-    if (!hasIncomingTransfer && transferCount < 2) return "transfer";
+    if (
+      buildingDeposit
+        ? !hasOutgoingTransfer && transferCount < 2
+        : !hasIncomingTransfer && transferCount < 2
+    )
+      return "transfer";
     return null;
   })();
   const highlightReturnRecipient =
-    tutorialStep === "build-contract" &&
-    hasOutgoingTransfer &&
-    hasWait &&
-    !hasIncomingTransfer &&
-    transferCount >= 2;
+    (tutorialStep === "build-contract" &&
+      hasOutgoingTransfer &&
+      hasWait &&
+      !hasIncomingTransfer &&
+      transferCount >= 2) ||
+    (buildingDeposit && !hasIncomingTransfer && transferCount >= 1);
 
   useEffect(() => {
     if (!issue) setDismissedIssue(null);
@@ -204,7 +212,9 @@ export function MarketBuilder({
             merge: t.conditionMerge,
             fit: t.fitGraph,
           }}
-          highlightAddControls={tutorialStep === "build-contract"}
+          highlightAddControls={
+            tutorialStep === "build-contract" || buildingDeposit
+          }
           onRequestInsert={setInsertMenu}
         />
         {issue && dismissedIssue !== issue && (
@@ -279,7 +289,9 @@ export function MarketBuilder({
 
       <button
         className={`cs-offer-button${
-          tutorialStep === "post-contract" ? " mk-tutorial-target" : ""
+          tutorialStep === "post-contract" || tutorialStep === "post-deposit"
+            ? " mk-tutorial-target"
+            : ""
         }`}
         onClick={onSubmit}
       >
