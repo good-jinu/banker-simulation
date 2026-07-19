@@ -50,7 +50,6 @@ export const ko: Messages = {
     waitDays: "대기 일수",
   },
   nodeLabels: {
-    startActive: "조건 발효",
     endResolved: "모든 의무 이행 완료",
   },
   nodes: {

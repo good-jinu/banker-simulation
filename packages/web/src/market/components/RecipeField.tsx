@@ -53,14 +53,10 @@ export function RecipeField({
   };
   const chooseOperator = (operatorName: RecipeOperator): void => {
     const selected = recipeAtPath(recipe, selectedPath);
-    replaceSelected(
-      selected.kind === "operation"
-        ? { ...selected, operator: operatorName }
-        : operation(operatorName, selected, constant(1)),
-    );
-    if (selected.kind !== "operation") {
-      setSelectedPath([...selectedPath, "right"]);
-    }
+    // Operators describe an existing operation; adding a new operation is
+    // deliberately reserved for the expression's + control below.
+    if (selected.kind !== "operation") return;
+    replaceSelected({ ...selected, operator: operatorName });
   };
   const choosePickerItem = (item: string): void => {
     closePicker();
@@ -96,6 +92,7 @@ export function RecipeField({
     setSelectedPath(parentPath);
     closePicker();
   };
+  const selectedRecipe = recipeAtPath(recipe, selectedPath);
 
   return (
     <div className="wide mk-recipe">
@@ -146,66 +143,75 @@ export function RecipeField({
                 </button>
               </div>
             </header>
-            <section>
-              <small>{t.valueCards}</small>
-              <div className="mk-formula-picker-values">
-                {names.map((name) => (
+            {selectedRecipe.kind === "operation" ? (
+              <section>
+                <small>{t.operatorCards}</small>
+                <div className="mk-formula-picker-operators">
+                  {(
+                    [
+                      ["add", "+"],
+                      ["subtract", "−"],
+                      ["multiply", "×"],
+                      ["divide", "÷"],
+                    ] as const
+                  ).map(([operatorName, labelText]) => (
+                    <button
+                      key={operatorName}
+                      type="button"
+                      onClick={() =>
+                        choosePickerItem(`operator:${operatorName}`)
+                      }
+                      aria-label={operatorName}
+                    >
+                      {labelText}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : (
+              <section>
+                <small>{t.valueCards}</small>
+                <div className="mk-formula-picker-values">
+                  {names.map((name) => (
+                    <button
+                      key={name}
+                      type="button"
+                      onClick={() => choosePickerItem(`value:${name}`)}
+                    >
+                      {humanizeValue(name)}
+                    </button>
+                  ))}
                   <button
-                    key={name}
                     type="button"
-                    onClick={() => choosePickerItem(`value:${name}`)}
+                    className="mk-formula-picker-number"
+                    onClick={() => choosePickerItem("number")}
                   >
-                    {humanizeValue(name)}
+                    {t.numberCard}
                   </button>
-                ))}
-                <button
-                  type="button"
-                  className="mk-formula-picker-number"
-                  onClick={() => choosePickerItem("number")}
-                >
-                  {t.numberCard}
-                </button>
-              </div>
-            </section>
-            <section>
-              <small>{t.operatorCards}</small>
-              <div className="mk-formula-picker-operators">
-                {(
-                  [
-                    ["add", "+"],
-                    ["subtract", "−"],
-                    ["multiply", "×"],
-                    ["divide", "÷"],
-                  ] as const
-                ).map(([operatorName, labelText]) => (
-                  <button
-                    key={operatorName}
-                    type="button"
-                    onClick={() => choosePickerItem(`operator:${operatorName}`)}
-                    aria-label={operatorName}
-                  >
-                    {labelText}
-                  </button>
-                ))}
-              </div>
-            </section>
+                </div>
+              </section>
+            )}
           </div>,
           document.body,
         )}
-      {numberEntry !== null && (
-        <NumberKeypad
-          m={m}
-          value={numberEntry}
-          onChange={setNumberEntry}
-          onCancel={() => setNumberEntry(null)}
-          onConfirm={() => {
-            const number = Number(numberEntry);
-            if (!Number.isFinite(number)) return;
-            replaceSelected(constant(number));
-            setNumberEntry(null);
-          }}
-        />
-      )}
+      {numberEntry !== null &&
+        createPortal(
+          <div className="mk-keypad-backdrop">
+            <NumberKeypad
+              m={m}
+              value={numberEntry}
+              onChange={setNumberEntry}
+              onCancel={() => setNumberEntry(null)}
+              onConfirm={() => {
+                const number = Number(numberEntry);
+                if (!Number.isFinite(number)) return;
+                replaceSelected(constant(number));
+                setNumberEntry(null);
+              }}
+            />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -233,7 +239,12 @@ function NumberKeypad({
     onChange(entry === "0" ? key : `${entry}${key}`);
   };
   return (
-    <div className="mk-keypad" role="dialog" aria-label={t.numberPadTitle}>
+    <div
+      className="mk-keypad"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t.numberPadTitle}
+    >
       <header>
         <strong>{t.numberPadTitle}</strong>
         <output>{entry || "0"}</output>

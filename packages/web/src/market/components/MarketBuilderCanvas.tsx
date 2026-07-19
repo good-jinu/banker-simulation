@@ -20,7 +20,6 @@ export interface BuilderInsertTarget {
 
 interface CanvasLabels {
   clause: string;
-  startDetail: string;
   start: string;
   transfer: string;
   wait: string;
@@ -95,7 +94,7 @@ const COLOR = {
 function nodeSize(node: MarketBuilderNode): { width: number; height: number } {
   switch (node.kind) {
     case "start":
-      return { width: 180, height: 96 };
+      return { width: 180, height: 52 };
     case "transfer":
       return { width: 320, height: 190 };
     case "wait":
@@ -436,7 +435,10 @@ class BuilderCanvasScene {
     const path = visibleNodes(rawPath);
     if (path.length === 0) {
       this.addPlus(centerX, startY, { ...owner, index: 0, terminal: true });
-      return startY;
+      // The terminal control is part of this branch's visible extent.  A
+      // condition scope must enclose it so a branch does not appear to escape
+      // from its enclosing square.
+      return startY + 22;
     }
     const names = [...inheritedNames];
     let y = startY;
@@ -512,18 +514,17 @@ class BuilderCanvasScene {
           branchBottom,
           ...nestedScopes.map((scope) => scope.maxY),
         );
+        const scopeBottom = contentBottom + 24;
         this.drawConditionScope(
           contentMinX - 32,
           y - size.height / 2 - 28,
           contentMaxX + 32,
-          contentBottom + 24,
+          scopeBottom,
         );
         const nextY = nextSize
-          ? branchBottom + rowGap + nextSize.height / 2
-          : branchBottom + 48;
-        const mergePlusY = nextSize
-          ? (branchBottom + nextY - nextSize.height / 2) / 2
-          : nextY;
+          ? scopeBottom + rowGap + nextSize.height / 2
+          : scopeBottom + 48;
+        const mergePlusY = nextSize ? scopeBottom + rowGap / 2 : nextY;
         this.addPlus(centerX, mergePlusY, {
           ...owner,
           index: index + 1,
@@ -541,7 +542,7 @@ class BuilderCanvasScene {
           return this.layoutPath(remainder, owner, centerX, nextY, names);
         }
         this.expandBounds(centerX, nextY, { width: 44, height: 44 });
-        return branchBottom;
+        return nextY + 22;
       }
       const nextSize = remainder[0] ? nodeSize(remainder[0]) : null;
       const nextY = nextSize
@@ -571,7 +572,7 @@ class BuilderCanvasScene {
         terminal: true,
       });
       this.expandBounds(centerX, terminalY, { width: 44, height: 44 });
-      return y + size.height / 2;
+      return terminalY + 22;
     }
     return y;
   }
@@ -759,11 +760,6 @@ export function MarketBuilderCanvas(props: Props) {
                   <strong>{props.labels[card.node.kind]}</strong>
                 </div>
               </header>
-              {card.node.kind === "start" && (
-                <p className="mk-canvas-start-detail">
-                  {props.labels.startDetail}
-                </p>
-              )}
               {card.node.kind !== "start" &&
                 props.renderNodeDetails(card.node, card.names)}
             </article>

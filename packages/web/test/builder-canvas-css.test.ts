@@ -43,10 +43,23 @@ test("the compact start node cannot grow beyond its declared card", () => {
   assert.match(startHeader, /box-sizing:\s*border-box;/);
 });
 
+test("the start node is only a compact graph entry point", () => {
+  assert.match(canvasSource, /case "start":\s*return \{ width: 180, height: 52 \}/);
+  assert.doesNotMatch(canvasSource, /mk-canvas-start-detail/);
+  assert.doesNotMatch(styles, /\.mk-canvas-start-detail/);
+});
+
 test("condition scopes retain nested scope bounds", () => {
   assert.match(canvasSource, /const nestedScopes = this\.scopeBounds\.slice/);
   assert.match(canvasSource, /\.\.\.nestedScopes\.map\(\(scope\) => scope\.minX\)/);
   assert.match(canvasSource, /\.\.\.nestedScopes\.map\(\(scope\) => scope\.maxY\)/);
+});
+
+test("condition scopes include their branch terminal controls", () => {
+  assert.match(canvasSource, /return startY \+ 22;/);
+  assert.match(canvasSource, /const scopeBottom = contentBottom \+ 24;/);
+  assert.match(canvasSource, /\? scopeBottom \+ rowGap \+ nextSize\.height \/ 2/);
+  assert.match(canvasSource, /return terminalY \+ 22;/);
 });
 
 test("node edits refresh the overlaid form card content", () => {
@@ -69,4 +82,23 @@ test("formula parts append horizontally and remove from their picker", () => {
   assert.match(recipeFieldSource, /className="mk-formula-picker-remove"/);
   assert.doesNotMatch(recipeFieldSource, /className="mk-recipe-remove"/);
   assert.match(recipeFieldSource, /onChange\(operation\("add", recipe, constant\(1\)\)\)/);
+});
+
+test("only the add control expands a formula", () => {
+  assert.match(recipeFieldSource, /if \(selected\.kind !== "operation"\) return;/);
+  assert.match(
+    recipeFieldSource,
+    /selectedRecipe\.kind === "operation" \? \([\s\S]*operatorCards[\s\S]*\) : \([\s\S]*valueCards/,
+  );
+  assert.doesNotMatch(
+    recipeFieldSource,
+    /operation\(operatorName, selected, constant\(1\)\)/,
+  );
+});
+
+test("number entry is rendered above fixed-height canvas cards", () => {
+  assert.match(recipeFieldSource, /className="mk-keypad-backdrop"/);
+  assert.match(recipeFieldSource, /createPortal\([\s\S]*<NumberKeypad/);
+  assert.match(styles, /\.mk-keypad-backdrop \{[\s\S]*position:\s*fixed;/);
+  assert.match(styles, /\.mk-keypad-backdrop \{[\s\S]*z-index:\s*110;/);
 });

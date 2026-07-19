@@ -54,7 +54,6 @@ export const en = {
     waitDays: "Wait days",
   },
   nodeLabels: {
-    startActive: "Terms become active",
     endResolved: "All obligations resolved",
   },
   nodes: {

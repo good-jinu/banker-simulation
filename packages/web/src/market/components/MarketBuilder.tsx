@@ -199,7 +199,6 @@ export function MarketBuilder({
           }
           labels={{
             clause: m.builder.clause,
-            startDetail: m.nodeLabels.startActive,
             start: m.nodes.start.title,
             transfer: m.nodes.transfer.title,
             wait: m.nodes.wait.title,
