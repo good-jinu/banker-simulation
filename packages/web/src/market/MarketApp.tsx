@@ -7,7 +7,7 @@ import "./market.css";
 
 const DAY_MS = 1_500;
 
-type CustomerStatus = "waiting" | "accepted" | "rejected" | "repaid";
+type CustomerStatus = "waiting" | "accepted";
 type Customer = {
   id: string;
   name: string;
@@ -53,52 +53,72 @@ const CUSTOMER_SEEDS: Customer[] = [
     avatar: "/assets/avatars/mina-request.webp",
     status: "waiting",
   },
-  {
-    id: "jun",
-    name: "준 박",
-    job: "택배 기사",
-    income: 3_100,
-    amount: 240,
-    rate: 12,
-    term: 14,
-    dueDay: 17,
-    appears: 3,
-    x: 76,
-    y: 24,
-    avatar: "/assets/avatars/jun-neutral.webp",
-    status: "waiting",
-  },
-  {
-    id: "seo",
-    name: "서연 이",
-    job: "프리랜서 디자이너",
-    income: 2_800,
-    amount: 330,
-    rate: 14,
-    term: 16,
-    dueDay: 22,
-    appears: 6,
-    x: 80,
-    y: 69,
-    avatar: "/assets/avatars/auditor-neutral.webp",
-    status: "waiting",
-  },
-  {
-    id: "han",
-    name: "도윤 한",
-    job: "카페 운영자",
-    income: 4_200,
-    amount: 180,
-    rate: 11,
-    term: 12,
-    dueDay: 22,
-    appears: 10,
-    x: 24,
-    y: 73,
-    avatar: "/assets/avatars/fund-manager-neutral.webp",
-    status: "waiting",
-  },
 ];
+
+const RANDOM_NAMES = [
+  "준 박",
+  "서연 이",
+  "도윤 한",
+  "지우 최",
+  "하준 송",
+  "유나 정",
+  "현우 강",
+  "수빈 오",
+];
+const RANDOM_JOBS = [
+  "택배 기사",
+  "프리랜서 디자이너",
+  "카페 운영자",
+  "간호사",
+  "학원 강사",
+  "식당 운영자",
+  "소프트웨어 개발자",
+  "공방 운영자",
+];
+const RANDOM_AVATARS = [
+  "/assets/avatars/jun-neutral.webp",
+  "/assets/avatars/auditor-neutral.webp",
+  "/assets/avatars/fund-manager-neutral.webp",
+  "/assets/avatars/mina-neutral.webp",
+  "/assets/avatars/regulator-neutral.webp",
+  "/assets/avatars/jun-evaluating.webp",
+];
+const RANDOM_POSITIONS = [
+  { x: 22, y: 27 },
+  { x: 77, y: 24 },
+  { x: 80, y: 70 },
+  { x: 23, y: 73 },
+  { x: 50, y: 17 },
+  { x: 64, y: 77 },
+  { x: 35, y: 78 },
+];
+
+function randomCustomer(day: number): Customer {
+  const nameIndex = Math.floor(Math.random() * RANDOM_NAMES.length);
+  const jobIndex = Math.floor(Math.random() * RANDOM_JOBS.length);
+  const position =
+    RANDOM_POSITIONS[
+      (Math.floor(day / 3) + Math.floor(Math.random() * 3)) %
+        RANDOM_POSITIONS.length
+    ]!;
+  const amount = 80 + Math.floor(Math.random() * 38) * 10;
+  const term = 9 + Math.floor(Math.random() * 10);
+  return {
+    id: `customer-${day}-${Math.random().toString(36).slice(2, 7)}`,
+    name: RANDOM_NAMES[nameIndex]!,
+    job: RANDOM_JOBS[jobIndex]!,
+    income: 1_800 + Math.floor(Math.random() * 22) * 200,
+    amount,
+    rate: 7 + Math.floor(Math.random() * 10),
+    term,
+    dueDay: day + term,
+    appears: day,
+    x: position.x + Math.floor(Math.random() * 5) - 2,
+    y: position.y + Math.floor(Math.random() * 5) - 2,
+    avatar: RANDOM_AVATARS[Math.floor(Math.random() * RANDOM_AVATARS.length)]!,
+    status: "waiting",
+  };
+}
 
 const FUNDING_SEEDS: Funding[] = [
   {
@@ -172,22 +192,24 @@ export function MarketApp({
         const nextDay = currentDay + 1;
         setCustomers((current) => {
           let repayment = 0;
-          const updated = current.map((customer) => {
+          const updated = current.flatMap((customer) => {
             if (customer.status === "accepted" && customer.dueDay === nextDay) {
               repayment += customer.amount * (1 + customer.rate / 100);
-              return { ...customer, status: "repaid" as const };
+              return [];
             }
-            return customer;
+            return [customer];
           });
           if (repayment > 0) {
             setCash((value) => value + repayment);
             setNotice(`${money(repayment)}가 상환되었습니다.`);
           }
-          const appearing = updated.find(
-            (customer) => customer.appears === nextDay,
-          );
-          if (appearing)
-            setNotice(`${appearing.name} 고객이 새 대출을 요청합니다.`);
+          if (nextDay % 3 === 0) {
+            const newcomer = randomCustomer(nextDay);
+            setNotice(
+              `${newcomer.name} 고객이 ${money(newcomer.amount)} 대출을 요청합니다.`,
+            );
+            return [...updated, newcomer];
+          }
           return updated;
         });
         return nextDay;
@@ -237,7 +259,9 @@ export function MarketApp({
     setCash((value) => value - customer.amount);
     setCustomers((current) =>
       current.map((item) =>
-        item.id === customer.id ? { ...item, status: "accepted" } : item,
+        item.id === customer.id
+          ? { ...item, status: "accepted", dueDay: day + item.term }
+          : item,
       ),
     );
     setSelected(null);
@@ -246,9 +270,7 @@ export function MarketApp({
 
   function reject(customer: Customer): void {
     setCustomers((current) =>
-      current.map((item) =>
-        item.id === customer.id ? { ...item, status: "rejected" } : item,
-      ),
+      current.filter((item) => item.id !== customer.id),
     );
     setSelected(null);
   }
@@ -340,7 +362,7 @@ export function MarketApp({
   }
 
   const visibleCustomers = customers.filter(
-    (customer) => customer.appears <= day && customer.status !== "rejected",
+    (customer) => customer.appears <= day,
   );
   const showFundingHint = cash <= 100 && !funding.some((item) => item.accepted);
   const pointFor = (id: string): { x: number; y: number } => {
@@ -446,15 +468,12 @@ export function MarketApp({
             )}
             <span className="portrait">
               <img src={customer.avatar} alt="" />
-              {customer.status === "repaid" && <Check />}
             </span>
             <strong>{customer.name}</strong>
             <small>
               {customer.status === "waiting"
                 ? "대출 요청"
-                : customer.status === "accepted"
-                  ? `DAY ${customer.dueDay + 1} 상환`
-                  : "상환 완료"}
+                : `DAY ${customer.dueDay + 1} 상환`}
             </small>
             {customer.status === "waiting" && (
               <button onClick={() => setSelected(customer)}>상세보기</button>
