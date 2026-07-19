@@ -1,256 +1,271 @@
-import {
-  ArrowLeft,
-  Check,
-  Info,
-  Landmark,
-  LogOut,
-  Menu,
-  Pause,
-  Play,
-  Plus,
-  Settings,
-  X,
-} from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
-import { localize } from "../i18n/local-text.ts";
+import { ArrowLeft, Check, Info, Landmark, Pause, Play, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n/locale.ts";
-import { messagesFor, type Messages } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "../lib/game-clock.ts";
-import { formatGameDate } from "../lib/game-date.ts";
-import {
-  emptyDraftNodes,
-  validateDraft,
-  withoutEndNodes,
-} from "./builder-draft.ts";
-import { ContractDetail } from "./components/ContractDetail.tsx";
-import { DemandDetail } from "./components/DemandDetail.tsx";
-import { MarketBuilder } from "./components/MarketBuilder.tsx";
-import {
-  MarketStageView,
-  type DemandAbsorption,
-} from "./components/MarketStageView.tsx";
 import type { MarketCampaignStage } from "./market-campaign.ts";
-import {
-  acceptRequest,
-  activeAssets,
-  advanceWorldDay,
-  availableCash,
-  contractFitsDemand,
-  emptyWorld,
-  fileRequest,
-  isZoneUnlocked,
-  loanReceivables,
-  MARKET_START_DATE,
-  matchingOpenDemandIds,
-  moveContract,
-  postContract,
-  rejectRequest,
-  totalAssetValue,
-  totalLiabilityValue,
-  zoneAtPosition,
-  updateContract,
-  withdrawContract,
-  type ContractOffer,
-  type Demand,
-  type MarketBuilderNode,
-  type MarketWorld,
-  type WorldEvent,
-} from "./market-world.ts";
-import {
-  deriveFirstYieldTutorialStep,
-  type FirstYieldTutorialStep,
-} from "./tutorial-flow.ts";
-import "./campaign-stage.css";
 import "./market.css";
 
-const MARKET_MS_PER_DAY = 1_200;
+const DAY_MS = 1_500;
 
-type View = "map" | "demand" | "contract" | "builder";
+type CustomerStatus = "waiting" | "accepted" | "rejected" | "repaid";
+type Customer = {
+  id: string;
+  name: string;
+  job: string;
+  income: number;
+  amount: number;
+  rate: number;
+  term: number;
+  dueDay: number;
+  appears: number;
+  x: number;
+  y: number;
+  avatar: string;
+  status: CustomerStatus;
+};
 
-function newWorldSeed(): string {
-  return Math.random().toString(36).slice(2);
-}
+type Funding = {
+  id: string;
+  name: string;
+  amount: number;
+  rate: number;
+  dueDay: number;
+  x: number;
+  y: number;
+  accepted: boolean;
+};
 
-function tutorialPromptDetails(
-  step: FirstYieldTutorialStep,
-  tutorial: Messages["marketSim"]["tutorial"],
-): { step: number; body: string } {
-  switch (step) {
-    case "inspect-request":
-      return {
-        step: 1,
-        body: tutorial.inspectRequest,
-      };
-    case "open-builder":
-      return {
-        step: 2,
-        body: tutorial.openBuilder,
-      };
-    case "open-deposit-builder":
-      return {
-        step: 7,
-        body: tutorial.openDepositBuilder,
-      };
-    case "build-contract":
-      return { step: 3, body: tutorial.buildContract };
-    case "post-contract":
-      return { step: 4, body: tutorial.postContract };
-    case "await-request":
-      return { step: 4, body: tutorial.awaitRequest };
-    case "approve-request":
-      return {
-        step: 4,
-        body: tutorial.approveRequest,
-      };
-    case "collect-repayment":
-      return { step: 5, body: tutorial.collectRepayment };
-    case "inspect-deposit":
-      return { step: 6, body: tutorial.inspectDeposit };
-    case "build-deposit":
-      return { step: 7, body: tutorial.buildDeposit };
-    case "post-deposit":
-      return { step: 7, body: tutorial.postDeposit };
-    case "grow-assets":
-      return { step: 8, body: tutorial.growAssets };
-    case "claim-reward":
-      return { step: 9, body: "" };
-  }
-}
+type Transfer = { id: number; from: string; to: string; amount: number };
 
-function eventText(event: WorldEvent, m: Messages): string {
-  const t = m.marketSim.events;
-  switch (event.kind) {
-    case "demand-appeared":
-      return t.demandAppeared(event.actorName);
-    case "demand-expired":
-      return t.demandExpired(event.actorName);
-    case "request-filed":
-      return t.requestFiled(event.actorName);
-    case "loan-signed":
-      return t.loanSigned(event.actorName, event.amount);
-    case "loan-repaid":
-      return t.loanRepaid(event.actorName, event.amount);
-    case "loan-defaulted":
-      return t.loanDefaulted(event.actorName, event.amount);
-    case "deposit-signed":
-      return t.depositSigned(event.actorName, event.amount);
-    case "deposit-matured":
-      return t.depositMatured(event.actorName, event.amount);
-    case "zone-unlocked":
-      return t.zoneUnlocked;
-    case "special-event":
-      return event.specialEventId === "first-yield-tutorial"
-        ? m.marketSim.specialEvents.firstYieldTitle
-        : m.marketSim.specialEvents.tutorialTag;
-  }
-}
+const CUSTOMER_SEEDS: Customer[] = [
+  {
+    id: "mina",
+    name: "미나 김",
+    job: "동네 베이커리 직원",
+    income: 2_400,
+    amount: 100,
+    rate: 10,
+    term: 12,
+    dueDay: 12,
+    appears: 0,
+    x: 23,
+    y: 29,
+    avatar: "/assets/avatars/mina-request.webp",
+    status: "waiting",
+  },
+  {
+    id: "jun",
+    name: "준 박",
+    job: "택배 기사",
+    income: 3_100,
+    amount: 240,
+    rate: 12,
+    term: 14,
+    dueDay: 17,
+    appears: 3,
+    x: 76,
+    y: 24,
+    avatar: "/assets/avatars/jun-neutral.webp",
+    status: "waiting",
+  },
+  {
+    id: "seo",
+    name: "서연 이",
+    job: "프리랜서 디자이너",
+    income: 2_800,
+    amount: 330,
+    rate: 14,
+    term: 16,
+    dueDay: 22,
+    appears: 6,
+    x: 80,
+    y: 69,
+    avatar: "/assets/avatars/auditor-neutral.webp",
+    status: "waiting",
+  },
+  {
+    id: "han",
+    name: "도윤 한",
+    job: "카페 운영자",
+    income: 4_200,
+    amount: 180,
+    rate: 11,
+    term: 12,
+    dueDay: 22,
+    appears: 10,
+    x: 24,
+    y: 73,
+    avatar: "/assets/avatars/fund-manager-neutral.webp",
+    status: "waiting",
+  },
+];
 
-function boardOrder(id: string): number {
-  let value = 0;
-  for (let index = 0; index < id.length; index += 1)
-    value = (value * 31 + id.charCodeAt(index)) >>> 0;
-  return value;
+const FUNDING_SEEDS: Funding[] = [
+  {
+    id: "civic",
+    name: "시민 신용금고",
+    amount: 500,
+    rate: 5,
+    dueDay: 30,
+    x: 9,
+    y: 50,
+    accepted: false,
+  },
+  {
+    id: "metro",
+    name: "메트로 은행",
+    amount: 800,
+    rate: 8,
+    dueDay: 35,
+    x: 50,
+    y: 88,
+    accepted: false,
+  },
+  {
+    id: "capital",
+    name: "캐피탈 파트너스",
+    amount: 1_200,
+    rate: 12,
+    dueDay: 40,
+    x: 91,
+    y: 50,
+    accepted: false,
+  },
+];
+
+function money(value: number): string {
+  return `$${Math.round(value).toLocaleString("en-US")}`;
 }
 
 export function MarketApp({
-  locale,
+  locale: _locale,
   onBack,
-  stage,
-  onComplete,
+  stage: _stage,
+  onComplete: _onComplete,
 }: {
   locale: Locale;
   onBack: () => void;
   stage?: MarketCampaignStage;
   onComplete?: () => void;
 }) {
-  const m = messagesFor(locale);
-  const t = m.marketSim;
-  const tutorial = stage?.tutorial;
-  const [world, setWorld] = useState<MarketWorld>(() =>
-    emptyWorld(
-      stage?.seed ?? newWorldSeed(),
-      stage?.startingCash,
-      stage?.market,
-    ),
-  );
-  const [view, setView] = useState<View>("map");
-  const [selectedDemandId, setSelectedDemandId] = useState<string | null>(null);
-  const [demandOrigin, setDemandOrigin] = useState<"map" | "contract">("map");
-  const [selectedContractId, setSelectedContractId] = useState<string | null>(
-    null,
-  );
-  const [builderNodes, setBuilderNodes] = useState<MarketBuilderNode[]>(() =>
-    emptyDraftNodes(),
-  );
-  const [editingContractId, setEditingContractId] = useState<string | null>(
-    null,
-  );
-  const [builderTargetDemandId, setBuilderTargetDemandId] = useState<
-    string | null
-  >(null);
+  const [phase, setPhase] = useState<"intro" | "map">("intro");
+  const [askedJob, setAskedJob] = useState(false);
+  const [askedIncome, setAskedIncome] = useState(false);
+  const [cash, setCash] = useState(700);
+  const [day, setDay] = useState(0);
+  const [customers, setCustomers] = useState(CUSTOMER_SEEDS);
+  const [funding, setFunding] = useState(FUNDING_SEEDS);
+  const [selected, setSelected] = useState<Customer | null>(null);
+  const [fundingOpen, setFundingOpen] = useState(false);
+  const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [hudPanel, setHudPanel] = useState<"menu" | "objective" | null>(null);
-  const [assetPanelOpen, setAssetPanelOpen] = useState(false);
-  const [boardPanelOpen, setBoardPanelOpen] = useState(false);
-  const [boardMessageIndex, setBoardMessageIndex] = useState(0);
   const [clockView, setClockView] = useState<{
     paused: boolean;
     speed: ClockSpeed;
-  }>({ paused: Boolean(tutorial), speed: 1 });
-  const [rewardOverlayOpen, setRewardOverlayOpen] = useState(false);
-  const [pendingAbsorptions, setPendingAbsorptions] = useState<
-    DemandAbsorption[]
-  >([]);
+  }>({ paused: true, speed: 1 });
   const clockRef = useRef<GameClock | null>(null);
+  const transferId = useRef(0);
 
   useEffect(() => {
     const clock = new GameClock(() => {
-      setWorld((current) => advanceWorldDay(current));
+      setDay((currentDay) => {
+        const nextDay = currentDay + 1;
+        setCustomers((current) => {
+          let repayment = 0;
+          const updated = current.map((customer) => {
+            if (customer.status === "accepted" && customer.dueDay === nextDay) {
+              repayment += customer.amount * (1 + customer.rate / 100);
+              return { ...customer, status: "repaid" as const };
+            }
+            return customer;
+          });
+          if (repayment > 0) {
+            setCash((value) => value + repayment);
+            setNotice(`${money(repayment)}가 상환되었습니다.`);
+          }
+          const appearing = updated.find(
+            (customer) => customer.appears === nextDay,
+          );
+          if (appearing)
+            setNotice(`${appearing.name} 고객이 새 대출을 요청합니다.`);
+          return updated;
+        });
+        return nextDay;
+      });
       return true;
-    }, MARKET_MS_PER_DAY);
+    }, DAY_MS);
     clockRef.current = clock;
-    if (tutorial) clock.pause();
-    else clock.play();
     clock.start();
-    const pauseWhenHidden = () => {
-      if (document.hidden) {
-        clock.pause();
-        setClockView((current) => ({ ...current, paused: true }));
-      }
-    };
-    document.addEventListener("visibilitychange", pauseWhenHidden);
-    return () => {
-      document.removeEventListener("visibilitychange", pauseWhenHidden);
-      clock.dispose();
-      clockRef.current = null;
-    };
+    return () => clock.dispose();
   }, []);
 
   useEffect(() => {
     if (!notice) return;
-    const handle = setTimeout(() => setNotice(null), 3200);
-    return () => clearTimeout(handle);
+    const handle = window.setTimeout(() => setNotice(null), 3_200);
+    return () => window.clearTimeout(handle);
   }, [notice]);
 
   useEffect(() => {
-    if (!assetPanelOpen && !boardPanelOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      setAssetPanelOpen(false);
-      setBoardPanelOpen(false);
-    };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [assetPanelOpen, boardPanelOpen]);
+    if (!transfer) return;
+    const handle = window.setTimeout(() => setTransfer(null), 1_100);
+    return () => window.clearTimeout(handle);
+  }, [transfer]);
 
-  function togglePaused(): void {
+  function animate(from: string, to: string, amount: number): void {
+    transferId.current += 1;
+    setTransfer({ id: transferId.current, from, to, amount });
+  }
+
+  function beginMap(): void {
+    setCash((value) => value - 100);
+    setCustomers((current) =>
+      current.map((customer) =>
+        customer.id === "mina" ? { ...customer, status: "accepted" } : customer,
+      ),
+    );
+    setPhase("map");
+    window.setTimeout(() => animate("banker", "mina", 100), 180);
+  }
+
+  function approve(customer: Customer): void {
+    if (cash < customer.amount) {
+      setSelected(null);
+      setFundingOpen(true);
+      setNotice("현금이 부족합니다. 먼저 다른 은행에서 자금을 빌려보세요.");
+      return;
+    }
+    setCash((value) => value - customer.amount);
+    setCustomers((current) =>
+      current.map((item) =>
+        item.id === customer.id ? { ...item, status: "accepted" } : item,
+      ),
+    );
+    setSelected(null);
+    animate("banker", customer.id, customer.amount);
+  }
+
+  function reject(customer: Customer): void {
+    setCustomers((current) =>
+      current.map((item) =>
+        item.id === customer.id ? { ...item, status: "rejected" } : item,
+      ),
+    );
+    setSelected(null);
+  }
+
+  function borrow(lender: Funding): void {
+    setFunding((current) =>
+      current.map((item) =>
+        item.id === lender.id ? { ...item, accepted: true } : item,
+      ),
+    );
+    setCash((value) => value + lender.amount);
+    setFundingOpen(false);
+    animate(lender.id, "banker", lender.amount);
+    setNotice(`${lender.name}에서 ${money(lender.amount)}를 빌렸습니다.`);
+  }
+
+  function toggleClock(): void {
     const clock = clockRef.current;
     if (!clock) return;
     if (clock.paused) clock.play();
@@ -258,803 +273,384 @@ export function MarketApp({
     setClockView((current) => ({ ...current, paused: clock.paused }));
   }
 
-  function chooseSpeed(speed: ClockSpeed): void {
+  function cycleSpeed(): void {
+    const index = CLOCK_SPEEDS.indexOf(clockView.speed);
+    const speed = CLOCK_SPEEDS[(index + 1) % CLOCK_SPEEDS.length]!;
     clockRef.current?.setSpeed(speed);
     setClockView((current) => ({ ...current, speed }));
   }
 
-  function openDisplayBoard(): void {
-    setAssetPanelOpen(false);
-    setBoardPanelOpen(true);
-    setHudPanel(null);
-  }
-
-  const selectedDemand =
-    world.demands.find((demand) => demand.id === selectedDemandId) ?? null;
-  const selectedContract =
-    world.contracts.find((contract) => contract.id === selectedContractId) ??
-    null;
-  const assets = activeAssets(world);
-  const loanAssets = loanReceivables(world);
-  const cash = availableCash(world);
-  const totalAssets = totalAssetValue(world);
-  const activeLiabilities = world.balanceSheet.liabilities.filter(
-    (liability) => liability.status === "active",
-  );
-  const totalLiabilities = totalLiabilityValue(world);
-  const builderTargetDemand =
-    world.demands.find((demand) => demand.id === builderTargetDemandId) ?? null;
-  const repaidLoans = loanAssets.filter(
-    (asset) => asset.status === "settled",
-  ).length;
-  const realizedYield = loanAssets.reduce(
-    (total, asset) =>
-      asset.status === "settled" && asset.loan
-        ? total + Math.max(0, asset.loan.repayment - asset.loan.principal)
-        : total,
-    0,
-  );
-  const assetTarget = stage?.assetTarget ?? stage?.cashTarget ?? 0;
-  const inAssetObjective = Boolean(stage && repaidLoans >= stage.repaidLoans);
-  const objectiveText = inAssetObjective
-    ? t.objectiveAssets(totalAssets, assetTarget)
-    : t.objectiveFirstRepayment(repaidLoans, stage?.repaidLoans ?? 1);
-  const stageComplete = Boolean(
-    stage &&
-    repaidLoans >= stage.repaidLoans &&
-    cash >= stage.cashTarget &&
-    totalAssets >= assetTarget,
-  );
-  const targetDemand = tutorial
-    ? (world.demands.find((demand) => demand.id === tutorial.targetDemandId) ??
-      null)
-    : null;
-  const targetRequestContract = tutorial
-    ? (world.contracts.find((contract) =>
-        contract.requests.some(
-          (request) => request.demandId === tutorial.targetDemandId,
-        ),
-      ) ?? null)
-    : null;
-  const targetRequest = targetRequestContract?.requests.find(
-    (request) => request.demandId === tutorial?.targetDemandId,
-  );
-  const hasActiveTargetLoan = loanAssets.some(
-    (asset) =>
-      asset.status === "active" &&
-      asset.loan?.actor.id === targetDemand?.actor.id,
-  );
-  const depositDemand = world.demands.find(
-    (demand) => demand.kind === "deposit" && demand.status === "open",
-  );
-  const hasDepositContract = Boolean(
-    tutorial &&
-    world.contracts.some(
-      (contract) =>
-        zoneAtPosition(world.market, contract.x, contract.y)?.id ===
-        tutorial.depositZoneId,
-    ),
-  );
-  const signedDeals = world.contracts.reduce(
-    (count, contract) =>
-      count +
-      contract.requests.filter((request) => request.status === "accepted")
-        .length,
-    0,
-  );
-  const tutorialStep =
-    tutorial?.kind === "first-yield"
-      ? deriveFirstYieldTutorialStep({
-          view,
-          hasPostedContract: world.contracts.length > 0,
-          targetRequestStatus:
-            targetRequest?.status === "pending" ||
-            targetRequest?.status === "accepted"
-              ? targetRequest.status
-              : null,
-          hasActiveTargetLoan,
-          repaidLoans,
-          totalAssets,
-          assetTarget,
-          selectedDemandKind: selectedDemand?.kind ?? null,
-          hasDepositContract,
-          draftIsReady:
-            validateDraft(builderNodes, m) === null &&
-            (!builderTargetDemand ||
-              contractFitsDemand(
-                {
-                  id: "draft-preview",
-                  x: 0,
-                  y: 0,
-                  postedDay: world.day,
-                  requests: [],
-                  builderNodes,
-                },
-                builderTargetDemand,
-                cash,
-              )),
-        })
-      : null;
-  const previousTutorialStepRef = useRef<FirstYieldTutorialStep | null>(null);
-  const previousRepaidLoansRef = useRef(repaidLoans);
-  const previousYieldRef = useRef(realizedYield);
-
-  // Every guided milestone is a safe reading moment. The player explicitly
-  // resumes only for the time-advance step, and later milestones pause again.
-  useEffect(() => {
-    if (!tutorialStep || previousTutorialStepRef.current === tutorialStep)
-      return;
-    previousTutorialStepRef.current = tutorialStep;
-    clockRef.current?.pause();
-    setClockView((current) =>
-      current.paused ? current : { ...current, paused: true },
-    );
-  }, [tutorialStep]);
-
-  useEffect(() => {
-    if (repaidLoans > previousRepaidLoansRef.current) {
-      const newYield = Math.max(0, realizedYield - previousYieldRef.current);
-      setNotice(t.tutorial.yieldCollected(newYield));
-    }
-    previousRepaidLoansRef.current = repaidLoans;
-    previousYieldRef.current = realizedYield;
-  }, [realizedYield, repaidLoans, t.tutorial]);
-  const boardMessages = useMemo(() => {
-    const recentEvents = world.log
-      .filter(
-        (event) =>
-          event.day >= Math.max(0, world.day - 1) &&
-          event.kind !== "demand-appeared" &&
-          event.kind !== "demand-expired",
-      )
-      .map((event) => ({ id: event.id, text: eventText(event, m) }));
-    const messages = [
-      ...(stage
-        ? [
-            {
-              id: `objective-${repaidLoans}`,
-              text: objectiveText,
-            },
-          ]
-        : []),
-      ...recentEvents,
-    ];
-    return messages.length > 0
-      ? messages.sort(
-          (left, right) => boardOrder(left.id) - boardOrder(right.id),
-        )
-      : [{ id: "no-recent-events", text: m.timebar.noRecentEvents }];
-  }, [m, objectiveText, repaidLoans, stage, world.day, world.log]);
-  const boardMessageSignature = boardMessages
-    .map((message) => message.id)
-    .join(",");
-  const boardMessage =
-    boardMessages[boardMessageIndex % boardMessages.length] ??
-    boardMessages[0]!;
-  const boardHistoryEvents = [...world.log]
-    .filter(
-      (event) =>
-        event.kind !== "demand-appeared" && event.kind !== "demand-expired",
-    )
-    .reverse();
-
-  useEffect(() => {
-    setBoardMessageIndex(0);
-    const interval = window.setInterval(
-      () =>
-        setBoardMessageIndex((current) => (current + 1) % boardMessages.length),
-      4_200,
-    );
-    return () => window.clearInterval(interval);
-  }, [boardMessageSignature, boardMessages.length]);
-
-  // Surface the win once. Tutorial stages use their reward screen; all other
-  // stages retain the existing objective-panel completion flow.
-  const celebratedRef = useRef(false);
-  useEffect(() => {
-    if (!stageComplete || celebratedRef.current) return;
-    celebratedRef.current = true;
-    clockRef.current?.pause();
-    setClockView((current) => ({ ...current, paused: true }));
-    if (tutorial) setRewardOverlayOpen(true);
-    else setHudPanel("objective");
-  }, [stageComplete, tutorial]);
-
-  const openDemandDetail = useCallback(
-    (demandId: string, origin: "map" | "contract") => {
-      setSelectedDemandId(demandId);
-      setDemandOrigin(origin);
-      setView("demand");
-    },
-    [],
-  );
-
-  const openContractDetail = useCallback((contractId: string) => {
-    setSelectedContractId(contractId);
-    setView("contract");
-  }, []);
-
-  function openBuilder(targetDemandId: string | null = null): void {
-    setBuilderNodes(emptyDraftNodes());
-    setEditingContractId(null);
-    setBuilderTargetDemandId(targetDemandId);
-    setView("builder");
-  }
-
-  function openBuilderForContract(contract: ContractOffer): void {
-    setBuilderNodes(withoutEndNodes(contract.builderNodes));
-    setEditingContractId(contract.id);
-    setBuilderTargetDemandId(null);
-    setView("builder");
-  }
-
-  function submitDraft(): void {
-    const issue = validateDraft(builderNodes, m);
-    if (issue) {
-      setNotice(issue);
-      return;
-    }
-    if (
-      builderTargetDemand &&
-      !contractFitsDemand(
-        {
-          id: "draft-preview",
-          x: 0,
-          y: 0,
-          postedDay: world.day,
-          requests: [],
-          builderNodes,
-        },
-        builderTargetDemand,
-        cash,
-      )
-    ) {
-      setNotice(t.contractDoesNotFit);
-      return;
-    }
-    if (editingContractId) {
-      setWorld((current) =>
-        updateContract(current, editingContractId, builderNodes),
-      );
-      setNotice(t.updated);
-      setView("contract");
-    } else {
-      const targetZoneId = builderTargetDemand?.zoneId;
-      const postedWorld = postContract(world, builderNodes, targetZoneId);
-      const postedContract = postedWorld.contracts.at(-1);
-      const demandIds = postedContract
-        ? matchingOpenDemandIds(postedWorld, postedContract.id)
-        : [];
-      setWorld(postedWorld);
-      if (postedContract) {
-        setPendingAbsorptions(
-          demandIds.map((demandId) => ({
-            id: `${postedContract.id}:${demandId}`,
-            demandId,
-            contractId: postedContract.id,
-          })),
-        );
-      }
-      setNotice(t.posted);
-      setView("map");
-    }
-  }
-
-  function removeContract(): void {
-    if (!editingContractId) return;
-    setWorld((current) => withdrawContract(current, editingContractId));
-    setEditingContractId(null);
-    setSelectedContractId(null);
-    setNotice(t.withdrawn);
-    setView("map");
-  }
-
-  /** Step back out of the current overlay towards the map. */
-  function closeOverlay(): void {
-    if (view === "builder" && editingContractId && selectedContract) {
-      setView("contract");
-      return;
-    }
-    if (view === "demand" && demandOrigin === "contract" && selectedContract) {
-      setView("contract");
-      return;
-    }
-    setView("map");
-  }
-
-  const completeAbsorption = useCallback((absorption: DemandAbsorption) => {
-    setWorld((current) =>
-      fileRequest(current, absorption.demandId, absorption.contractId),
-    );
-    setPendingAbsorptions((current) =>
-      current.filter((candidate) => candidate.id !== absorption.id),
-    );
-  }, []);
-
-  function decideRequest(requestId: string, accept: boolean): void {
-    if (!selectedContract) return;
-    const contractId = selectedContract.id;
-    if (!accept) {
-      setWorld((current) => rejectRequest(current, contractId, requestId));
-      return;
-    }
-    // Notices come from the render-time snapshot so the updater stays pure;
-    // the updater re-checks against the current world and no-ops on failure.
-    const request = selectedContract.requests.find(
-      (candidate) => candidate.id === requestId,
-    );
-    if (!request || request.status !== "pending") {
-      setNotice(t.requestGone);
-      return;
-    }
-    if (cash < request.principal) {
-      if (request.kind === "deposit") {
-        setWorld((current) => {
-          const result = acceptRequest(current, contractId, requestId);
-          return result.failure ? current : result.world;
-        });
-        return;
-      }
-      setNotice(t.insufficientCash(request.principal));
-      return;
-    }
-    setWorld((current) => {
-      const result = acceptRequest(current, contractId, requestId);
-      return result.failure ? current : result.world;
-    });
-  }
-
-  function repositionContract(contractId: string, x: number, y: number): void {
-    const zone = zoneAtPosition(world.market, x, y);
-    if (!zone || !isZoneUnlocked(world, zone)) setNotice(t.outsideActiveZone);
-    setWorld((current) => moveContract(current, contractId, x, y));
-  }
-
-  const tutorialPrompt =
-    tutorialStep && tutorialStep !== "claim-reward"
-      ? tutorialPromptDetails(tutorialStep, t.tutorial)
-      : null;
-
-  return (
-    <main className={`cs-shell mk-shell mk-view-${view}`}>
-      <div className={`mk-hud${view !== "map" ? " mk-hud-with-back" : ""}`}>
-        {view !== "map" && (
-          <button
-            className="mk-hud-icon"
-            onClick={closeOverlay}
-            aria-label={t.backToMap}
-          >
-            <ArrowLeft aria-hidden="true" />
+  if (phase === "intro") {
+    return (
+      <main className="loan-intro">
+        <header className="loan-simple-header">
+          <button onClick={onBack} aria-label="뒤로">
+            <ArrowLeft />
           </button>
-        )}
-        <div className="mk-mini-balance" aria-label={m.balance.assetValues}>
-          <button
-            className="mk-total-assets-button"
-            onClick={() => {
-              setAssetPanelOpen((current) => !current);
-              setBoardPanelOpen(false);
-              setHudPanel(null);
-            }}
-            aria-expanded={assetPanelOpen}
-            aria-haspopup="dialog"
-            aria-controls="asset-values-dialog"
-            aria-label={m.balance.openAssetValues}
-            title={m.balance.openAssetValues}
-          >
-            <Landmark aria-hidden="true" />${totalAssets.toLocaleString()}
-          </button>
-          <button
-            className="mk-hud-icon"
-            onClick={() => {
-              setAssetPanelOpen(false);
-              setBoardPanelOpen(false);
-              setHudPanel((current) => (current === "menu" ? null : "menu"));
-            }}
-            aria-label="Menu"
-          >
-            <Menu aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
-      {assetPanelOpen && (
-        <div
-          className="mk-asset-dialog-backdrop"
-          onMouseDown={() => setAssetPanelOpen(false)}
-        >
-          <section
-            id="asset-values-dialog"
-            className="mk-asset-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="asset-values-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="mk-asset-dialog-heading">
-              <div>
-                <small>{m.balance.totalAssets}</small>
-                <strong>${totalAssets.toLocaleString()}</strong>
-              </div>
-              <button
-                className="mk-asset-dialog-close"
-                onClick={() => setAssetPanelOpen(false)}
-                aria-label={m.balance.closeAssetValues}
-                autoFocus
-              >
-                <X aria-hidden="true" />
-              </button>
+          <span>LEVEL 01</span>
+          <strong>첫 번째 대출</strong>
+        </header>
+        <section className="conversation-card">
+          <div className="conversation-scene">
+            <span className="scene-label">오늘의 첫 고객</span>
+            <img src="/assets/avatars/mina-request.webp" alt="고객 미나 김" />
+            <div className="speech-bubble">
+              <small>미나 김</small>
+              <p>
+                안녕하세요! 급하게 필요한 돈이 있어요.
+                <br />
+                <strong>$100을 빌릴 수 있을까요?</strong>
+              </p>
             </div>
-            <h2 id="asset-values-title">{m.balance.assetValues}</h2>
-            <ul className="mk-asset-list">
-              {assets.map((asset) => (
-                <li key={asset.id} className="mk-asset-list-item">
-                  <div>
-                    <strong>
-                      {asset.kind === "cash"
-                        ? m.balance.cash
-                        : asset.kind === "loan-receivable" && asset.loan
-                          ? m.balance.loanTo(asset.loan.actor.name)
-                          : asset.kind}
-                    </strong>
-                    {asset.kind === "loan-receivable" && asset.loan && (
-                      <small>{m.balance.dueDay(asset.loan.dueDay)}</small>
-                    )}
-                  </div>
-                  <span>${asset.value.toLocaleString()}</span>
-                </li>
-              ))}
-            </ul>
-            {assets.some((asset) => asset.kind === "loan-receivable") && (
-              <p className="mk-asset-valuation-note">
-                {m.balance.loanValueBasis}
+          </div>
+          <div className="conversation-actions">
+            <p className="action-guide">대출하기 전에 고객을 알아보세요.</p>
+            <button
+              className={askedJob ? "asked" : ""}
+              onClick={() => setAskedJob(true)}
+            >
+              {askedJob ? <Check /> : <Info />} 직업을 물어본다
+            </button>
+            {askedJob && (
+              <p className="answer-line">
+                “동네 베이커리에서 3년째 일하고 있어요.”
               </p>
             )}
-            {activeLiabilities.length > 0 && (
-              <>
-                <h2>{m.balance.liabilities}</h2>
-                <ul className="mk-asset-list">
-                  {activeLiabilities.map((liability) => (
-                    <li key={liability.id} className="mk-asset-list-item">
-                      <div>
-                        <strong>
-                          {liability.deposit
-                            ? m.balance.depositFrom(
-                                liability.deposit.actor.name,
-                              )
-                            : liability.kind}
-                        </strong>
-                        {liability.deposit && (
-                          <small>
-                            {m.balance.dueDay(liability.deposit.dueDay)}
-                          </small>
-                        )}
-                      </div>
-                      <span>−${liability.value.toLocaleString()}</span>
-                    </li>
-                  ))}
-                </ul>
-                <p className="mk-asset-valuation-note">
-                  {m.balance.totalLiabilities}: $
-                  {totalLiabilities.toLocaleString()}
-                </p>
-              </>
-            )}
-          </section>
-        </div>
-      )}
-
-      {boardPanelOpen && (
-        <div
-          className="mk-asset-dialog-backdrop"
-          onMouseDown={() => setBoardPanelOpen(false)}
-        >
-          <section
-            id="display-board-dialog"
-            className="mk-info-board-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="display-board-title"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <div className="mk-asset-dialog-heading">
-              <div>
-                <small>{m.timebar.displayBoard}</small>
-                <strong>
-                  {formatGameDate(MARKET_START_DATE, world.day, locale)}
-                </strong>
-              </div>
-              <button
-                className="mk-asset-dialog-close"
-                onClick={() => setBoardPanelOpen(false)}
-                aria-label={m.timebar.closeDisplayBoard}
-                autoFocus
-              >
-                <X aria-hidden="true" />
-              </button>
-            </div>
-            <h2 id="display-board-title">{m.timebar.displayBoard}</h2>
-            <ul className="mk-asset-list">
-              {stage && (
-                <li className="mk-asset-list-item mk-info-board-objective">
-                  <div>
-                    <strong>{m.timebar.currentObjective}</strong>
-                    <small>{objectiveText}</small>
-                  </div>
-                </li>
-              )}
-              {boardHistoryEvents.map((event) => (
-                <li key={event.id} className="mk-asset-list-item">
-                  <div>
-                    <strong>{eventText(event, m)}</strong>
-                    <small>
-                      {formatGameDate(MARKET_START_DATE, event.day, locale)}
-                    </small>
-                  </div>
-                </li>
-              ))}
-              {boardHistoryEvents.length === 0 && (
-                <li className="mk-asset-list-item">
-                  <strong>{m.timebar.noRecentEvents}</strong>
-                </li>
-              )}
-            </ul>
-          </section>
-        </div>
-      )}
-
-      {hudPanel === "menu" && (
-        <div
-          className="mk-hud-panel mk-menu-panel"
-          role="menu"
-          aria-label="Menu"
-        >
-          <button onClick={onBack} aria-label="Quit" role="menuitem">
-            <LogOut aria-hidden="true" />
-          </button>
-          <button
-            onClick={() => setHudPanel("objective")}
-            aria-label="Information"
-            role="menuitem"
-          >
-            <Info aria-hidden="true" />
-          </button>
-          <button
-            onClick={() => setHudPanel(null)}
-            aria-label="Settings"
-            role="menuitem"
-          >
-            <Settings aria-hidden="true" />
-          </button>
-        </div>
-      )}
-
-      {hudPanel === "objective" && stage && (
-        <section className="mk-objective-panel" aria-label="Stage objective">
-          <button
-            className="mk-objective-close"
-            onClick={() => setHudPanel(null)}
-            aria-label="Close"
-          >
-            <X aria-hidden="true" />
-          </button>
-          <strong>{localize(stage.subtitle, locale)}</strong>
-          <p>{localize(stage.briefing, locale)}</p>
-          <small>{objectiveText}</small>
-          {stageComplete && onComplete && (
-            <button className="mk-stage-complete" onClick={onComplete}>
-              <Check aria-hidden="true" />{" "}
-              {m.mine.completeStage(String(stage.number).padStart(2, "0"))}
-            </button>
-          )}
-        </section>
-      )}
-
-      {tutorialPrompt && (
-        <aside className="mk-tutorial-callout" aria-live="polite">
-          <small>{t.tutorial.label(tutorialPrompt.step, 9)}</small>
-          <p>{tutorialPrompt.body}</p>
-        </aside>
-      )}
-
-      {tutorial && rewardOverlayOpen && stageComplete && onComplete && (
-        <div className="mk-reward-backdrop">
-          <div className="mk-celebration-burst" aria-hidden="true">
-            {Array.from({ length: 28 }, (_, index) => (
-              <i key={index} style={{ "--spark": index } as CSSProperties} />
-            ))}
-          </div>
-          <section
-            className="mk-reward-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="mk-reward-title"
-          >
-            <div className="mk-reward-mark" aria-hidden="true">
-              <Landmark />
-              <Check />
-            </div>
-            <small>{t.tutorial.rewardEyebrow}</small>
-            <h2 id="mk-reward-title">{t.tutorial.rewardTitle}</h2>
-            <p>{t.tutorial.rewardBody(totalAssets)}</p>
-            <div className="mk-success-stats">
-              <div>
-                <span>{t.tutorial.statTotalAssets}</span>
-                <strong>${totalAssets.toLocaleString()}</strong>
-              </div>
-              <div>
-                <span>{t.tutorial.statCash}</span>
-                <strong>${cash.toLocaleString()}</strong>
-              </div>
-              <div>
-                <span>{t.tutorial.statYield}</span>
-                <strong>+${realizedYield.toLocaleString()}</strong>
-              </div>
-              <div>
-                <span>{t.tutorial.statDeals}</span>
-                <strong>{signedDeals}</strong>
-              </div>
-              <div>
-                <span>{t.tutorial.statDays}</span>
-                <strong>{world.day}</strong>
-              </div>
-            </div>
-            <div className="mk-reward-card">
-              <strong>{t.tutorial.rewardName}</strong>
-              <span>{t.tutorial.rewardDescription}</span>
-            </div>
-            <button type="button" onClick={onComplete} autoFocus>
-              {t.tutorial.rewardAction}
-            </button>
-          </section>
-        </div>
-      )}
-
-      <section className="mk-info-board" aria-label={m.timebar.gameCalendar}>
-        <button
-          className="mk-info-board-trigger"
-          onClick={openDisplayBoard}
-          aria-label={m.timebar.openDisplayBoard}
-          aria-haspopup="dialog"
-          aria-controls="display-board-dialog"
-        >
-          <strong className="mk-info-board-date">
-            {formatGameDate(MARKET_START_DATE, world.day, locale)}
-          </strong>
-          <div className="mk-info-board-window" aria-live="polite">
-            <p key={boardMessage.id} className="mk-info-board-message">
-              {boardMessage.text}
-            </p>
-          </div>
-        </button>
-        <div className="cs-timebar-controls">
-          <button
-            onClick={togglePaused}
-            className={`cs-clock-toggle${
-              (tutorialStep === "collect-repayment" ||
-                tutorialStep === "grow-assets") &&
-              clockView.paused
-                ? " mk-tutorial-target"
-                : ""
-            }`}
-            aria-label={clockView.paused ? m.timebar.resume : m.timebar.pause}
-          >
-            {clockView.paused ? (
-              <Play aria-hidden="true" fill="currentColor" />
-            ) : (
-              <Pause aria-hidden="true" fill="currentColor" />
-            )}
-          </button>
-          {CLOCK_SPEEDS.map((speed) => (
             <button
-              key={speed}
-              className={`cs-clock-speed${clockView.speed === speed ? " active" : ""}`}
-              onClick={() => chooseSpeed(speed)}
-              aria-pressed={clockView.speed === speed}
+              className={askedIncome ? "asked" : ""}
+              onClick={() => setAskedIncome(true)}
             >
-              {speed}x
+              {askedIncome ? <Check /> : <Info />} 소득을 물어본다
             </button>
-          ))}
+            {askedIncome && (
+              <p className="answer-line">“월 소득은 약 $2,400입니다.”</p>
+            )}
+            {askedJob && askedIncome && (
+              <div className="approve-reveal">
+                <span>정보 확인 완료 · 12일 후 $110 상환</span>
+                <button onClick={beginMap}>
+                  <Landmark /> 이자 10%로 $100 빌려주기
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const visibleCustomers = customers.filter(
+    (customer) => customer.appears <= day && customer.status !== "rejected",
+  );
+  const showFundingHint = cash <= 100 && !funding.some((item) => item.accepted);
+  const pointFor = (id: string): { x: number; y: number } => {
+    if (id === "banker") return { x: 50, y: 49 };
+    const customer = customers.find((item) => item.id === id);
+    if (customer) return customer;
+    return funding.find((item) => item.id === id) ?? { x: 50, y: 50 };
+  };
+
+  return (
+    <main className="loan-game">
+      <header className="map-header">
+        <button className="round-button" onClick={onBack} aria-label="뒤로">
+          <ArrowLeft />
+        </button>
+        <div className="brand">
+          <Landmark />
+          <span>
+            <small>MY BANK</small>
+            <strong>{money(cash)}</strong>
+          </span>
         </div>
+        <div className="day-display">
+          <small>현재 날짜</small>
+          <strong>DAY {day + 1}</strong>
+        </div>
+      </header>
+
+      <section className="state-map" aria-label="대출 상태 지도">
+        <div className="map-title">
+          <small>STATE MAP</small>
+          <strong>돈의 흐름을 한눈에 확인하세요</strong>
+        </div>
+        <svg
+          className="connection-layer"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <defs>
+            <marker
+              id="arrow-in"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="5"
+              markerHeight="5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" />
+            </marker>
+          </defs>
+          {visibleCustomers
+            .filter((customer) => customer.status === "accepted")
+            .map((customer) => (
+              <line
+                key={customer.id}
+                className="future-edge customer-edge"
+                x1={customer.x}
+                y1={customer.y}
+                x2="50"
+                y2="49"
+                markerEnd="url(#arrow-in)"
+              />
+            ))}
+          {funding
+            .filter((lender) => lender.accepted)
+            .map((lender) => (
+              <line
+                key={lender.id}
+                className="future-edge debt-edge"
+                x1="50"
+                y1="49"
+                x2={lender.x}
+                y2={lender.y}
+                markerEnd="url(#arrow-in)"
+              />
+            ))}
+        </svg>
+
+        <div
+          className="banker-node map-node"
+          style={{ left: "50%", top: "49%" }}
+        >
+          <span className="node-orbit" />
+          <span className="bank-icon">
+            <Landmark />
+          </span>
+          <strong>나의 은행</strong>
+          <small>보유 현금 {money(cash)}</small>
+        </div>
+
+        {visibleCustomers.map((customer) => (
+          <div
+            key={customer.id}
+            className={`customer-node map-node ${customer.status}`}
+            style={{ left: `${customer.x}%`, top: `${customer.y}%` }}
+          >
+            {customer.status === "waiting" && (
+              <span className="request-tag">
+                {money(customer.amount)} 필요!
+              </span>
+            )}
+            <span className="portrait">
+              <img src={customer.avatar} alt="" />
+              {customer.status === "repaid" && <Check />}
+            </span>
+            <strong>{customer.name}</strong>
+            <small>
+              {customer.status === "waiting"
+                ? "대출 요청"
+                : customer.status === "accepted"
+                  ? `DAY ${customer.dueDay + 1} 상환`
+                  : "상환 완료"}
+            </small>
+            {customer.status === "waiting" && (
+              <button onClick={() => setSelected(customer)}>상세보기</button>
+            )}
+          </div>
+        ))}
+
+        {funding
+          .filter((lender) => lender.accepted)
+          .map((lender) => (
+            <div
+              key={lender.id}
+              className="lender-node map-node"
+              style={{ left: `${lender.x}%`, top: `${lender.y}%` }}
+            >
+              <span className="bank-icon small">
+                <Landmark />
+              </span>
+              <strong>{lender.name}</strong>
+              <small>
+                {money(lender.amount)} · {lender.rate}%
+              </small>
+            </div>
+          ))}
+
+        {transfer &&
+          (() => {
+            const from = pointFor(transfer.from);
+            const to = pointFor(transfer.to);
+            return (
+              <div
+                key={transfer.id}
+                className="flying-money"
+                style={
+                  {
+                    "--from-x": `${from.x}vw`,
+                    "--from-y": `${from.y}vh`,
+                    "--to-x": `${to.x}vw`,
+                    "--to-y": `${to.y}vh`,
+                  } as React.CSSProperties
+                }
+              >
+                {money(transfer.amount)}
+              </div>
+            );
+          })()}
+
+        {showFundingHint && (
+          <aside className="funding-hint">
+            <Landmark />
+            <div>
+              <strong>빌려줄 현금이 부족해요</strong>
+              <p>다른 사람들로부터 돈을 빌리세요.</p>
+            </div>
+            <button onClick={() => setFundingOpen(true)}>대출 상품 보기</button>
+          </aside>
+        )}
       </section>
 
-      {/* The map (and its Pixi Application) stays mounted for the whole
-          session; detail pages cover it as opaque overlays.  Destroying and
-          recreating the Pixi renderer per navigation corrupts pixi's global
-          texture pool. */}
-      <div className="mk-content">
-        <div className="mk-map">
-          <MarketStageView
-            world={world}
-            locale={locale}
-            suspended={view !== "map"}
-            timeFlowing={!clockView.paused}
-            highlightedDemandId={
-              tutorial && tutorialStep !== "claim-reward"
-                ? tutorialStep === "inspect-deposit"
-                  ? (depositDemand?.id ?? null)
-                  : targetDemand?.status === "open"
-                    ? tutorial.targetDemandId
-                    : null
-                : null
-            }
-            highlightedContractId={
-              tutorialStep === "await-request" ||
-              tutorialStep === "approve-request"
-                ? (targetRequestContract?.id ??
-                  (tutorialStep === "await-request"
-                    ? (world.contracts[0]?.id ?? null)
-                    : null))
-                : null
-            }
-            onTapDemand={(id) => openDemandDetail(id, "map")}
-            onTapContract={openContractDetail}
-            pendingAbsorptions={pendingAbsorptions}
-            onAbsorptionComplete={completeAbsorption}
-            onMoveContract={repositionContract}
+      <footer className="time-controller">
+        <div>
+          <span
+            className={clockView.paused ? "status-dot paused" : "status-dot"}
           />
-          <button
-            className="mk-fab"
-            onClick={() => openBuilder(null)}
-            aria-label={t.postContract}
-          >
-            <Plus aria-hidden="true" />
-          </button>
+          <small>{clockView.paused ? "시간 멈춤" : "시간 진행 중"}</small>
         </div>
+        <button
+          className="play-time"
+          onClick={toggleClock}
+          aria-label={clockView.paused ? "시간 재생" : "일시정지"}
+        >
+          {clockView.paused ? (
+            <Play fill="currentColor" />
+          ) : (
+            <Pause fill="currentColor" />
+          )}
+        </button>
+        <button className="speed-time" onClick={cycleSpeed}>
+          {clockView.speed}×
+        </button>
+        <p>시간을 진행하면 새로운 고객이 나타나고 대출이 상환됩니다.</p>
+      </footer>
 
-        {view === "demand" && selectedDemand && (
-          <div className="mk-overlay">
-            <DemandDetail
-              demand={selectedDemand}
-              locale={locale}
-              highlightDraftAction={
-                tutorialStep === "open-builder" ||
-                tutorialStep === "open-deposit-builder"
-              }
-              onDraft={
-                demandOrigin === "map"
-                  ? () => openBuilder(selectedDemand.id)
-                  : undefined
-              }
-            />
-          </div>
-        )}
+      {notice && <div className="game-notice">{notice}</div>}
 
-        {view === "contract" && selectedContract && (
-          <div className="mk-overlay">
-            <ContractDetail
-              contract={selectedContract}
-              locale={locale}
-              onDecide={decideRequest}
-              onOpenActor={(demandId) => openDemandDetail(demandId, "contract")}
-              onEdit={() => openBuilderForContract(selectedContract)}
-              highlightAcceptRequestId={
-                tutorialStep === "approve-request"
-                  ? targetRequest?.id
-                  : undefined
-              }
-            />
-          </div>
-        )}
+      {selected && (
+        <div className="modal-backdrop" onMouseDown={() => setSelected(null)}>
+          <section
+            className="detail-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setSelected(null)}
+              aria-label="닫기"
+            >
+              <X />
+            </button>
+            <img src={selected.avatar} alt="" />
+            <small>NEW LOAN REQUEST</small>
+            <h2>{selected.name}</h2>
+            <p className="request-copy">
+              “사업과 생활에 필요한 <strong>{money(selected.amount)}</strong>를
+              빌리고 싶어요.”
+            </p>
+            <dl>
+              <div>
+                <dt>직업</dt>
+                <dd>{selected.job}</dd>
+              </div>
+              <div>
+                <dt>월 소득</dt>
+                <dd>{money(selected.income)}</dd>
+              </div>
+              <div>
+                <dt>대출 금액</dt>
+                <dd>{money(selected.amount)}</dd>
+              </div>
+              <div>
+                <dt>상환 조건</dt>
+                <dd>
+                  {selected.term}일 · 이자 {selected.rate}%
+                </dd>
+              </div>
+            </dl>
+            <div className="decision-row">
+              <button
+                className="reject-button"
+                onClick={() => reject(selected)}
+              >
+                거절
+              </button>
+              <button
+                className="accept-button"
+                onClick={() => approve(selected)}
+                disabled={cash < selected.amount}
+              >
+                대출하기 · {money(selected.amount)}
+              </button>
+            </div>
+            {cash < selected.amount && (
+              <button
+                className="need-funding"
+                onClick={() => {
+                  setSelected(null);
+                  setFundingOpen(true);
+                }}
+              >
+                현금이 부족합니다 · 자금 빌리기
+              </button>
+            )}
+          </section>
+        </div>
+      )}
 
-        {view === "builder" && (
-          <div className="mk-overlay">
-            <MarketBuilder
-              nodes={builderNodes}
-              locale={locale}
-              editing={Boolean(editingContractId)}
-              onChangeNodes={setBuilderNodes}
-              onSubmit={submitDraft}
-              onWithdraw={editingContractId ? removeContract : undefined}
-              tutorialStep={tutorialStep}
-            />
-          </div>
-        )}
-      </div>
-
-      {notice && (
-        <p className="mk-toast" role="status">
-          {notice}
-        </p>
+      {fundingOpen && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={() => setFundingOpen(false)}
+        >
+          <section
+            className="funding-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setFundingOpen(false)}
+              aria-label="닫기"
+            >
+              <X />
+            </button>
+            <small>INTERBANK FUNDING</small>
+            <h2>다른 은행에서 돈 빌리기</h2>
+            <p>받은 돈은 현금이 되고, 갚을 의무는 맵에 점선으로 표시됩니다.</p>
+            <div className="funding-options">
+              {funding
+                .filter((item) => !item.accepted)
+                .map((lender) => (
+                  <article key={lender.id}>
+                    <span className="bank-icon small">
+                      <Landmark />
+                    </span>
+                    <div>
+                      <strong>{lender.name}</strong>
+                      <small>{lender.dueDay}일 후 상환</small>
+                    </div>
+                    <div className="funding-rate">
+                      <strong>{money(lender.amount)}</strong>
+                      <small>연 {lender.rate}%</small>
+                    </div>
+                    <button onClick={() => borrow(lender)}>선택</button>
+                  </article>
+                ))}
+            </div>
+          </section>
+        </div>
       )}
     </main>
   );
