@@ -844,6 +844,11 @@ function applyBorrowerProfile(
   if (!profile) return actor;
   return {
     ...actor,
+    occupation:
+      actor.occupation ??
+      (profile.minimumMonthlyIncome
+        ? text("Verified income source", "확인된 소득원")
+        : null),
     monthlyIncome: Math.max(
       actor.monthlyIncome,
       profile.minimumMonthlyIncome ?? 0,

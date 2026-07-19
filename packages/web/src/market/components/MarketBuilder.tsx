@@ -4,7 +4,7 @@ import type { Locale } from "../../i18n/locale.ts";
 import { messagesFor } from "../../i18n/messages/index.ts";
 import {
   descendantCount,
-  makeNode,
+  makeGuidedNode,
   SAMPLE_REQUESTER,
   validateDraft,
   type BuilderAddableNode,
@@ -60,6 +60,8 @@ export function MarketBuilder({
   );
   const transferCount = nodes.filter((node) => node.kind === "transfer").length;
   const buildingDeposit = tutorialStep === "build-deposit";
+  const guidedDeposit =
+    tutorialStep === "build-deposit" || tutorialStep === "post-deposit";
   const nextTutorialNode = (() => {
     if (tutorialStep !== "build-contract" && !buildingDeposit) return null;
     if (buildingDeposit && !hasIncomingTransfer) return "transfer";
@@ -89,7 +91,12 @@ export function MarketBuilder({
     target: BuilderInsertTarget,
     kind: BuilderAddableNode,
   ): void {
-    const node = makeNode(kind);
+    const guidedFlow = buildingDeposit
+      ? "deposit"
+      : tutorialStep === "build-contract"
+        ? "loan"
+        : null;
+    const node = makeGuidedNode(kind, guidedFlow, nodes);
     const insertAt = (
       path: readonly MarketBuilderNode[],
     ): MarketBuilderNode[] => {
@@ -170,11 +177,17 @@ export function MarketBuilder({
           <span>{t.builderSummary}</span>
           <p>
             {preview
-              ? t.previewLine(
-                  preview.principal,
-                  preview.termDays,
-                  preview.repayment,
-                )
+              ? guidedDeposit
+                ? t.depositPreviewLine(
+                    preview.repayment,
+                    preview.termDays,
+                    preview.principal,
+                  )
+                : t.previewLine(
+                    preview.principal,
+                    preview.termDays,
+                    preview.repayment,
+                  )
               : t.brokenPreview}
           </p>
         </div>
@@ -216,19 +229,22 @@ export function MarketBuilder({
           }
           onRequestInsert={setInsertMenu}
         />
-        {issue && dismissedIssue !== issue && (
-          <aside className="mk-canvas-tip" role="status">
-            <p>{issue}</p>
-            <button
-              type="button"
-              onClick={() => setDismissedIssue(issue)}
-              aria-label={m.builder.dismissTip}
-            >
-              <X aria-hidden="true" />
-            </button>
-          </aside>
-        )}
-        {!issue && (
+        {issue &&
+          dismissedIssue !== issue &&
+          tutorialStep !== "build-contract" &&
+          tutorialStep !== "build-deposit" && (
+            <aside className="mk-canvas-tip" role="status">
+              <p>{issue}</p>
+              <button
+                type="button"
+                onClick={() => setDismissedIssue(issue)}
+                aria-label={m.builder.dismissTip}
+              >
+                <X aria-hidden="true" />
+              </button>
+            </aside>
+          )}
+        {!issue && !tutorialStep && (
           <p className="cs-builder-feedback ready mk-canvas-ready">
             {t.builderReady}
           </p>

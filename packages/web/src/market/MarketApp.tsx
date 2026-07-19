@@ -93,29 +93,34 @@ function tutorialPromptDetails(
         step: 2,
         body: tutorial.openBuilder,
       };
+    case "open-deposit-builder":
+      return {
+        step: 7,
+        body: tutorial.openDepositBuilder,
+      };
     case "build-contract":
       return { step: 3, body: tutorial.buildContract };
     case "post-contract":
-      return { step: 3, body: tutorial.postContract };
+      return { step: 4, body: tutorial.postContract };
     case "await-request":
       return { step: 4, body: tutorial.awaitRequest };
     case "approve-request":
       return {
-        step: 5,
+        step: 4,
         body: tutorial.approveRequest,
       };
     case "collect-repayment":
-      return { step: 6, body: tutorial.collectRepayment };
+      return { step: 5, body: tutorial.collectRepayment };
     case "inspect-deposit":
-      return { step: 7, body: tutorial.inspectDeposit };
+      return { step: 6, body: tutorial.inspectDeposit };
     case "build-deposit":
-      return { step: 8, body: tutorial.buildDeposit };
+      return { step: 7, body: tutorial.buildDeposit };
     case "post-deposit":
-      return { step: 8, body: tutorial.postDeposit };
+      return { step: 7, body: tutorial.postDeposit };
     case "grow-assets":
-      return { step: 9, body: tutorial.growAssets };
+      return { step: 8, body: tutorial.growAssets };
     case "claim-reward":
-      return { step: 10, body: "" };
+      return { step: 9, body: "" };
   }
 }
 
@@ -282,6 +287,13 @@ export function MarketApp({
   const repaidLoans = loanAssets.filter(
     (asset) => asset.status === "settled",
   ).length;
+  const realizedYield = loanAssets.reduce(
+    (total, asset) =>
+      asset.status === "settled" && asset.loan
+        ? total + Math.max(0, asset.loan.repayment - asset.loan.principal)
+        : total,
+    0,
+  );
   const assetTarget = stage?.assetTarget ?? stage?.cashTarget ?? 0;
   const inAssetObjective = Boolean(stage && repaidLoans >= stage.repaidLoans);
   const objectiveText = inAssetObjective
@@ -363,6 +375,30 @@ export function MarketApp({
               )),
         })
       : null;
+  const previousTutorialStepRef = useRef<FirstYieldTutorialStep | null>(null);
+  const previousRepaidLoansRef = useRef(repaidLoans);
+  const previousYieldRef = useRef(realizedYield);
+
+  // Every guided milestone is a safe reading moment. The player explicitly
+  // resumes only for the time-advance step, and later milestones pause again.
+  useEffect(() => {
+    if (!tutorialStep || previousTutorialStepRef.current === tutorialStep)
+      return;
+    previousTutorialStepRef.current = tutorialStep;
+    clockRef.current?.pause();
+    setClockView((current) =>
+      current.paused ? current : { ...current, paused: true },
+    );
+  }, [tutorialStep]);
+
+  useEffect(() => {
+    if (repaidLoans > previousRepaidLoansRef.current) {
+      const newYield = Math.max(0, realizedYield - previousYieldRef.current);
+      setNotice(t.tutorial.yieldCollected(newYield));
+    }
+    previousRepaidLoansRef.current = repaidLoans;
+    previousYieldRef.current = realizedYield;
+  }, [realizedYield, repaidLoans, t.tutorial]);
   const boardMessages = useMemo(() => {
     const recentEvents = world.log
       .filter(
@@ -580,7 +616,7 @@ export function MarketApp({
       : null;
 
   return (
-    <main className="cs-shell mk-shell">
+    <main className={`cs-shell mk-shell mk-view-${view}`}>
       <div className={`mk-hud${view !== "map" ? " mk-hud-with-back" : ""}`}>
         {view !== "map" && (
           <button
@@ -815,7 +851,7 @@ export function MarketApp({
 
       {tutorialPrompt && (
         <aside className="mk-tutorial-callout" aria-live="polite">
-          <small>{t.tutorial.label(tutorialPrompt.step, 10)}</small>
+          <small>{t.tutorial.label(tutorialPrompt.step, 9)}</small>
           <p>{tutorialPrompt.body}</p>
         </aside>
       )}
@@ -850,6 +886,10 @@ export function MarketApp({
                 <strong>${cash.toLocaleString()}</strong>
               </div>
               <div>
+                <span>{t.tutorial.statYield}</span>
+                <strong>+${realizedYield.toLocaleString()}</strong>
+              </div>
+              <div>
                 <span>{t.tutorial.statDeals}</span>
                 <strong>{signedDeals}</strong>
               </div>
@@ -857,6 +897,10 @@ export function MarketApp({
                 <span>{t.tutorial.statDays}</span>
                 <strong>{world.day}</strong>
               </div>
+            </div>
+            <div className="mk-reward-card">
+              <strong>{t.tutorial.rewardName}</strong>
+              <span>{t.tutorial.rewardDescription}</span>
             </div>
             <button type="button" onClick={onComplete} autoFocus>
               {t.tutorial.rewardAction}
@@ -886,7 +930,9 @@ export function MarketApp({
           <button
             onClick={togglePaused}
             className={`cs-clock-toggle${
-              tutorialStep === "collect-repayment" && clockView.paused
+              (tutorialStep === "collect-repayment" ||
+                tutorialStep === "grow-assets") &&
+              clockView.paused
                 ? " mk-tutorial-target"
                 : ""
             }`}
@@ -960,7 +1006,10 @@ export function MarketApp({
             <DemandDetail
               demand={selectedDemand}
               locale={locale}
-              highlightDraftAction={tutorialStep === "open-builder"}
+              highlightDraftAction={
+                tutorialStep === "open-builder" ||
+                tutorialStep === "open-deposit-builder"
+              }
               onDraft={
                 demandOrigin === "map"
                   ? () => openBuilder(selectedDemand.id)

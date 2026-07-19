@@ -464,6 +464,16 @@
   line-height: 1.4;
 }
 
+/* The builder owns the strip directly below the HUD. Keep guided copy below
+   its summary and move the Pixi camera control out of the same visual lane. */
+.mk-view-builder .mk-tutorial-callout {
+  top: calc(max(8px, env(safe-area-inset-top)) + 142px);
+}
+
+.mk-view-builder .mk-canvas-fit {
+  top: 74px;
+}
+
 .mk-reward-dialog > button {
   min-height: 38px;
   margin-top: 9px;
@@ -484,6 +494,10 @@
   outline: 3px solid #72d8b4 !important;
   outline-offset: 3px;
   animation: mk-tutorial-target-pulse 900ms ease-out infinite;
+}
+
+.cs-offer-button.mk-tutorial-target {
+  position: fixed;
 }
 
 @keyframes mk-tutorial-target-pulse {
@@ -553,6 +567,10 @@
   border-radius: 14px;
   background: rgba(8, 24, 45, 0.72);
   text-align: left;
+}
+
+.mk-success-stats > div:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 
 .mk-success-stats span {

@@ -4,6 +4,12 @@ import {
   deriveFirstYieldTutorialStep,
   type FirstYieldTutorialSnapshot,
 } from "../src/market/tutorial-flow.ts";
+import {
+  emptyDraftNodes,
+  makeGuidedNode,
+} from "../src/market/builder-draft.ts";
+import { evaluateRecipe } from "../src/market/market-recipe.ts";
+import type { MarketBuilderNode } from "../src/market/market-world.ts";
 
 const snapshot = (
   overrides: Partial<FirstYieldTutorialSnapshot> = {},
@@ -69,7 +75,7 @@ test("the first-yield tutorial follows the real market lifecycle", () => {
         view: "demand",
       }),
     ),
-    "open-builder",
+    "open-deposit-builder",
   );
   assert.equal(
     deriveFirstYieldTutorialStep(
@@ -91,4 +97,31 @@ test("a completed repayment always wins over stale UI state", () => {
     ),
     "claim-reward",
   );
+});
+
+test("guided loan nodes preset a visible ten-percent first yield", () => {
+  const nodes: MarketBuilderNode[] = emptyDraftNodes();
+  nodes.push(makeGuidedNode("transfer", "loan", nodes));
+  nodes.push(makeGuidedNode("wait", "loan", nodes));
+  const repayment = makeGuidedNode("transfer", "loan", nodes);
+
+  assert.equal(repayment.kind, "transfer");
+  assert.equal(repayment.senderId, "customer");
+  assert.equal(repayment.recipientId, "player");
+  assert.equal(evaluateRecipe(repayment.amount, { amount: 300 }), 330);
+});
+
+test("guided deposit nodes reverse cash flow and preset six-percent payout", () => {
+  const nodes: MarketBuilderNode[] = emptyDraftNodes();
+  const funding = makeGuidedNode("transfer", "deposit", nodes);
+  nodes.push(funding, makeGuidedNode("wait", "deposit", nodes));
+  const payout = makeGuidedNode("transfer", "deposit", nodes);
+
+  assert.equal(funding.kind, "transfer");
+  assert.equal(funding.senderId, "customer");
+  assert.equal(funding.recipientId, "player");
+  assert.equal(payout.kind, "transfer");
+  assert.equal(payout.senderId, "player");
+  assert.equal(payout.recipientId, "customer");
+  assert.equal(evaluateRecipe(payout.amount, { amount: 700 }), 742);
 });

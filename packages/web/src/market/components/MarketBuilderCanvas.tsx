@@ -76,7 +76,8 @@ interface PathOwner {
   branch: BuilderBranch | null;
 }
 
-// The 44px add control needs breathing room between adjacent node cards.
+// The visible control is compact, while its 64px Pixi hit area stays
+// forgiving for thumbs without changing the graph's visual density.
 const ROW_GAP = 72;
 const START_ROW_GAP = 72;
 const BRANCH_GAP = 72;
@@ -230,18 +231,26 @@ class BuilderCanvasScene {
     if (!this.ready) return;
     const width = Math.max(1, this.bounds.maxX - this.bounds.minX);
     const height = Math.max(1, this.bounds.maxY - this.bounds.minY);
+    const topInset = 72;
+    const bottomInset = 84;
+    const availableHeight = Math.max(
+      1,
+      this.app.screen.height - topInset - bottomInset,
+    );
     const scale = Math.max(
       0.14,
       Math.min(
         1,
         (this.app.screen.width - 96) / width,
-        (this.app.screen.height - 96) / height,
+        availableHeight / height,
       ),
     );
     this.world.scale.set(scale);
     this.world.position.set(
       (this.app.screen.width - width * scale) / 2 - this.bounds.minX * scale,
-      (this.app.screen.height - height * scale) / 2 - this.bounds.minY * scale,
+      topInset +
+        (availableHeight - height * scale) / 2 -
+        this.bounds.minY * scale,
     );
     this.reportLayout();
   }
@@ -417,7 +426,7 @@ class BuilderCanvasScene {
         BUILDER_VARIABLES,
       );
     }
-    if (!this.fitted) {
+    if (!this.fitted || this.highlightAddControls) {
       this.fitted = true;
       this.fit();
     } else {
@@ -600,9 +609,9 @@ class BuilderCanvasScene {
     root.position.set(x, y);
     root.eventMode = "static";
     root.cursor = "pointer";
-    root.hitArea = new Rectangle(-22, -22, 44, 44);
+    root.hitArea = new Rectangle(-32, -32, 64, 64);
     const circle = new Graphics()
-      .circle(0, 0, 16)
+      .circle(0, 0, 18)
       .fill(COLOR.night)
       .stroke({
         color: this.highlightAddControls ? COLOR.green : COLOR.gold,

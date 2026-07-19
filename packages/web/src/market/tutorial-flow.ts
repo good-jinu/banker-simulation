@@ -8,6 +8,7 @@
 export type FirstYieldTutorialStep =
   | "inspect-request"
   | "open-builder"
+  | "open-deposit-builder"
   | "build-contract"
   | "post-contract"
   | "await-request"
@@ -50,7 +51,7 @@ export function deriveFirstYieldTutorialStep({
       return draftIsReady ? "post-deposit" : "build-deposit";
     if (hasDepositContract) return "grow-assets";
     if (view === "demand" && selectedDemandKind === "deposit")
-      return "open-builder";
+      return "open-deposit-builder";
     return "inspect-deposit";
   }
   if (hasActiveTargetLoan || targetRequestStatus === "accepted")

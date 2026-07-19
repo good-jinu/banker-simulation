@@ -70,7 +70,7 @@ export const en = {
     genderFemale: "Female",
     genderMale: "Male",
     ageYears: (age: number) => `${age} years old`,
-    unemployed: "No job",
+    unemployed: "No listed occupation",
     factGender: "Gender",
     factAge: "Age",
     factOccupation: "Occupation",
@@ -113,7 +113,9 @@ export const en = {
     borrower: "Borrower",
     builderSummary: "Offer summary",
     previewLine: (principal: number, days: number, repayment: number) =>
-      `Sample $100 · 90-day requester → lend $${principal.toLocaleString()}, collect $${repayment.toLocaleString()} after ${days} days.`,
+      `Sample $100 · lend $${principal.toLocaleString()}, collect $${repayment.toLocaleString()} after ${days} days · yield ${repayment - principal >= 0 ? "+" : "−"}$${Math.abs(repayment - principal).toLocaleString()}.`,
+    depositPreviewLine: (received: number, days: number, payout: number) =>
+      `Sample depositor · receive $${received.toLocaleString()}, return $${payout.toLocaleString()} after ${days} days · funding cost $${Math.max(0, payout - received).toLocaleString()}.`,
     brokenPreview:
       "These formulas do not produce valid terms — check the amounts, the wait, and the repayment.",
     conditionIf: "If",
@@ -205,6 +207,7 @@ export const en = {
       label: (step: number, total: number) => `GUIDED RUN · ${step}/${total}`,
       inspectRequest: "Choose the highlighted request.",
       openBuilder: "Turn this request into a contract.",
+      openDepositBuilder: "Turn this savings offer into a contract.",
       buildContract:
         "Add a transfer out, a wait, and a transfer back. The builder will confirm when it is ready.",
       postContract: "Your contract is ready. Post it to the market.",
@@ -213,14 +216,16 @@ export const en = {
       approveRequest:
         "The request is waiting. Open the contract and approve it.",
       collectRepayment:
-        "Start time and watch the contract collect its repayment.",
+        "Start time and watch $300 return as $330. You earn the $30 difference.",
       inspectDeposit:
         "The Savings Quarter is open. Choose a highlighted depositor there.",
       buildDeposit:
         "Reverse the flow: receive amount, wait days, then return at least amount × 1.06.",
       postDeposit: "Post this savings contract inside the Savings Quarter.",
       growAssets:
-        "Bring depositors into savings contracts until total assets reach $3,000.",
+        "Resume time. New depositors will use your savings contract until total assets reach $3,000.",
+      yieldCollected: (amount: number) =>
+        `Yield collected · +$${amount.toLocaleString()}`,
       rewardEyebrow: "FIRST AUTOMATION COMPLETE",
       rewardTitle: "Your first yield is working.",
       rewardBody: (assets: number) =>
@@ -228,11 +233,12 @@ export const en = {
       rewardName: "Founder's Contract Stamp",
       rewardDescription:
         "Permanent proof that you built a working financial machine.",
-      rewardAction: "Unlock Stage 02",
+      rewardAction: "Return to campaign",
       statTotalAssets: "Total assets",
       statCash: "Cash collected",
       statDeals: "Deals signed",
       statDays: "Days used",
+      statYield: "Realized yield",
     },
   },
   gameApp: {
@@ -241,7 +247,7 @@ export const en = {
     campaignStages: "Campaign stages",
     completePriorStage: "Complete prior stage",
     locked: "Locked",
-    playAgain: "Play again",
+    playAgain: "Free replay",
     language: "Language",
   },
 };

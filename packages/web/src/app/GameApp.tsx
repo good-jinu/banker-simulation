@@ -5,6 +5,7 @@ import { localize } from "../i18n/local-text.ts";
 import {
   marketCampaignStages,
   marketStageById,
+  type MarketCampaignStage,
 } from "../market/market-campaign.ts";
 import { detectLocale, type Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
@@ -19,6 +20,11 @@ import "./game.css";
 
 type Screen = "home" | "stages" | "campaign";
 
+function freeReplay(stage: MarketCampaignStage): MarketCampaignStage {
+  const { tutorial: _tutorial, ...replayStage } = stage;
+  return replayStage;
+}
+
 export function GameApp() {
   const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
@@ -32,6 +38,10 @@ export function GameApp() {
     () => emptySave().settings,
   );
   const locale: Locale = settings.locale ?? detectLocale();
+  const selectedStage = marketStageById(selectedStageId);
+  const stageForRun = campaign.completedStageIds.includes(selectedStageId)
+    ? freeReplay(selectedStage)
+    : selectedStage;
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -82,12 +92,12 @@ export function GameApp() {
   if (screen === "campaign") {
     return (
       <MarketApp
-        stage={marketStageById(selectedStageId)}
+        stage={stageForRun}
         locale={locale}
         onBack={() => setScreen("stages")}
         onComplete={() => {
           setCampaign((current) => {
-            const stage = marketStageById(selectedStageId);
+            const stage = selectedStage;
             return {
               ...current,
               completedStageIds: current.completedStageIds.includes(stage.id)

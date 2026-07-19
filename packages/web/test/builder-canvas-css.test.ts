@@ -44,21 +44,33 @@ test("the compact start node cannot grow beyond its declared card", () => {
 });
 
 test("the start node is only a compact graph entry point", () => {
-  assert.match(canvasSource, /case "start":\s*return \{ width: 180, height: 52 \}/);
+  assert.match(
+    canvasSource,
+    /case "start":\s*return \{ width: 180, height: 52 \}/,
+  );
   assert.doesNotMatch(canvasSource, /mk-canvas-start-detail/);
   assert.doesNotMatch(styles, /\.mk-canvas-start-detail/);
 });
 
 test("condition scopes retain nested scope bounds", () => {
   assert.match(canvasSource, /const nestedScopes = this\.scopeBounds\.slice/);
-  assert.match(canvasSource, /\.\.\.nestedScopes\.map\(\(scope\) => scope\.minX\)/);
-  assert.match(canvasSource, /\.\.\.nestedScopes\.map\(\(scope\) => scope\.maxY\)/);
+  assert.match(
+    canvasSource,
+    /\.\.\.nestedScopes\.map\(\(scope\) => scope\.minX\)/,
+  );
+  assert.match(
+    canvasSource,
+    /\.\.\.nestedScopes\.map\(\(scope\) => scope\.maxY\)/,
+  );
 });
 
 test("condition scopes include their branch terminal controls", () => {
   assert.match(canvasSource, /return startY \+ 22;/);
   assert.match(canvasSource, /const scopeBottom = contentBottom \+ 24;/);
-  assert.match(canvasSource, /\? scopeBottom \+ rowGap \+ nextSize\.height \/ 2/);
+  assert.match(
+    canvasSource,
+    /\? scopeBottom \+ rowGap \+ nextSize\.height \/ 2/,
+  );
   assert.match(canvasSource, /return terminalY \+ 22;/);
 });
 
@@ -74,6 +86,16 @@ test("add controls are centered in the space between node edges", () => {
   );
 });
 
+test("guided Pixi add controls stay thumb-sized and auto-fit after edits", () => {
+  assert.match(canvasSource, /new Rectangle\(-32, -32, 64, 64\)/);
+  assert.match(
+    canvasSource,
+    /if \(!this\.fitted \|\| this\.highlightAddControls\)/,
+  );
+  assert.match(canvasSource, /const topInset = 72;/);
+  assert.match(canvasSource, /const bottomInset = 84;/);
+});
+
 test("formula parts append horizontally and remove from their picker", () => {
   const expression = cssRule(".mk-recipe-expression");
   assert.match(expression, /flex-wrap:\s*nowrap;/);
@@ -81,11 +103,17 @@ test("formula parts append horizontally and remove from their picker", () => {
   assert.match(recipeFieldSource, /className="mk-recipe-expand"/);
   assert.match(recipeFieldSource, /className="mk-formula-picker-remove"/);
   assert.doesNotMatch(recipeFieldSource, /className="mk-recipe-remove"/);
-  assert.match(recipeFieldSource, /onChange\(operation\("add", recipe, constant\(1\)\)\)/);
+  assert.match(
+    recipeFieldSource,
+    /onChange\(operation\("add", recipe, constant\(1\)\)\)/,
+  );
 });
 
 test("only the add control expands a formula", () => {
-  assert.match(recipeFieldSource, /if \(selected\.kind !== "operation"\) return;/);
+  assert.match(
+    recipeFieldSource,
+    /if \(selected\.kind !== "operation"\) return;/,
+  );
   assert.match(
     recipeFieldSource,
     /selectedRecipe\.kind === "operation" \? \([\s\S]*operatorCards[\s\S]*\) : \([\s\S]*valueCards/,

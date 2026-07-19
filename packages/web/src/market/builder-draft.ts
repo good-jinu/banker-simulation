@@ -263,3 +263,62 @@ export function makeNode(kind: BuilderAddableNode): MarketBuilderNode {
     amount: value("amount"),
   };
 }
+
+export type GuidedContractFlow = "loan" | "deposit";
+
+/**
+ * Keep the guided run focused on graph structure while still producing an
+ * economically meaningful first contract. Players can edit every preset.
+ */
+export function makeGuidedNode(
+  kind: BuilderAddableNode,
+  flow: GuidedContractFlow | null,
+  nodes: readonly MarketBuilderNode[],
+): MarketBuilderNode {
+  const node = makeNode(kind);
+  if (node.kind !== "transfer" || !flow) return node;
+
+  const hasTransfer = (
+    path: readonly MarketBuilderNode[],
+    predicate: (candidate: MarketBuilderNode) => boolean,
+  ): boolean =>
+    path.some(
+      (candidate) =>
+        predicate(candidate) ||
+        (candidate.kind === "condition" &&
+          (hasTransfer(candidate.thenSteps ?? [], predicate) ||
+            hasTransfer(candidate.elseSteps ?? [], predicate))),
+    );
+  const hasIncoming = hasTransfer(
+    nodes,
+    (candidate) =>
+      candidate.kind === "transfer" && candidate.recipientId === "player",
+  );
+  const hasOutgoing = hasTransfer(
+    nodes,
+    (candidate) =>
+      candidate.kind === "transfer" && candidate.senderId === "player",
+  );
+
+  if (flow === "loan" && hasOutgoing && !hasIncoming)
+    return {
+      ...node,
+      senderId: "customer",
+      recipientId: "player",
+      amount: operation("multiply", value("amount"), constant(1.1)),
+    };
+  if (flow === "deposit" && !hasIncoming)
+    return {
+      ...node,
+      senderId: "customer",
+      recipientId: "player",
+    };
+  if (flow === "deposit" && hasIncoming && !hasOutgoing)
+    return {
+      ...node,
+      senderId: "player",
+      recipientId: "customer",
+      amount: operation("multiply", value("amount"), constant(1.06)),
+    };
+  return node;
+}

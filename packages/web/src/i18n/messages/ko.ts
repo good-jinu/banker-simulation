@@ -66,7 +66,7 @@ export const ko: Messages = {
     genderFemale: "여성",
     genderMale: "남성",
     ageYears: (age) => `${age}세`,
-    unemployed: "무직",
+    unemployed: "등록된 직업 없음",
     factGender: "성별",
     factAge: "나이",
     factOccupation: "직업",
@@ -109,7 +109,9 @@ export const ko: Messages = {
     borrower: "대출자",
     builderSummary: "제안 요약",
     previewLine: (principal, days, repayment) =>
-      `샘플 $100 · 90일 요청자 → $${principal.toLocaleString()} 대출, ${days}일 후 $${repayment.toLocaleString()} 회수`,
+      `샘플 $100 · $${principal.toLocaleString()} 실행, ${days}일 후 $${repayment.toLocaleString()} 회수 · 수익 ${repayment - principal >= 0 ? "+" : "−"}$${Math.abs(repayment - principal).toLocaleString()}`,
+    depositPreviewLine: (received, days, payout) =>
+      `예금 샘플 · $${received.toLocaleString()} 조달, ${days}일 후 $${payout.toLocaleString()} 지급 · 조달 비용 $${Math.max(0, payout - received).toLocaleString()}`,
     brokenPreview:
       "이 수식으로는 유효한 조건이 만들어지지 않습니다. 금액, 대기, 상환 수식을 확인하세요.",
     conditionIf: "만약",
@@ -202,6 +204,7 @@ export const ko: Messages = {
       label: (step, total) => `가이드 진행 · ${step}/${total}`,
       inspectRequest: "강조된 요청을 선택하세요.",
       openBuilder: "이 요청을 컨트랙트로 만들어 보세요.",
+      openDepositBuilder: "이 예금 제안을 컨트랙트로 만들어 보세요.",
       buildContract:
         "송금, 대기, 회수 송금을 추가하세요. 준비되면 빌더가 알려드립니다.",
       postContract: "컨트랙트가 준비되었습니다. 마켓에 게시하세요.",
@@ -209,13 +212,16 @@ export const ko: Messages = {
         "조건이 맞는 요청이 강조된 컨트랙트로 자동 연결되고 있습니다.",
       approveRequest: "요청이 도착했습니다. 컨트랙트를 열어 승인하세요.",
       collectRepayment:
-        "시간을 시작하고 컨트랙트가 상환을 회수하는 모습을 확인하세요.",
+        "시간을 시작하세요. $300이 $330으로 돌아오며 차액 $30이 수익입니다.",
       inspectDeposit:
         "저축 금융 지구가 열렸습니다. 강조된 예금 고객을 선택하세요.",
       buildDeposit:
         "현금 흐름을 반대로 만드세요. amount를 받고 days만큼 기다린 뒤 최소 amount × 1.06을 돌려줍니다.",
       postDeposit: "예금 컨트랙트를 저축 금융 지구에 게시하세요.",
-      growAssets: "예금 고객을 유치해 Total Assets를 $3,000까지 키우세요.",
+      growAssets:
+        "시간을 재개하세요. 새 예금 고객이 자동으로 가입해 Total Assets가 $3,000까지 성장합니다.",
+      yieldCollected: (amount) =>
+        `수익 회수 완료 · +$${amount.toLocaleString()}`,
       rewardEyebrow: "첫 자동화 완료",
       rewardTitle: "첫 수익 계약이 작동했습니다.",
       rewardBody: (assets) =>
@@ -223,11 +229,12 @@ export const ko: Messages = {
       rewardName: "창립자 컨트랙트 스탬프",
       rewardDescription:
         "작동하는 금융 시스템을 만들었다는 영구적인 증표입니다.",
-      rewardAction: "스테이지 02 해금",
+      rewardAction: "캠페인으로 돌아가기",
       statTotalAssets: "Total Assets",
       statCash: "모은 현금",
       statDeals: "체결한 거래",
       statDays: "소요 일수",
+      statYield: "실현 수익",
     },
   },
   gameApp: {
@@ -236,7 +243,7 @@ export const ko: Messages = {
     campaignStages: "캠페인 스테이지",
     completePriorStage: "이전 스테이지를 완료하세요",
     locked: "잠김",
-    playAgain: "다시 플레이",
+    playAgain: "자유 모드",
     language: "언어",
   },
 };
