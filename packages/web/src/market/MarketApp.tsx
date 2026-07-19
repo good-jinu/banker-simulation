@@ -191,6 +191,8 @@ export function MarketApp({
   }>({ paused: true, speed: 1 });
   const clockRef = useRef<GameClock | null>(null);
   const transferId = useRef(0);
+  const modalWasOpenRef = useRef(false);
+  const resumeAfterModalRef = useRef(false);
 
   useEffect(() => {
     const clock = new GameClock(() => {
@@ -240,11 +242,27 @@ export function MarketApp({
   }, [transfer]);
 
   useEffect(() => {
-    if (!selected && !fundingOpen && !assetsOpen) return;
+    const modalOpen = Boolean(selected || fundingOpen || assetsOpen);
     const clock = clockRef.current;
-    if (!clock || clock.paused) return;
-    clock.pause();
-    setClockView((current) => ({ ...current, paused: true }));
+    if (!clock) return;
+
+    if (modalOpen && !modalWasOpenRef.current) {
+      modalWasOpenRef.current = true;
+      resumeAfterModalRef.current = !clock.paused;
+      if (clock.paused) return;
+      clock.pause();
+      setClockView((current) => ({ ...current, paused: true }));
+      return;
+    }
+
+    if (!modalOpen && modalWasOpenRef.current) {
+      modalWasOpenRef.current = false;
+      if (resumeAfterModalRef.current) {
+        clock.play();
+        setClockView((current) => ({ ...current, paused: false }));
+      }
+      resumeAfterModalRef.current = false;
+    }
   }, [assetsOpen, fundingOpen, selected]);
 
   const loanReceivables = customers
