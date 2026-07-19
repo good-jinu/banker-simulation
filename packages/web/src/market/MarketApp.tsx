@@ -177,6 +177,12 @@ export function MarketApp({
   const [funding, setFunding] = useState(FUNDING_SEEDS);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [fundingOpen, setFundingOpen] = useState(false);
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [goalsOpen, setGoalsOpen] = useState(false);
+  const [loanCount, setLoanCount] = useState(0);
+  const [cumulativeLent, setCumulativeLent] = useState(0);
+  const [thirdLoanDay, setThirdLoanDay] = useState<number | null>(null);
+  const [fundingPromptShown, setFundingPromptShown] = useState(false);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [clockView, setClockView] = useState<{
@@ -233,6 +239,38 @@ export function MarketApp({
     return () => window.clearTimeout(handle);
   }, [transfer]);
 
+  const loanReceivables = customers
+    .filter((customer) => customer.status === "accepted")
+    .reduce(
+      (total, customer) => total + customer.amount * (1 + customer.rate / 100),
+      0,
+    );
+  const fundingLiabilities = funding
+    .filter((lender) => lender.accepted)
+    .reduce(
+      (total, lender) => total + lender.amount * (1 + lender.rate / 100),
+      0,
+    );
+  const totalAssets = cash + loanReceivables;
+  const netWorth = totalAssets - fundingLiabilities;
+  const netCash = cash - fundingLiabilities;
+  const hasFunding = funding.some((item) => item.accepted);
+  const fundingEligible =
+    thirdLoanDay !== null && day >= thirdLoanDay + 3 && !hasFunding;
+
+  useEffect(() => {
+    if (
+      phase !== "map" ||
+      !fundingEligible ||
+      fundingPromptShown ||
+      fundingOpen
+    )
+      return;
+    setFundingPromptShown(true);
+    setFundingOpen(true);
+    setNotice("다른 은행들의 자금 대출 제안이 도착했습니다.");
+  }, [fundingEligible, fundingOpen, fundingPromptShown, phase]);
+
   function animate(from: string, to: string, amount: number): void {
     transferId.current += 1;
     setTransfer({ id: transferId.current, from, to, amount });
@@ -245,6 +283,8 @@ export function MarketApp({
         customer.id === "mina" ? { ...customer, status: "accepted" } : customer,
       ),
     );
+    setLoanCount(1);
+    setCumulativeLent(100);
     setPhase("map");
     window.setTimeout(() => animate("banker", "mina", 100), 180);
   }
@@ -252,8 +292,12 @@ export function MarketApp({
   function approve(customer: Customer): void {
     if (cash < customer.amount) {
       setSelected(null);
-      setFundingOpen(true);
-      setNotice("현금이 부족합니다. 먼저 다른 은행에서 자금을 빌려보세요.");
+      if (fundingEligible) setFundingOpen(true);
+      setNotice(
+        fundingEligible
+          ? "현금이 부족합니다. 다른 은행의 제안을 확인하세요."
+          : "현금이 부족합니다. 외부 자금 제안은 세 번째 대출 후 3일 뒤 도착합니다.",
+      );
       return;
     }
     setCash((value) => value - customer.amount);
@@ -264,6 +308,10 @@ export function MarketApp({
           : item,
       ),
     );
+    const nextLoanCount = loanCount + 1;
+    setLoanCount(nextLoanCount);
+    setCumulativeLent((value) => value + customer.amount);
+    if (nextLoanCount === 3) setThirdLoanDay(day);
     setSelected(null);
     animate("banker", customer.id, customer.amount);
   }
@@ -364,7 +412,25 @@ export function MarketApp({
   const visibleCustomers = customers.filter(
     (customer) => customer.appears <= day,
   );
-  const showFundingHint = cash <= 100 && !funding.some((item) => item.accepted);
+  const showFundingHint = fundingEligible && !fundingOpen;
+  const goals = [
+    {
+      label: "첫 대출 실행하기",
+      progress: `${Math.min(loanCount, 1)} / 1건`,
+      completed: loanCount >= 1,
+    },
+    {
+      label: "대출 누적 $500 이상",
+      progress: `${money(Math.min(cumulativeLent, 500))} / $500`,
+      completed: cumulativeLent >= 500,
+    },
+    {
+      label: "순수 현금 $2,000 달성",
+      progress: `${money(netCash)} / $2,000`,
+      completed: netCash >= 2_000,
+    },
+  ];
+  const activeGoalIndex = goals.findIndex((goal) => !goal.completed);
   const pointFor = (id: string): { x: number; y: number } => {
     if (id === "banker") return { x: 50, y: 49 };
     const customer = customers.find((item) => item.id === id);
@@ -378,13 +444,17 @@ export function MarketApp({
         <button className="round-button" onClick={onBack} aria-label="뒤로">
           <ArrowLeft />
         </button>
-        <div className="brand">
+        <button
+          className="brand"
+          onClick={() => setAssetsOpen(true)}
+          aria-label="은행 자산 현황 보기"
+        >
           <Landmark />
           <span>
             <small>MY BANK</small>
             <strong>{money(cash)}</strong>
           </span>
-        </div>
+        </button>
         <div className="day-display">
           <small>현재 날짜</small>
           <strong>DAY {day + 1}</strong>
@@ -392,9 +462,46 @@ export function MarketApp({
       </header>
 
       <section className="state-map" aria-label="대출 상태 지도">
-        <div className="map-title">
-          <small>STATE MAP</small>
-          <strong>돈의 흐름을 한눈에 확인하세요</strong>
+        <div
+          className={`goal-overlay ${activeGoalIndex >= 0 ? "has-active" : "all-complete"}`}
+        >
+          <button
+            className="goal-toggle"
+            onClick={() => setGoalsOpen((value) => !value)}
+            aria-expanded={goalsOpen}
+          >
+            <span>
+              {activeGoalIndex >= 0 ? "LEVEL 01 목표" : "모든 목표 완료"}
+            </span>
+            <strong>
+              {goals.filter((goal) => goal.completed).length} / {goals.length}
+            </strong>
+            <b>{goalsOpen ? "−" : "+"}</b>
+          </button>
+          {goalsOpen && (
+            <div className="goal-list">
+              {goals.map((goal, index) => (
+                <div
+                  key={goal.label}
+                  className={
+                    goal.completed
+                      ? "completed"
+                      : index === activeGoalIndex
+                        ? "active"
+                        : "locked"
+                  }
+                >
+                  <span className="goal-check">
+                    {goal.completed ? <Check /> : index + 1}
+                  </span>
+                  <p>
+                    <strong>{goal.label}</strong>
+                    <small>{goal.progress}</small>
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <svg
           className="connection-layer"
@@ -525,8 +632,8 @@ export function MarketApp({
           <aside className="funding-hint">
             <Landmark />
             <div>
-              <strong>빌려줄 현금이 부족해요</strong>
-              <p>다른 사람들로부터 돈을 빌리세요.</p>
+              <strong>새로운 자금 제안이 도착했어요</strong>
+              <p>세 번째 대출 실행 후 3일이 지났습니다.</p>
             </div>
             <button onClick={() => setFundingOpen(true)}>대출 상품 보기</button>
           </aside>
@@ -558,6 +665,61 @@ export function MarketApp({
       </footer>
 
       {notice && <div className="game-notice">{notice}</div>}
+
+      {assetsOpen && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={() => setAssetsOpen(false)}
+        >
+          <section
+            className="assets-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={() => setAssetsOpen(false)}
+              aria-label="닫기"
+            >
+              <X />
+            </button>
+            <small>MY BANK BALANCE SHEET</small>
+            <h2>은행 자산 현황</h2>
+            <div className="asset-summary">
+              <span>순자산</span>
+              <strong>{money(netWorth)}</strong>
+            </div>
+            <h3>자산</h3>
+            <dl className="asset-rows">
+              <div>
+                <dt>현금</dt>
+                <dd>{money(cash)}</dd>
+              </div>
+              <div>
+                <dt>대출 채권</dt>
+                <dd>{money(loanReceivables)}</dd>
+              </div>
+              <div className="total">
+                <dt>총자산</dt>
+                <dd>{money(totalAssets)}</dd>
+              </div>
+            </dl>
+            <h3>부채</h3>
+            <dl className="asset-rows">
+              <div>
+                <dt>타 은행 상환 의무</dt>
+                <dd>{money(fundingLiabilities)}</dd>
+              </div>
+              <div className="net-cash">
+                <dt>순수 현금</dt>
+                <dd>{money(netCash)}</dd>
+              </div>
+            </dl>
+            <p className="asset-note">
+              대출 채권은 고객에게 받을 원금과 이자를 합산한 금액입니다.
+            </p>
+          </section>
+        </div>
+      )}
 
       {selected && (
         <div className="modal-backdrop" onMouseDown={() => setSelected(null)}>
@@ -614,7 +776,7 @@ export function MarketApp({
                 대출하기 · {money(selected.amount)}
               </button>
             </div>
-            {cash < selected.amount && (
+            {cash < selected.amount && fundingEligible && (
               <button
                 className="need-funding"
                 onClick={() => {
