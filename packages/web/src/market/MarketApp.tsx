@@ -161,7 +161,7 @@ export function MarketApp({
   locale: _locale,
   onBack,
   stage: _stage,
-  onComplete: _onComplete,
+  onComplete,
 }: {
   locale: Locale;
   onBack: () => void;
@@ -183,6 +183,7 @@ export function MarketApp({
   const [cumulativeLent, setCumulativeLent] = useState(0);
   const [thirdLoanDay, setThirdLoanDay] = useState<number | null>(null);
   const [fundingPromptShown, setFundingPromptShown] = useState(false);
+  const [missionClear, setMissionClear] = useState(false);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [clockView, setClockView] = useState<{
@@ -242,7 +243,9 @@ export function MarketApp({
   }, [transfer]);
 
   useEffect(() => {
-    const modalOpen = Boolean(selected || fundingOpen || assetsOpen);
+    const modalOpen = Boolean(
+      selected || fundingOpen || assetsOpen || missionClear,
+    );
     const clock = clockRef.current;
     if (!clock) return;
 
@@ -263,7 +266,7 @@ export function MarketApp({
       }
       resumeAfterModalRef.current = false;
     }
-  }, [assetsOpen, fundingOpen, selected]);
+  }, [assetsOpen, fundingOpen, missionClear, selected]);
 
   const loanReceivables = customers
     .filter((customer) => customer.status === "accepted")
@@ -283,6 +286,18 @@ export function MarketApp({
   const hasFunding = funding.some((item) => item.accepted);
   const fundingEligible =
     thirdLoanDay !== null && day >= thirdLoanDay + 3 && !hasFunding;
+
+  useEffect(() => {
+    if (
+      phase !== "map" ||
+      missionClear ||
+      loanCount < 1 ||
+      cumulativeLent < 500 ||
+      netCash < 2_000
+    )
+      return;
+    setMissionClear(true);
+  }, [cumulativeLent, loanCount, missionClear, netCash, phase]);
 
   useEffect(() => {
     if (
@@ -697,6 +712,69 @@ export function MarketApp({
       </footer>
 
       {notice && <div className="game-notice">{notice}</div>}
+
+      {missionClear && (
+        <div
+          className="mission-clear-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mission-clear-title"
+        >
+          <div className="money-confetti" aria-hidden="true">
+            {Array.from({ length: 30 }, (_, index) => (
+              <i
+                key={index}
+                style={
+                  {
+                    "--x": `${(index * 37 + 9) % 100}%`,
+                    "--delay": `${(index % 10) * 0.09}s`,
+                    "--drift": `${(index % 2 === 0 ? 1 : -1) * (18 + (index % 5) * 9)}px`,
+                  } as React.CSSProperties
+                }
+              >
+                {index % 3 === 0 ? "$100" : "$"}
+              </i>
+            ))}
+          </div>
+          <section className="mission-clear-card">
+            <span className="clear-seal">
+              <Check />
+            </span>
+            <small>LEVEL 01 COMPLETE</small>
+            <h2 id="mission-clear-title">MISSION CLEAR!</h2>
+            <p>세 가지 은행 운영 목표를 모두 달성했습니다.</p>
+            <div className="result-grid">
+              <div>
+                <span>경과 시간</span>
+                <strong>DAY {day + 1}</strong>
+              </div>
+              <div>
+                <span>실행 대출</span>
+                <strong>{loanCount}건</strong>
+              </div>
+              <div>
+                <span>누적 대출</span>
+                <strong>{money(cumulativeLent)}</strong>
+              </div>
+              <div>
+                <span>현재 현금</span>
+                <strong>{money(cash)}</strong>
+              </div>
+              <div>
+                <span>대출 채권</span>
+                <strong>{money(loanReceivables)}</strong>
+              </div>
+              <div className="result-total">
+                <span>최종 순자산</span>
+                <strong>{money(netWorth)}</strong>
+              </div>
+            </div>
+            <button onClick={() => (onComplete ? onComplete() : onBack())}>
+              결과 확인 · 레벨 완료
+            </button>
+          </section>
+        </div>
+      )}
 
       {assetsOpen && (
         <div
