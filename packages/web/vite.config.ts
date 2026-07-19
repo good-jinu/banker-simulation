@@ -3,8 +3,7 @@ import react from "@vitejs/plugin-react";
 
 function publicPathRewrite(basePath: string): Plugin {
   const base = basePath === "/" ? "/" : `${basePath.replace(/\/+$/, "")}/`;
-  const rootPublicPath =
-    /(["'`(=])\/(assets|manifest\.webmanifest|sw\.js)(?=\/|["'`])/g;
+  const rootPublicPath = /(["'`(=])\/(assets)(?=\/|["'`])/g;
 
   return {
     name: "rewrite-public-paths",

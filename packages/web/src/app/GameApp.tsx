@@ -20,11 +20,6 @@ import "./game.css";
 
 type Screen = "home" | "stages" | "campaign";
 
-function freeReplay(stage: MarketCampaignStage): MarketCampaignStage {
-  const { tutorial: _tutorial, ...replayStage } = stage;
-  return replayStage;
-}
-
 export function GameApp() {
   const [hydrated, setHydrated] = useState(false);
   const [screen, setScreen] = useState<Screen>("home");
@@ -39,9 +34,6 @@ export function GameApp() {
   );
   const locale: Locale = settings.locale ?? detectLocale();
   const selectedStage = marketStageById(selectedStageId);
-  const stageForRun = campaign.completedStageIds.includes(selectedStageId)
-    ? freeReplay(selectedStage)
-    : selectedStage;
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -92,7 +84,7 @@ export function GameApp() {
   if (screen === "campaign") {
     return (
       <MarketApp
-        stage={stageForRun}
+        stage={selectedStage}
         locale={locale}
         onBack={() => setScreen("stages")}
         onComplete={() => {

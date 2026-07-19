@@ -3,16 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.2.2",
-  "description": "A mobile-first financial automation puzzle built from emergent contracts.",
+  "description": "A simple banking simulation about lending and cash flow.",
   "scripts": {
     "dev": "pnpm --filter @banker-simulation/web dev",
     "build": "pnpm --filter @banker-simulation/web build",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "node scripts/lint-boundaries.mjs && pnpm typecheck",
-    "format": "prettier --write package.json README.md docs packages/contracts packages/content packages/core/src/stage.ts packages/core/test/stage.test.ts packages/web/src packages/web/index.html packages/web/public/sw.js",
-    "format:check": "prettier --check package.json README.md docs packages/contracts packages/content packages/core/src/stage.ts packages/core/test/stage.test.ts packages/web/src packages/web/index.html packages/web/public/sw.js",
-    "check": "pnpm lint && pnpm format:check && pnpm -r check",
-    "test": "pnpm -r --if-present test"
+    "typecheck": "pnpm --filter @banker-simulation/web typecheck",
+    "format": "prettier --write package.json README.md packages/web/src packages/web/index.html",
+    "format:check": "prettier --check package.json README.md packages/web/src packages/web/index.html",
+    "check": "pnpm format:check && pnpm --filter @banker-simulation/web check"
   },
   "devDependencies": {
     "prettier": "^3.9.5"
