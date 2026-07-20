@@ -1,6 +1,8 @@
 import { ArrowLeft, Check, Info, Landmark, Pause, Play, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { localize, type LocalText } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
+import { messagesFor } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "../lib/game-clock.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import "./market.css";
@@ -10,8 +12,8 @@ const DAY_MS = 1_500;
 type CustomerStatus = "waiting" | "accepted";
 type Customer = {
   id: string;
-  name: string;
-  job: string;
+  name: LocalText;
+  job: LocalText;
   income: number;
   amount: number;
   rate: number;
@@ -26,7 +28,7 @@ type Customer = {
 
 type Funding = {
   id: string;
-  name: string;
+  name: LocalText;
   amount: number;
   rate: number;
   dueDay: number;
@@ -40,40 +42,40 @@ type Transfer = { id: number; from: string; to: string; amount: number };
 const CUSTOMER_SEEDS: Customer[] = [
   {
     id: "mina",
-    name: "미나 김",
-    job: "동네 베이커리 직원",
+    name: { en: "Mina Kim", ko: "미나 김" },
+    job: { en: "Neighborhood bakery employee", ko: "동네 베이커리 직원" },
     income: 2_400,
     amount: 100,
     rate: 10,
     term: 12,
     dueDay: 12,
     appears: 0,
-    x: 23,
-    y: 29,
+    x: 19,
+    y: 21,
     avatar: "/assets/avatars/mina-request.webp",
     status: "waiting",
   },
 ];
 
-const RANDOM_NAMES = [
-  "준 박",
-  "서연 이",
-  "도윤 한",
-  "지우 최",
-  "하준 송",
-  "유나 정",
-  "현우 강",
-  "수빈 오",
+const RANDOM_NAMES: LocalText[] = [
+  { en: "Jun Park", ko: "준 박" },
+  { en: "Seoyeon Lee", ko: "서연 이" },
+  { en: "Doyoon Han", ko: "도윤 한" },
+  { en: "Jiwoo Choi", ko: "지우 최" },
+  { en: "Hajun Song", ko: "하준 송" },
+  { en: "Yuna Jung", ko: "유나 정" },
+  { en: "Hyunwoo Kang", ko: "현우 강" },
+  { en: "Subin Oh", ko: "수빈 오" },
 ];
-const RANDOM_JOBS = [
-  "택배 기사",
-  "프리랜서 디자이너",
-  "카페 운영자",
-  "간호사",
-  "학원 강사",
-  "식당 운영자",
-  "소프트웨어 개발자",
-  "공방 운영자",
+const RANDOM_JOBS: LocalText[] = [
+  { en: "Delivery driver", ko: "택배 기사" },
+  { en: "Freelance designer", ko: "프리랜서 디자이너" },
+  { en: "Café owner", ko: "카페 운영자" },
+  { en: "Nurse", ko: "간호사" },
+  { en: "Academy instructor", ko: "학원 강사" },
+  { en: "Restaurant owner", ko: "식당 운영자" },
+  { en: "Software developer", ko: "소프트웨어 개발자" },
+  { en: "Craft studio owner", ko: "공방 운영자" },
 ];
 const RANDOM_AVATARS = [
   "/assets/avatars/jun-neutral.webp",
@@ -83,24 +85,37 @@ const RANDOM_AVATARS = [
   "/assets/avatars/regulator-neutral.webp",
   "/assets/avatars/jun-evaluating.webp",
 ];
-const RANDOM_POSITIONS = [
-  { x: 22, y: 27 },
-  { x: 77, y: 24 },
-  { x: 80, y: 70 },
-  { x: 23, y: 73 },
-  { x: 50, y: 17 },
-  { x: 64, y: 77 },
-  { x: 35, y: 78 },
+const MAX_VISIBLE_CUSTOMERS = 5;
+const CUSTOMER_POSITIONS = [
+  { x: 19, y: 21 },
+  { x: 81, y: 21 },
+  { x: 84, y: 76 },
+  { x: 18, y: 76 },
+  { x: 49, y: 14 },
+  { x: 67, y: 83 },
+  { x: 32, y: 83 },
 ];
 
-function randomCustomer(day: number): Customer {
+function nextAvailablePosition(
+  customers: Customer[],
+): { x: number; y: number } | null {
+  const occupied = new Set(
+    customers.map((customer) => `${customer.x},${customer.y}`),
+  );
+  const available = CUSTOMER_POSITIONS.filter(
+    (position) => !occupied.has(`${position.x},${position.y}`),
+  );
+
+  if (available.length === 0) return null;
+  return available[Math.floor(Math.random() * available.length)]!;
+}
+
+function randomCustomer(
+  day: number,
+  position: { x: number; y: number },
+): Customer {
   const nameIndex = Math.floor(Math.random() * RANDOM_NAMES.length);
   const jobIndex = Math.floor(Math.random() * RANDOM_JOBS.length);
-  const position =
-    RANDOM_POSITIONS[
-      (Math.floor(day / 3) + Math.floor(Math.random() * 3)) %
-        RANDOM_POSITIONS.length
-    ]!;
   const amount = 80 + Math.floor(Math.random() * 38) * 10;
   const term = 9 + Math.floor(Math.random() * 10);
   return {
@@ -113,8 +128,8 @@ function randomCustomer(day: number): Customer {
     term,
     dueDay: day + term,
     appears: day,
-    x: position.x + Math.floor(Math.random() * 5) - 2,
-    y: position.y + Math.floor(Math.random() * 5) - 2,
+    x: position.x,
+    y: position.y,
     avatar: RANDOM_AVATARS[Math.floor(Math.random() * RANDOM_AVATARS.length)]!,
     status: "waiting",
   };
@@ -123,7 +138,7 @@ function randomCustomer(day: number): Customer {
 const FUNDING_SEEDS: Funding[] = [
   {
     id: "civic",
-    name: "시민 신용금고",
+    name: { en: "Civic Credit Union", ko: "시민 신용금고" },
     amount: 500,
     rate: 5,
     dueDay: 30,
@@ -133,7 +148,7 @@ const FUNDING_SEEDS: Funding[] = [
   },
   {
     id: "metro",
-    name: "메트로 은행",
+    name: { en: "Metro Bank", ko: "메트로 은행" },
     amount: 800,
     rate: 8,
     dueDay: 35,
@@ -143,7 +158,7 @@ const FUNDING_SEEDS: Funding[] = [
   },
   {
     id: "capital",
-    name: "캐피탈 파트너스",
+    name: { en: "Capital Partners", ko: "캐피탈 파트너스" },
     amount: 1_200,
     rate: 12,
     dueDay: 40,
@@ -158,7 +173,7 @@ function money(value: number): string {
 }
 
 export function MarketApp({
-  locale: _locale,
+  locale,
   onBack,
   stage: _stage,
   onComplete,
@@ -168,6 +183,7 @@ export function MarketApp({
   stage?: MarketCampaignStage;
   onComplete?: () => void;
 }) {
+  const m = messagesFor(locale).market;
   const [phase, setPhase] = useState<"intro" | "map">("intro");
   const [askedJob, setAskedJob] = useState(false);
   const [askedIncome, setAskedIncome] = useState(false);
@@ -210,12 +226,20 @@ export function MarketApp({
           });
           if (repayment > 0) {
             setCash((value) => value + repayment);
-            setNotice(`${money(repayment)}가 상환되었습니다.`);
+            setNotice(m.noticeRepayment(money(repayment)));
           }
-          if (nextDay % 3 === 0) {
-            const newcomer = randomCustomer(nextDay);
+          const position = nextAvailablePosition(updated);
+          if (
+            nextDay % 3 === 0 &&
+            updated.length < MAX_VISIBLE_CUSTOMERS &&
+            position
+          ) {
+            const newcomer = randomCustomer(nextDay, position);
             setNotice(
-              `${newcomer.name} 고객이 ${money(newcomer.amount)} 대출을 요청합니다.`,
+              m.noticeLoanRequest(
+                localize(newcomer.name, locale),
+                money(newcomer.amount),
+              ),
             );
             return [...updated, newcomer];
           }
@@ -309,7 +333,7 @@ export function MarketApp({
       return;
     setFundingPromptShown(true);
     setFundingOpen(true);
-    setNotice("다른 은행들의 자금 대출 제안이 도착했습니다.");
+    setNotice(m.fundingArrived);
   }, [fundingEligible, fundingOpen, fundingPromptShown, phase]);
 
   function animate(from: string, to: string, amount: number): void {
@@ -336,8 +360,8 @@ export function MarketApp({
       if (fundingEligible) setFundingOpen(true);
       setNotice(
         fundingEligible
-          ? "현금이 부족합니다. 다른 은행의 제안을 확인하세요."
-          : "현금이 부족합니다. 외부 자금 제안은 세 번째 대출 후 3일 뒤 도착합니다.",
+          ? `${m.insufficientCash} ${m.viewFunding}`
+          : `${m.insufficientCash} ${m.fundingUnavailable}`,
       );
       return;
     }
@@ -375,7 +399,7 @@ export function MarketApp({
     setCash((value) => value + lender.amount);
     setFundingOpen(false);
     animate(lender.id, "banker", lender.amount);
-    setNotice(`${lender.name}에서 ${money(lender.amount)}를 빌렸습니다.`);
+    setNotice(m.borrowed(localize(lender.name, locale), money(lender.amount)));
   }
 
   function toggleClock(): void {
@@ -397,52 +421,49 @@ export function MarketApp({
     return (
       <main className="loan-intro">
         <header className="loan-simple-header">
-          <button onClick={onBack} aria-label="뒤로">
+          <button onClick={onBack} aria-label={m.back}>
             <ArrowLeft />
           </button>
           <span>LEVEL 01</span>
-          <strong>첫 번째 대출</strong>
+          <strong>{m.introTitle}</strong>
         </header>
         <section className="conversation-card">
           <div className="conversation-scene">
-            <span className="scene-label">오늘의 첫 고객</span>
-            <img src="/assets/avatars/mina-request.webp" alt="고객 미나 김" />
+            <span className="scene-label">{m.firstCustomer}</span>
+            <img
+              src="/assets/avatars/mina-request.webp"
+              alt={m.customerAlt(localize(CUSTOMER_SEEDS[0]!.name, locale))}
+            />
             <div className="speech-bubble">
-              <small>미나 김</small>
+              <small>{localize(CUSTOMER_SEEDS[0]!.name, locale)}</small>
               <p>
-                안녕하세요! 급하게 필요한 돈이 있어요.
+                {m.greeting}
                 <br />
-                <strong>$100을 빌릴 수 있을까요?</strong>
+                <strong>{m.loanQuestion}</strong>
               </p>
             </div>
           </div>
           <div className="conversation-actions">
-            <p className="action-guide">대출하기 전에 고객을 알아보세요.</p>
+            <p className="action-guide">{m.learnCustomer}</p>
             <button
               className={askedJob ? "asked" : ""}
               onClick={() => setAskedJob(true)}
             >
-              {askedJob ? <Check /> : <Info />} 직업을 물어본다
+              {askedJob ? <Check /> : <Info />} {m.askJob}
             </button>
-            {askedJob && (
-              <p className="answer-line">
-                “동네 베이커리에서 3년째 일하고 있어요.”
-              </p>
-            )}
+            {askedJob && <p className="answer-line">“{m.jobAnswer}”</p>}
             <button
               className={askedIncome ? "asked" : ""}
               onClick={() => setAskedIncome(true)}
             >
-              {askedIncome ? <Check /> : <Info />} 소득을 물어본다
+              {askedIncome ? <Check /> : <Info />} {m.askIncome}
             </button>
-            {askedIncome && (
-              <p className="answer-line">“월 소득은 약 $2,400입니다.”</p>
-            )}
+            {askedIncome && <p className="answer-line">“{m.incomeAnswer}”</p>}
             {askedJob && askedIncome && (
               <div className="approve-reveal">
-                <span>정보 확인 완료 · 12일 후 $110 상환</span>
+                <span>{m.informationComplete}</span>
                 <button onClick={beginMap}>
-                  <Landmark /> 이자 10%로 $100 빌려주기
+                  <Landmark /> {m.lendAtRate}
                 </button>
               </div>
             )}
@@ -458,17 +479,17 @@ export function MarketApp({
   const showFundingHint = fundingEligible && !fundingOpen;
   const goals = [
     {
-      label: "첫 대출 실행하기",
-      progress: `${Math.min(loanCount, 1)} / 1건`,
+      label: m.goalFirstLoan,
+      progress: `${m.loanProgress(Math.min(loanCount, 1))} / ${m.loanProgress(1)}`,
       completed: loanCount >= 1,
     },
     {
-      label: "대출 누적 $500 이상",
+      label: m.goalCumulativeLoans,
       progress: `${money(Math.min(cumulativeLent, 500))} / $500`,
       completed: cumulativeLent >= 500,
     },
     {
-      label: "순수 현금 $2,000 달성",
+      label: m.goalNetCash,
       progress: `${money(netCash)} / $2,000`,
       completed: netCash >= 2_000,
     },
@@ -484,13 +505,13 @@ export function MarketApp({
   return (
     <main className="loan-game">
       <header className="map-header">
-        <button className="round-button" onClick={onBack} aria-label="뒤로">
+        <button className="round-button" onClick={onBack} aria-label={m.back}>
           <ArrowLeft />
         </button>
         <button
           className="brand"
           onClick={() => setAssetsOpen(true)}
-          aria-label="은행 자산 현황 보기"
+          aria-label={m.bankAssets}
         >
           <Landmark />
           <span>
@@ -499,12 +520,12 @@ export function MarketApp({
           </span>
         </button>
         <div className="day-display">
-          <small>현재 날짜</small>
+          <small>{m.currentDate}</small>
           <strong>DAY {day + 1}</strong>
         </div>
       </header>
 
-      <section className="state-map" aria-label="대출 상태 지도">
+      <section className="state-map" aria-label={m.loanStatusMap}>
         <div
           className={`goal-overlay ${activeGoalIndex >= 0 ? "has-active" : "all-complete"}`}
         >
@@ -514,7 +535,7 @@ export function MarketApp({
             aria-expanded={goalsOpen}
           >
             <span>
-              {activeGoalIndex >= 0 ? "LEVEL 01 목표" : "모든 목표 완료"}
+              {activeGoalIndex >= 0 ? m.levelCompleteGoal : m.allGoalsComplete}
             </span>
             <strong>
               {goals.filter((goal) => goal.completed).length} / {goals.length}
@@ -602,7 +623,7 @@ export function MarketApp({
             <Landmark />
           </span>
           <strong>{money(cash)}</strong>
-          <small>현재 현금</small>
+          <small>{m.currentCash}</small>
         </div>
 
         {visibleCustomers.map((customer) => (
@@ -613,7 +634,7 @@ export function MarketApp({
           >
             {customer.status === "waiting" && (
               <span className="request-tag">
-                D+{Math.max(day - customer.appears, 0)} 대기
+                {m.waiting(Math.max(day - customer.appears, 0))}
               </span>
             )}
             <span className="portrait">
@@ -622,15 +643,17 @@ export function MarketApp({
             <strong>
               {customer.status === "waiting"
                 ? money(customer.amount)
-                : `D-${Math.max(customer.dueDay - day, 0)}`}
+                : m.repaymentIn(Math.max(customer.dueDay - day, 0))}
             </strong>
             <small>
               {customer.status === "waiting"
-                ? `대출 요청 · 이자 ${customer.rate}%`
-                : `${money(customer.amount * (1 + customer.rate / 100))} 상환 예정`}
+                ? m.loanRequest(customer.rate)
+                : m.repaymentDue(
+                    money(customer.amount * (1 + customer.rate / 100)),
+                  )}
             </small>
             {customer.status === "waiting" && (
-              <button onClick={() => setSelected(customer)}>상세보기</button>
+              <button onClick={() => setSelected(customer)}>{m.details}</button>
             )}
           </div>
         ))}
@@ -646,9 +669,9 @@ export function MarketApp({
               <span className="bank-icon small">
                 <Landmark />
               </span>
-              <strong>D-{Math.max(lender.dueDay - day, 0)}</strong>
+              <strong>{m.repaymentIn(Math.max(lender.dueDay - day, 0))}</strong>
               <small>
-                {money(lender.amount * (1 + lender.rate / 100))} 상환 예정
+                {m.repaymentDue(money(lender.amount * (1 + lender.rate / 100)))}
               </small>
             </div>
           ))}
@@ -679,10 +702,12 @@ export function MarketApp({
           <aside className="funding-hint">
             <Landmark />
             <div>
-              <strong>새로운 자금 제안이 도착했어요</strong>
-              <p>세 번째 대출 실행 후 3일이 지났습니다.</p>
+              <strong>{m.newFunding}</strong>
+              <p>{m.fundingHint}</p>
             </div>
-            <button onClick={() => setFundingOpen(true)}>대출 상품 보기</button>
+            <button onClick={() => setFundingOpen(true)}>
+              {m.viewLoanProducts}
+            </button>
           </aside>
         )}
       </section>
@@ -692,12 +717,12 @@ export function MarketApp({
           <span
             className={clockView.paused ? "status-dot paused" : "status-dot"}
           />
-          <small>{clockView.paused ? "시간 멈춤" : "시간 진행 중"}</small>
+          <small>{clockView.paused ? m.timePaused : m.timeRunning}</small>
         </div>
         <button
           className="play-time"
           onClick={toggleClock}
-          aria-label={clockView.paused ? "시간 재생" : "일시정지"}
+          aria-label={clockView.paused ? m.playTime : m.pause}
         >
           {clockView.paused ? (
             <Play fill="currentColor" />
@@ -708,7 +733,7 @@ export function MarketApp({
         <button className="speed-time" onClick={cycleSpeed}>
           {clockView.speed}×
         </button>
-        <p>시간을 진행하면 새로운 고객이 나타나고 대출이 상환됩니다.</p>
+        <p>{m.timeHint}</p>
       </footer>
 
       {notice && <div className="game-notice">{notice}</div>}
@@ -742,35 +767,35 @@ export function MarketApp({
             </span>
             <small>LEVEL 01 COMPLETE</small>
             <h2 id="mission-clear-title">MISSION CLEAR!</h2>
-            <p>세 가지 은행 운영 목표를 모두 달성했습니다.</p>
+            <p>{m.missionComplete}</p>
             <div className="result-grid">
               <div>
-                <span>경과 시간</span>
+                <span>{m.elapsedTime}</span>
                 <strong>DAY {day + 1}</strong>
               </div>
               <div>
-                <span>실행 대출</span>
-                <strong>{loanCount}건</strong>
+                <span>{m.loansIssued}</span>
+                <strong>{m.loanProgress(loanCount)}</strong>
               </div>
               <div>
-                <span>누적 대출</span>
+                <span>{m.cumulativeLoans}</span>
                 <strong>{money(cumulativeLent)}</strong>
               </div>
               <div>
-                <span>현재 현금</span>
+                <span>{m.currentCash}</span>
                 <strong>{money(cash)}</strong>
               </div>
               <div>
-                <span>대출 채권</span>
+                <span>{m.loanReceivables}</span>
                 <strong>{money(loanReceivables)}</strong>
               </div>
               <div className="result-total">
-                <span>최종 순자산</span>
+                <span>{m.finalNetWorth}</span>
                 <strong>{money(netWorth)}</strong>
               </div>
             </div>
             <button onClick={() => (onComplete ? onComplete() : onBack())}>
-              결과 확인 · 레벨 완료
+              {m.checkResult}
             </button>
           </section>
         </div>
@@ -788,45 +813,43 @@ export function MarketApp({
             <button
               className="modal-close"
               onClick={() => setAssetsOpen(false)}
-              aria-label="닫기"
+              aria-label={m.close}
             >
               <X />
             </button>
             <small>MY BANK BALANCE SHEET</small>
-            <h2>은행 자산 현황</h2>
+            <h2>{m.bankAssets}</h2>
             <div className="asset-summary">
-              <span>순자산</span>
+              <span>{m.netWorth}</span>
               <strong>{money(netWorth)}</strong>
             </div>
-            <h3>자산</h3>
+            <h3>{m.assets}</h3>
             <dl className="asset-rows">
               <div>
-                <dt>현금</dt>
+                <dt>{m.cash}</dt>
                 <dd>{money(cash)}</dd>
               </div>
               <div>
-                <dt>대출 채권</dt>
+                <dt>{m.loanReceivables}</dt>
                 <dd>{money(loanReceivables)}</dd>
               </div>
               <div className="total">
-                <dt>총자산</dt>
+                <dt>{m.totalAssets}</dt>
                 <dd>{money(totalAssets)}</dd>
               </div>
             </dl>
-            <h3>부채</h3>
+            <h3>{m.liabilities}</h3>
             <dl className="asset-rows">
               <div>
-                <dt>타 은행 상환 의무</dt>
+                <dt>{m.bankRepaymentObligation}</dt>
                 <dd>{money(fundingLiabilities)}</dd>
               </div>
               <div className="net-cash">
-                <dt>순수 현금</dt>
+                <dt>{m.netCash}</dt>
                 <dd>{money(netCash)}</dd>
               </div>
             </dl>
-            <p className="asset-note">
-              대출 채권은 고객에게 받을 원금과 이자를 합산한 금액입니다.
-            </p>
+            <p className="asset-note">{m.assetNote}</p>
           </section>
         </div>
       )}
@@ -840,35 +863,32 @@ export function MarketApp({
             <button
               className="modal-close"
               onClick={() => setSelected(null)}
-              aria-label="닫기"
+              aria-label={m.close}
             >
               <X />
             </button>
             <img src={selected.avatar} alt="" />
-            <small>NEW LOAN REQUEST</small>
-            <h2>{selected.name}</h2>
+            <small>{m.loanRequestTitle}</small>
+            <h2>{localize(selected.name, locale)}</h2>
             <p className="request-copy">
-              “사업과 생활에 필요한 <strong>{money(selected.amount)}</strong>를
-              빌리고 싶어요.”
+              “{m.requestCopy(money(selected.amount))}”
             </p>
             <dl>
               <div>
-                <dt>직업</dt>
-                <dd>{selected.job}</dd>
+                <dt>{m.job}</dt>
+                <dd>{localize(selected.job, locale)}</dd>
               </div>
               <div>
-                <dt>월 소득</dt>
+                <dt>{m.monthlyIncome}</dt>
                 <dd>{money(selected.income)}</dd>
               </div>
               <div>
-                <dt>대출 금액</dt>
+                <dt>{m.loanAmount}</dt>
                 <dd>{money(selected.amount)}</dd>
               </div>
               <div>
-                <dt>상환 조건</dt>
-                <dd>
-                  {selected.term}일 · 이자 {selected.rate}%
-                </dd>
+                <dt>{m.repaymentTerms}</dt>
+                <dd>{m.loanTerms(selected.term, selected.rate)}</dd>
               </div>
             </dl>
             <div className="decision-row">
@@ -876,14 +896,14 @@ export function MarketApp({
                 className="reject-button"
                 onClick={() => reject(selected)}
               >
-                거절
+                {m.reject}
               </button>
               <button
                 className="accept-button"
                 onClick={() => approve(selected)}
                 disabled={cash < selected.amount}
               >
-                대출하기 · {money(selected.amount)}
+                {m.lend(money(selected.amount))}
               </button>
             </div>
             {cash < selected.amount && fundingEligible && (
@@ -894,7 +914,7 @@ export function MarketApp({
                   setFundingOpen(true);
                 }}
               >
-                현금이 부족합니다 · 자금 빌리기
+                {m.fundingNeeded}
               </button>
             )}
           </section>
@@ -913,13 +933,13 @@ export function MarketApp({
             <button
               className="modal-close"
               onClick={() => setFundingOpen(false)}
-              aria-label="닫기"
+              aria-label={m.close}
             >
               <X />
             </button>
             <small>INTERBANK FUNDING</small>
-            <h2>다른 은행에서 돈 빌리기</h2>
-            <p>받은 돈은 현금이 되고, 갚을 의무는 맵에 점선으로 표시됩니다.</p>
+            <h2>{m.borrowFromBank}</h2>
+            <p>{m.fundingDescription}</p>
             <div className="funding-options">
               {funding
                 .filter((item) => !item.accepted)
@@ -929,14 +949,14 @@ export function MarketApp({
                       <Landmark />
                     </span>
                     <div>
-                      <strong>{lender.name}</strong>
-                      <small>{lender.dueDay}일 후 상환</small>
+                      <strong>{localize(lender.name, locale)}</strong>
+                      <small>{m.dueInDays(lender.dueDay)}</small>
                     </div>
                     <div className="funding-rate">
                       <strong>{money(lender.amount)}</strong>
-                      <small>연 {lender.rate}%</small>
+                      <small>{m.annualRate(lender.rate)}</small>
                     </div>
-                    <button onClick={() => borrow(lender)}>선택</button>
+                    <button onClick={() => borrow(lender)}>{m.select}</button>
                   </article>
                 ))}
             </div>

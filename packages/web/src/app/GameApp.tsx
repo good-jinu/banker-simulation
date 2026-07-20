@@ -33,6 +33,7 @@ export function GameApp() {
     () => emptySave().settings,
   );
   const locale: Locale = settings.locale ?? detectLocale();
+  const m = messagesFor(locale);
   const selectedStage = marketStageById(selectedStageId);
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export function GameApp() {
           <Landmark aria-hidden="true" />
         </div>
         <p className="eyebrow">Banker Simulation</p>
-        <h1>Rebuilding your ledger…</h1>
+        <h1>{m.gameApp.loading}</h1>
       </main>
     );
   }
@@ -139,7 +140,7 @@ export function GameApp() {
           className="home-play-button"
           onClick={() => setScreen("stages")}
         >
-          <Play aria-hidden="true" fill="currentColor" /> Play
+          <Play aria-hidden="true" fill="currentColor" /> {m.gameApp.play}
         </button>
       </div>
     </main>
