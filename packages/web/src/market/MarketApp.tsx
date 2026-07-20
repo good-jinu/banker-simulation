@@ -8,7 +8,8 @@ import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
   createWorld,
   FIRST_CUSTOMER,
-  GOALS,
+  defaultRisk,
+  goalsFor,
   marketReducer,
   summarize,
   type Customer,
@@ -27,18 +28,20 @@ function money(value: number): string {
 export function MarketApp({
   locale,
   onBack,
-  stage: _stage,
+  stage,
   onComplete,
 }: {
   locale: Locale;
   onBack: () => void;
-  stage?: MarketCampaignStage;
+  stage: MarketCampaignStage;
   onComplete?: () => void;
 }) {
   const m = messagesFor(locale).market;
   const [world, dispatch] = useReducer(marketReducer, undefined, () =>
-    createWorld(Date.now() >>> 0),
+    createWorld(Date.now() >>> 0, stage.config),
   );
+  const isChallenge = world.level === "credit-under-pressure";
+  const introCustomer = world.customers[0] ?? FIRST_CUSTOMER;
   const [phase, setPhase] = useState<"intro" | "map">("intro");
   const [askedJob, setAskedJob] = useState(false);
   const [askedIncome, setAskedIncome] = useState(false);
@@ -53,13 +56,15 @@ export function MarketApp({
     speed: ClockSpeed;
   }>({ paused: true, speed: 1 });
   const clockRef = useRef<GameClock | null>(null);
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
   const transferId = useRef(0);
   const modalWasOpenRef = useRef(false);
   const resumeAfterModalRef = useRef(false);
 
   useEffect(() => {
     const clock = new GameClock(() => {
-      dispatch({ type: "advance-day" });
+      dispatchRef.current({ type: "advance-day" });
       return true;
     }, DAY_MS);
     clockRef.current = clock;
@@ -72,6 +77,14 @@ export function MarketApp({
       switch (event.type) {
         case "repayment":
           setNotice(m.noticeRepayment(money(event.amount)));
+          break;
+        case "default":
+          setNotice(
+            m.noticeDefault(
+              localize(event.customer.name, locale),
+              money(event.customer.amount),
+            ),
+          );
           break;
         case "loan-request":
           setNotice(
@@ -98,11 +111,22 @@ export function MarketApp({
             ),
           );
           break;
+        case "funding-repayment":
+          setNotice(
+            m.noticeFundingRepayment(
+              localize(event.lender.name, locale),
+              money(event.amount),
+            ),
+          );
+          break;
         case "funding-unlocked":
           setFundingOpen(true);
           setNotice(m.fundingArrived);
           break;
         case "mission-clear":
+          break;
+        case "insolvent":
+          setNotice(m.noticeInsolvent);
           break;
       }
     }
@@ -124,7 +148,7 @@ export function MarketApp({
 
   useEffect(() => {
     const modalOpen = Boolean(
-      selected || fundingOpen || assetsOpen || missionClear,
+      selected || fundingOpen || assetsOpen || missionClear || world.insolvent,
     );
     const clock = clockRef.current;
     if (!clock) return;
@@ -146,7 +170,7 @@ export function MarketApp({
       }
       resumeAfterModalRef.current = false;
     }
-  }, [assetsOpen, fundingOpen, missionClear, selected]);
+  }, [assetsOpen, fundingOpen, missionClear, selected, world.insolvent]);
 
   const {
     loanReceivables,
@@ -156,6 +180,8 @@ export function MarketApp({
     netCash,
     fundingEligible,
   } = summarize(world);
+  const levelGoals = goalsFor(world);
+  const survivalDay = levelGoals.survivalDay ?? 0;
   const { cash, day, customers, funding, loanCount, cumulativeLent } = world;
 
   function beginMap(): void {
@@ -209,46 +235,71 @@ export function MarketApp({
           <button onClick={onBack} aria-label={m.back}>
             <ArrowLeft />
           </button>
-          <span>LEVEL 01</span>
-          <strong>{m.introTitle}</strong>
+          <span>LEVEL {String(stage.number).padStart(2, "0")}</span>
+          <strong>{isChallenge ? m.challengeIntroTitle : m.introTitle}</strong>
         </header>
         <section className="conversation-card">
           <div className="conversation-scene">
-            <span className="scene-label">{m.firstCustomer}</span>
+            <span className="scene-label">
+              {isChallenge ? m.firstAssessment : m.firstCustomer}
+            </span>
             <img
-              src={FIRST_CUSTOMER.avatar}
-              alt={m.customerAlt(localize(FIRST_CUSTOMER.name, locale))}
+              src={introCustomer.avatar}
+              alt={m.customerAlt(localize(introCustomer.name, locale))}
             />
             <div className="speech-bubble">
-              <small>{localize(FIRST_CUSTOMER.name, locale)}</small>
+              <small>{localize(introCustomer.name, locale)}</small>
               <p>
-                {m.greeting}
+                {isChallenge ? m.challengeGreeting : m.greeting}
                 <br />
-                <strong>{m.loanQuestion}</strong>
+                <strong>
+                  {isChallenge
+                    ? m.challengeLoanQuestion(money(introCustomer.amount))
+                    : m.loanQuestion}
+                </strong>
               </p>
             </div>
           </div>
           <div className="conversation-actions">
-            <p className="action-guide">{m.learnCustomer}</p>
+            <p className="action-guide">
+              {isChallenge ? m.challengeLearnCustomer : m.learnCustomer}
+            </p>
             <button
               className={askedJob ? "asked" : ""}
               onClick={() => setAskedJob(true)}
             >
               {askedJob ? <Check /> : <Info />} {m.askJob}
             </button>
-            {askedJob && <p className="answer-line">“{m.jobAnswer}”</p>}
+            {askedJob && (
+              <p className="answer-line">
+                “
+                {isChallenge
+                  ? localize(introCustomer.job, locale)
+                  : m.jobAnswer}
+                ”
+              </p>
+            )}
             <button
               className={askedIncome ? "asked" : ""}
               onClick={() => setAskedIncome(true)}
             >
               {askedIncome ? <Check /> : <Info />} {m.askIncome}
             </button>
-            {askedIncome && <p className="answer-line">“{m.incomeAnswer}”</p>}
+            {askedIncome && (
+              <p className="answer-line">
+                “{isChallenge ? money(introCustomer.income) : m.incomeAnswer}”
+              </p>
+            )}
             {askedJob && askedIncome && (
               <div className="approve-reveal">
-                <span>{m.informationComplete}</span>
+                <span>
+                  {isChallenge
+                    ? m.challengeInformationComplete(defaultRisk(introCustomer))
+                    : m.informationComplete}
+                </span>
                 <button onClick={beginMap}>
-                  <Landmark /> {m.lendAtRate}
+                  <Landmark />
+                  {isChallenge ? m.openUnderwriting : m.lendAtRate}
                 </button>
               </div>
             )}
@@ -264,20 +315,31 @@ export function MarketApp({
   const showFundingHint = fundingEligible && !fundingOpen;
   const goals = [
     {
-      label: m.goalFirstLoan,
-      progress: `${m.loanProgress(Math.min(loanCount, GOALS.loanCount))} / ${m.loanProgress(GOALS.loanCount)}`,
-      completed: loanCount >= GOALS.loanCount,
+      label: isChallenge ? m.challengeGoalLoans : m.goalFirstLoan,
+      progress: `${m.loanProgress(Math.min(loanCount, levelGoals.loanCount))} / ${m.loanProgress(levelGoals.loanCount)}`,
+      completed: loanCount >= levelGoals.loanCount,
     },
     {
-      label: m.goalCumulativeLoans,
-      progress: `${money(Math.min(cumulativeLent, GOALS.cumulativeLent))} / ${money(GOALS.cumulativeLent)}`,
-      completed: cumulativeLent >= GOALS.cumulativeLent,
+      label: isChallenge
+        ? m.challengeGoalCumulativeLoans
+        : m.goalCumulativeLoans,
+      progress: `${money(Math.min(cumulativeLent, levelGoals.cumulativeLent))} / ${money(levelGoals.cumulativeLent)}`,
+      completed: cumulativeLent >= levelGoals.cumulativeLent,
     },
     {
-      label: m.goalNetCash,
-      progress: `${money(netCash)} / ${money(GOALS.netCash)}`,
-      completed: netCash >= GOALS.netCash,
+      label: isChallenge ? m.challengeGoalNetCash : m.goalNetCash,
+      progress: `${money(netCash)} / ${money(levelGoals.netCash)}`,
+      completed: netCash >= levelGoals.netCash,
     },
+    ...(isChallenge
+      ? [
+          {
+            label: m.goalSurvive,
+            progress: `${m.dayProgress(Math.min(day, survivalDay))} / ${m.dayProgress(survivalDay)}`,
+            completed: day >= survivalDay,
+          },
+        ]
+      : []),
   ];
   const activeGoalIndex = goals.findIndex((goal) => !goal.completed);
   const pointFor = (id: string): { x: number; y: number } => {
@@ -320,7 +382,11 @@ export function MarketApp({
             aria-expanded={goalsOpen}
           >
             <span>
-              {activeGoalIndex >= 0 ? m.levelCompleteGoal : m.allGoalsComplete}
+              {activeGoalIndex >= 0
+                ? isChallenge
+                  ? m.challengeGoals
+                  : m.levelCompleteGoal
+                : m.allGoalsComplete}
             </span>
             <strong>
               {goals.filter((goal) => goal.completed).length} / {goals.length}
@@ -550,14 +616,24 @@ export function MarketApp({
             <span className="clear-seal">
               <Check />
             </span>
-            <small>LEVEL 01 COMPLETE</small>
+            <small>
+              LEVEL {String(stage.number).padStart(2, "0")} COMPLETE
+            </small>
             <h2 id="mission-clear-title">MISSION CLEAR!</h2>
-            <p>{m.missionComplete}</p>
+            <p>
+              {isChallenge ? m.challengeMissionComplete : m.missionComplete}
+            </p>
             <div className="result-grid">
               <div>
                 <span>{m.elapsedTime}</span>
                 <strong>DAY {day + 1}</strong>
               </div>
+              {isChallenge && (
+                <div>
+                  <span>{m.defaults}</span>
+                  <strong>{m.survived}</strong>
+                </div>
+              )}
               <div>
                 <span>{m.loansIssued}</span>
                 <strong>{m.loanProgress(loanCount)}</strong>
@@ -667,6 +743,12 @@ export function MarketApp({
                 <dt>{m.monthlyIncome}</dt>
                 <dd>{money(selected.income)}</dd>
               </div>
+              {isChallenge && (
+                <div className="risk-row">
+                  <dt>{m.defaultRisk}</dt>
+                  <dd>{m.defaultRiskValue(defaultRisk(selected))}</dd>
+                </div>
+              )}
               <div>
                 <dt>{m.loanAmount}</dt>
                 <dd>{money(selected.amount)}</dd>
@@ -724,7 +806,11 @@ export function MarketApp({
             </button>
             <small>INTERBANK FUNDING</small>
             <h2>{m.borrowFromBank}</h2>
-            <p>{m.fundingDescription}</p>
+            <p>
+              {isChallenge
+                ? m.challengeFundingDescription
+                : m.fundingDescription}
+            </p>
             <div className="funding-options">
               {funding
                 .filter((item) => !item.accepted)
@@ -745,6 +831,25 @@ export function MarketApp({
                   </article>
                 ))}
             </div>
+          </section>
+        </div>
+      )}
+
+      {world.insolvent && (
+        <div
+          className="mission-clear-backdrop loss-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="loss-title"
+        >
+          <section className="mission-clear-card loss-card">
+            <span className="clear-seal">
+              <X />
+            </span>
+            <small>LEVEL {String(stage.number).padStart(2, "0")}</small>
+            <h2 id="loss-title">{m.insolventTitle}</h2>
+            <p>{m.insolventDescription}</p>
+            <button onClick={onBack}>{m.returnToStages}</button>
           </section>
         </div>
       )}

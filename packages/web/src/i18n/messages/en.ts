@@ -14,18 +14,32 @@ export const en = {
     back: "Back",
     level: "LEVEL 01",
     introTitle: "The First Loan",
+    challengeIntroTitle: "The Underwriting Desk",
     firstCustomer: "Today's first customer",
+    firstAssessment: "Today's first assessment",
     customerAlt: (name: string) => `Customer ${name}`,
     greeting: "Hello! I urgently need some money.",
+    challengeGreeting: "I need capital to keep my work going.",
     loanQuestion: "$100 loan, please?",
+    challengeLoanQuestion: (amount: string) => `${amount} loan, please?`,
     learnCustomer: "Get to know the customer before lending.",
+    challengeLearnCustomer:
+      "Income relative to the loan amount determines repayment risk.",
     askJob: "Ask about their job",
     jobAnswer: "I've worked at the neighborhood bakery for three years.",
     askIncome: "Ask about their income",
     incomeAnswer: "My monthly income is about $2,400.",
     informationComplete: "Information checked · $110 due in 12 days",
+    challengeInformationComplete: (risk: number) =>
+      `Information checked · estimated default risk: ${risk}%`,
     lendAtRate: "Lend $100 at 10% interest",
+    openUnderwriting: "Open the underwriting desk",
     noticeRepayment: (amount: string) => `${amount} has been repaid.`,
+    noticeDefault: (name: string, amount: string) =>
+      `${name} defaulted on ${amount}. The loan has been written off.`,
+    noticeFundingRepayment: (name: string, amount: string) =>
+      `${amount} was repaid to ${name}.`,
+    noticeInsolvent: "The bank cannot cover a debt due today.",
     noticeLoanRequest: (name: string, amount: string) =>
       `${name} requests a ${amount} loan.`,
     fundingArrived: "Funding offers from other banks have arrived.",
@@ -36,6 +50,7 @@ export const en = {
     borrowed: (name: string, amount: string) =>
       `Borrowed ${amount} from ${name}.`,
     levelCompleteGoal: "LEVEL 01 GOALS",
+    challengeGoals: "LEVEL 02 GOALS",
     allGoalsComplete: "All goals complete",
     currentDate: "CURRENT DATE",
     currentCash: "Current cash",
@@ -54,6 +69,8 @@ export const en = {
     pause: "Pause",
     timeHint: "Advance time to see new customers appear and loans repaid.",
     missionComplete: "Three bank-management goals completed.",
+    challengeMissionComplete:
+      "You balanced credit risk, liquidity, and debt maturity through day 26.",
     elapsedTime: "Elapsed time",
     loansIssued: "Loans issued",
     cumulativeLoans: "Cumulative lending",
@@ -85,6 +102,8 @@ export const en = {
     borrowFromBank: "Borrow from another bank",
     fundingDescription:
       "Borrowed cash is added to your balance; repayment obligations appear as dotted lines on the map.",
+    challengeFundingDescription:
+      "Borrowed cash must be repaid with interest on its due day. If cash becomes negative, the bank fails.",
     dueInDays: (days: number) => `Due in ${days} days`,
     annualRate: (rate: number) => `${rate}% annual`,
     select: "Select",
@@ -92,9 +111,22 @@ export const en = {
     goalFirstLoan: "Issue your first loan",
     goalCumulativeLoans: "Lend at least $500",
     goalNetCash: "Reach $2,000 in net cash",
+    challengeGoalLoans: "Issue 3 loans",
+    challengeGoalCumulativeLoans: "Lend at least $1,500",
+    challengeGoalNetCash: "Reach $1,400 in net cash",
+    goalSurvive: "Keep the bank solvent through day 26",
+    dayProgress: (day: number) => `Day ${day}`,
     loanProgress: (count: number) => `${count} loan${count === 1 ? "" : "s"}`,
     loanTerms: (days: number, rate: number) =>
       `${days} days · ${rate}% interest`,
+    defaultRisk: "Default risk",
+    defaultRiskValue: (risk: number) => `${risk}% estimated`,
+    defaults: "Credit outcome",
+    survived: "Bank solvent",
+    insolventTitle: "BANK INSOLVENT",
+    insolventDescription:
+      "A funding repayment came due when the bank did not have enough cash. Review loan risk and debt maturities, then try again.",
+    returnToStages: "Return to stages",
   },
 };
 

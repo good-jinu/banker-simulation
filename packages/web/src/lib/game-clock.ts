@@ -3,6 +3,16 @@ const MS_PER_GAME_DAY = 6_000;
 export const CLOCK_SPEEDS = [1, 2, 5] as const;
 export type ClockSpeed = (typeof CLOCK_SPEEDS)[number];
 
+export type FrameScheduler = {
+  request(callback: (now: number) => void): number;
+  cancel(handle: number): void;
+};
+
+const browserFrameScheduler: FrameScheduler = {
+  request: (callback) => requestAnimationFrame(callback),
+  cancel: (handle) => cancelAnimationFrame(handle),
+};
+
 /**
  * Wall-clock driver for the in-game calendar.  The simulation itself never
  * sees fractional time: this class accumulates real elapsed milliseconds and
@@ -21,17 +31,18 @@ export class GameClock {
   constructor(
     private readonly onDayTick: () => boolean,
     private readonly msPerDay: number = MS_PER_GAME_DAY,
+    private readonly scheduler: FrameScheduler = browserFrameScheduler,
   ) {}
 
   start(): void {
     if (this.disposed || this.frameHandle !== null) return;
     this.lastFrameMs = null;
-    this.frameHandle = requestAnimationFrame(this.frame);
+    this.frameHandle = this.scheduler.request(this.frame);
   }
 
   dispose(): void {
     this.disposed = true;
-    if (this.frameHandle !== null) cancelAnimationFrame(this.frameHandle);
+    if (this.frameHandle !== null) this.scheduler.cancel(this.frameHandle);
     this.frameHandle = null;
   }
 
@@ -54,6 +65,7 @@ export class GameClock {
     const delta =
       this.lastFrameMs === null ? 0 : Math.min(now - this.lastFrameMs, 250);
     this.lastFrameMs = now;
+    let shouldContinue = true;
     if (!this.paused) {
       this.accumulatedMs += delta * this.speed;
       while (this.accumulatedMs >= this.msPerDay) {
@@ -61,10 +73,15 @@ export class GameClock {
         if (!this.onDayTick()) {
           this.pause();
           this.accumulatedMs = 0;
+          shouldContinue = false;
           break;
         }
       }
     }
-    this.frameHandle = requestAnimationFrame(this.frame);
+    if (!shouldContinue || this.disposed) {
+      this.frameHandle = null;
+      return;
+    }
+    this.frameHandle = this.scheduler.request(this.frame);
   };
 }

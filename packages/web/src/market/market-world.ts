@@ -1,4 +1,10 @@
 import type { LocalText } from "../i18n/local-text.ts";
+import {
+  marketStageByLevel,
+  marketStageById,
+  type MarketGoals,
+  type MarketStageConfig,
+} from "./market-campaign.ts";
 
 /**
  * Pure simulation core for the open-market level. The world is plain data,
@@ -9,6 +15,7 @@ import type { LocalText } from "../i18n/local-text.ts";
  */
 
 export type CustomerStatus = "waiting" | "accepted";
+export type MarketLevel = "first-yield" | "credit-under-pressure";
 
 export type Customer = {
   id: string;
@@ -39,13 +46,18 @@ export type Funding = {
 
 export type MarketEvent =
   | { type: "repayment"; amount: number }
+  | { type: "default"; customer: Customer; risk: number }
   | { type: "loan-request"; customer: Customer }
   | { type: "transfer"; from: string; to: string; amount: number }
   | { type: "borrowed"; lender: Funding }
+  | { type: "funding-repayment"; lender: Funding; amount: number }
   | { type: "funding-unlocked" }
+  | { type: "insolvent" }
   | { type: "mission-clear" };
 
 export type MarketWorld = {
+  level: MarketLevel;
+  config: MarketStageConfig;
   seed: number;
   day: number;
   cash: number;
@@ -55,6 +67,7 @@ export type MarketWorld = {
   cumulativeLent: number;
   thirdLoanDay: number | null;
   missionCleared: boolean;
+  insolvent: boolean;
   fundingAnnounced: boolean;
   /** Events produced by the most recent action only. */
   events: MarketEvent[];
@@ -67,69 +80,14 @@ export type MarketAction =
   | { type: "reject"; customerId: string }
   | { type: "borrow"; lenderId: string };
 
-export const GOALS = {
-  loanCount: 1,
-  cumulativeLent: 500,
-  netCash: 2_000,
-} as const;
+export const GOALS: MarketGoals =
+  marketStageByLevel("first-yield").config.goals;
+export const CHALLENGE_GOALS: MarketGoals = marketStageByLevel(
+  "credit-under-pressure",
+).config.goals;
 
-const STARTING_CASH = 700;
-const MAX_VISIBLE_CUSTOMERS = 5;
-const SPAWN_EVERY_DAYS = 3;
-const FUNDING_UNLOCK_DELAY_DAYS = 3;
-
-const CUSTOMER_SEEDS: Customer[] = [
-  {
-    id: "mina",
-    name: { en: "Mina Kim", ko: "미나 김" },
-    job: { en: "Neighborhood bakery employee", ko: "동네 베이커리 직원" },
-    income: 2_400,
-    amount: 100,
-    rate: 10,
-    term: 12,
-    dueDay: 12,
-    appears: 0,
-    x: 19,
-    y: 21,
-    avatar: "/assets/avatars/mina-request.webp",
-    status: "waiting",
-  },
-];
-
-export const FIRST_CUSTOMER = CUSTOMER_SEEDS[0]!;
-
-const FUNDING_SEEDS: Funding[] = [
-  {
-    id: "civic",
-    name: { en: "Civic Credit Union", ko: "시민 신용금고" },
-    amount: 500,
-    rate: 5,
-    dueDay: 30,
-    x: 9,
-    y: 50,
-    accepted: false,
-  },
-  {
-    id: "metro",
-    name: { en: "Metro Bank", ko: "메트로 은행" },
-    amount: 800,
-    rate: 8,
-    dueDay: 35,
-    x: 50,
-    y: 88,
-    accepted: false,
-  },
-  {
-    id: "capital",
-    name: { en: "Capital Partners", ko: "캐피탈 파트너스" },
-    amount: 1_200,
-    rate: 12,
-    dueDay: 40,
-    x: 91,
-    y: 50,
-    accepted: false,
-  },
-];
+export const FIRST_CUSTOMER: Customer =
+  marketStageByLevel("first-yield").config.customerSeeds[0]!;
 
 const RANDOM_NAMES: LocalText[] = [
   { en: "Jun Park", ko: "준 박" },
@@ -185,20 +143,43 @@ function randomInt(
   return [Math.floor(value * bound), nextSeed];
 }
 
-export function createWorld(seed = 1): MarketWorld {
+export function createWorld(
+  seed = 1,
+  stageOrLevel: MarketStageConfig | MarketLevel = "first-yield",
+): MarketWorld {
+  const config =
+    typeof stageOrLevel === "string"
+      ? marketStageById(stageOrLevel).config
+      : stageOrLevel;
   return {
+    level: config.level,
+    config,
     seed: seed >>> 0,
     day: 0,
-    cash: STARTING_CASH,
-    customers: CUSTOMER_SEEDS.map((customer) => ({ ...customer })),
-    funding: FUNDING_SEEDS.map((lender) => ({ ...lender })),
+    cash: config.startingCash,
+    customers: config.customerSeeds.map((customer) => ({ ...customer })),
+    funding: config.fundingSeeds.map((lender) => ({ ...lender })),
     loanCount: 0,
     cumulativeLent: 0,
     thirdLoanDay: null,
     missionCleared: false,
+    insolvent: false,
     fundingAnnounced: false,
     events: [],
   };
+}
+
+export function goalsFor(world: MarketWorld) {
+  return world.config.goals;
+}
+
+/**
+ * Challenge-level default chance. A loan at or below one month of income is
+ * precarious; applicants earning several times the requested amount are safer.
+ */
+export function defaultRisk(customer: Customer): number {
+  const incomeToLoan = customer.income / customer.amount;
+  return Math.min(55, Math.max(5, Math.round(62 - incomeToLoan * 18)));
 }
 
 export function summarize(world: MarketWorld) {
@@ -225,7 +206,7 @@ export function summarize(world: MarketWorld) {
     hasFunding,
     fundingEligible:
       world.thirdLoanDay !== null &&
-      world.day >= world.thirdLoanDay + FUNDING_UNLOCK_DELAY_DAYS &&
+      world.day >= world.thirdLoanDay + world.config.fundingUnlockDelayDays &&
       !hasFunding,
   };
 }
@@ -236,6 +217,7 @@ export function marketReducer(
   world: MarketWorld,
   action: MarketAction,
 ): MarketWorld {
+  if (world.insolvent || world.missionCleared) return { ...world, events: [] };
   switch (action.type) {
     case "advance-day":
       return withDerivedEvents(advanceDay(world));
@@ -259,17 +241,20 @@ export function marketReducer(
 /** Latch one-shot milestones (mission clear, funding unlock) after any action. */
 function withDerivedEvents(world: MarketWorld): MarketWorld {
   const summary = summarize(world);
+  const goals = goalsFor(world);
   let { missionCleared, fundingAnnounced, events } = world;
   if (
+    !world.insolvent &&
     !missionCleared &&
-    world.loanCount >= GOALS.loanCount &&
-    world.cumulativeLent >= GOALS.cumulativeLent &&
-    summary.netCash >= GOALS.netCash
+    world.loanCount >= goals.loanCount &&
+    world.cumulativeLent >= goals.cumulativeLent &&
+    summary.netCash >= goals.netCash &&
+    (goals.survivalDay === null || world.day >= goals.survivalDay)
   ) {
     missionCleared = true;
     events = [...events, { type: "mission-clear" }];
   }
-  if (!fundingAnnounced && summary.fundingEligible) {
+  if (!world.insolvent && !fundingAnnounced && summary.fundingEligible) {
     fundingAnnounced = true;
     events = [...events, { type: "funding-unlocked" }];
   }
@@ -280,9 +265,21 @@ function advanceDay(world: MarketWorld): MarketWorld {
   const day = world.day + 1;
   const events: MarketEvent[] = [];
   let repayment = 0;
+  let seed = world.seed;
   const customers = world.customers.filter((customer) => {
     if (customer.status === "accepted" && customer.dueDay === day) {
-      repayment += customer.amount * (1 + customer.rate / 100);
+      const risk = defaultRisk(customer);
+      let roll = 100;
+      if (world.config.randomizeDefaultRisk) {
+        let random: number;
+        [random, seed] = nextRandom(seed);
+        roll = random * 100;
+      }
+      if (roll < risk) {
+        events.push({ type: "default", customer, risk });
+      } else {
+        repayment += customer.amount * (1 + customer.rate / 100);
+      }
       return false;
     }
     return true;
@@ -292,10 +289,21 @@ function advanceDay(world: MarketWorld): MarketWorld {
     cash += repayment;
     events.push({ type: "repayment", amount: repayment });
   }
-  let seed = world.seed;
+  const funding = world.funding.filter((lender) => {
+    if (!world.config.fundingRepaymentsEnabled) return true;
+    if (lender.accepted && lender.dueDay === day) {
+      const amount = lender.amount * (1 + lender.rate / 100);
+      cash -= amount;
+      events.push({ type: "funding-repayment", lender, amount });
+      return false;
+    }
+    return true;
+  });
+  const insolvent = cash < 0;
+  if (insolvent) events.push({ type: "insolvent" });
   if (
-    day % SPAWN_EVERY_DAYS === 0 &&
-    customers.length < MAX_VISIBLE_CUSTOMERS
+    day % world.config.spawnEveryDays === 0 &&
+    customers.length < world.config.maxVisibleCustomers
   ) {
     const occupied = new Set(
       customers.map((customer) => `${customer.x},${customer.y}`),
@@ -307,18 +315,24 @@ function advanceDay(world: MarketWorld): MarketWorld {
       let index: number;
       [index, seed] = randomInt(seed, available.length);
       let customer: Customer;
-      [customer, seed] = randomCustomer(day, available[index]!, seed);
+      [customer, seed] = randomCustomer(
+        day,
+        available[index]!,
+        seed,
+        world.config,
+      );
       customers.push(customer);
       events.push({ type: "loan-request", customer });
     }
   }
-  return { ...world, day, cash, customers, seed, events };
+  return { ...world, day, cash, customers, funding, seed, insolvent, events };
 }
 
 function randomCustomer(
   day: number,
   position: { x: number; y: number },
   initialSeed: number,
+  config: MarketStageConfig,
 ): [Customer, number] {
   let seed = initialSeed;
   const roll = (bound: number): number => {
@@ -326,14 +340,19 @@ function randomCustomer(
     [value, seed] = randomInt(seed, bound);
     return value;
   };
-  const term = 9 + roll(10);
+  const generation = config.customerGeneration;
+  const term = generation.termMin + roll(generation.termRange);
   const customer: Customer = {
     id: `customer-${day}`,
     name: RANDOM_NAMES[roll(RANDOM_NAMES.length)]!,
     job: RANDOM_JOBS[roll(RANDOM_JOBS.length)]!,
-    income: 1_800 + roll(22) * 200,
-    amount: 80 + roll(38) * 10,
-    rate: 7 + roll(10),
+    income:
+      generation.incomeMin +
+      roll(generation.incomeRange) * generation.incomeStep,
+    amount:
+      generation.amountMin +
+      roll(generation.amountRange) * generation.amountStep,
+    rate: generation.rateMin + roll(generation.rateRange),
     term,
     dueDay: day + term,
     appears: day,
@@ -348,9 +367,14 @@ function randomCustomer(
 /** The scripted intro loan to the first customer. */
 function begin(world: MarketWorld): MarketWorld {
   const first = world.customers.find(
-    (customer) => customer.id === FIRST_CUSTOMER.id,
+    (customer) => customer.id === world.config.introCustomerId,
   );
-  if (!first || first.status !== "waiting") return { ...world, events: [] };
+  if (
+    !world.config.introApprovesAutomatically ||
+    !first ||
+    first.status !== "waiting"
+  )
+    return { ...world, events: [] };
   return {
     ...world,
     cash: world.cash - first.amount,
@@ -398,7 +422,8 @@ function approve(world: MarketWorld, customerId: string): MarketWorld {
 
 function borrow(world: MarketWorld, lenderId: string): MarketWorld {
   const lender = world.funding.find((item) => item.id === lenderId);
-  if (!lender || lender.accepted) return { ...world, events: [] };
+  if (!lender || lender.accepted || !summarize(world).fundingEligible)
+    return { ...world, events: [] };
   const accepted = {
     ...lender,
     accepted: true,

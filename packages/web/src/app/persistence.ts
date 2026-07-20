@@ -56,7 +56,7 @@ function requestValue<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-function migrateCampaign(value: unknown): CampaignProgress {
+export function migrateCampaign(value: unknown): CampaignProgress {
   const fallback = emptySave().campaign;
   if (!value || typeof value !== "object") return fallback;
   const record = value as Record<string, unknown>;
@@ -79,7 +79,7 @@ function migrateCampaign(value: unknown): CampaignProgress {
   };
 }
 
-function migrateSettings(value: unknown): PlayerSettings {
+export function migrateSettings(value: unknown): PlayerSettings {
   const fallback = emptySave().settings;
   if (!value || typeof value !== "object") return fallback;
   const record = value as Record<string, unknown>;
@@ -94,6 +94,17 @@ function migrateSettings(value: unknown): PlayerSettings {
   };
 }
 
+export function migrateSaveParts(
+  campaignValue: unknown,
+  settingsValue: unknown,
+): SaveEnvelope {
+  return {
+    schemaVersion: 2,
+    campaign: migrateCampaign(campaignValue),
+    settings: migrateSettings(settingsValue),
+  };
+}
+
 export async function loadGame(): Promise<SaveEnvelope> {
   if (!("indexedDB" in globalThis)) return emptySave();
   const database = await openDatabase();
@@ -104,11 +115,7 @@ export async function loadGame(): Promise<SaveEnvelope> {
       requestValue(store.get("campaign")),
       requestValue(store.get("settings")),
     ]);
-    return {
-      schemaVersion: 2,
-      campaign: migrateCampaign(campaign),
-      settings: migrateSettings(settings),
-    };
+    return migrateSaveParts(campaign, settings);
   } finally {
     database.close();
   }

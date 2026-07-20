@@ -16,18 +16,31 @@ export const ko: Messages = {
     back: "뒤로",
     level: "LEVEL 01",
     introTitle: "첫 번째 대출",
+    challengeIntroTitle: "여신 심사 데스크",
     firstCustomer: "오늘의 첫 고객",
+    firstAssessment: "오늘의 첫 심사",
     customerAlt: (name: string) => `고객 ${name}`,
     greeting: "안녕하세요! 급하게 필요한 돈이 있어요.",
+    challengeGreeting: "일을 계속하려면 운영 자금이 필요해요.",
     loanQuestion: "$100을 빌릴 수 있을까요?",
+    challengeLoanQuestion: (amount: string) => `${amount}을 빌릴 수 있을까요?`,
     learnCustomer: "대출하기 전에 고객을 알아보세요.",
+    challengeLearnCustomer: "소득 대비 대출 금액이 상환 위험을 결정합니다.",
     askJob: "직업을 물어본다",
     jobAnswer: "동네 베이커리에서 3년째 일하고 있어요.",
     askIncome: "소득을 물어본다",
     incomeAnswer: "월 소득은 약 $2,400입니다.",
     informationComplete: "정보 확인 완료 · 12일 후 $110 상환",
+    challengeInformationComplete: (risk: number) =>
+      `정보 확인 완료 · 예상 연체 위험: ${risk}%`,
     lendAtRate: "이자 10%로 $100 빌려주기",
+    openUnderwriting: "여신 심사 데스크 열기",
     noticeRepayment: (amount: string) => `${amount}가 상환되었습니다.`,
+    noticeDefault: (name: string, amount: string) =>
+      `${name} 고객이 ${amount} 대출을 연체했습니다. 해당 채권은 손실 처리되었습니다.`,
+    noticeFundingRepayment: (name: string, amount: string) =>
+      `${name}에 ${amount}를 상환했습니다.`,
+    noticeInsolvent: "오늘 만기인 부채를 갚을 현금이 부족합니다.",
     noticeLoanRequest: (name: string, amount: string) =>
       `${name} 고객이 ${amount} 대출을 요청합니다.`,
     fundingArrived: "다른 은행들의 자금 대출 제안이 도착했습니다.",
@@ -37,6 +50,7 @@ export const ko: Messages = {
     borrowed: (name: string, amount: string) =>
       `${name}에서 ${amount}를 빌렸습니다.`,
     levelCompleteGoal: "LEVEL 01 목표",
+    challengeGoals: "LEVEL 02 목표",
     allGoalsComplete: "모든 목표 완료",
     currentDate: "현재 날짜",
     currentCash: "현재 현금",
@@ -55,6 +69,8 @@ export const ko: Messages = {
     pause: "일시정지",
     timeHint: "시간을 진행하면 새로운 고객이 나타나고 대출이 상환됩니다.",
     missionComplete: "세 가지 은행 운영 목표를 모두 달성했습니다.",
+    challengeMissionComplete:
+      "26일까지 신용 위험, 유동성, 부채 만기를 균형 있게 관리했습니다.",
     elapsedTime: "경과 시간",
     loansIssued: "실행 대출",
     cumulativeLoans: "누적 대출",
@@ -85,6 +101,8 @@ export const ko: Messages = {
     borrowFromBank: "다른 은행에서 돈 빌리기",
     fundingDescription:
       "받은 돈은 현금이 되고, 갚을 의무는 맵에 점선으로 표시됩니다.",
+    challengeFundingDescription:
+      "받은 자금은 만기일에 이자와 함께 반드시 상환해야 합니다. 현금이 음수가 되면 은행은 파산합니다.",
     dueInDays: (days: number) => `${days}일 후 상환`,
     annualRate: (rate: number) => `연 ${rate}%`,
     select: "선택",
@@ -92,7 +110,20 @@ export const ko: Messages = {
     goalFirstLoan: "첫 대출 실행하기",
     goalCumulativeLoans: "대출 누적 $500 이상",
     goalNetCash: "순수 현금 $2,000 달성",
+    challengeGoalLoans: "대출 3건 실행하기",
+    challengeGoalCumulativeLoans: "대출 누적 $1,500 이상",
+    challengeGoalNetCash: "순수 현금 $1,400 달성",
+    goalSurvive: "26일까지 은행의 지급 능력 유지",
+    dayProgress: (day: number) => `${day}일차`,
     loanProgress: (count: number) => `${count}건`,
     loanTerms: (days: number, rate: number) => `${days}일 · 이자 ${rate}%`,
+    defaultRisk: "연체 위험",
+    defaultRiskValue: (risk: number) => `예상 ${risk}%`,
+    defaults: "신용 결과",
+    survived: "은행 지급 능력 유지",
+    insolventTitle: "은행 파산",
+    insolventDescription:
+      "상환 만기인 타행 자금을 갚을 현금이 부족합니다. 대출 위험과 부채 만기를 다시 검토한 뒤 재도전하세요.",
+    returnToStages: "스테이지로 돌아가기",
   },
 };

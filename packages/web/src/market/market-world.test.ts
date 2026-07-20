@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { marketCampaignStages } from "./market-campaign.ts";
 import {
   createWorld,
   FIRST_CUSTOMER,
   GOALS,
+  defaultRisk,
   marketReducer,
   summarize,
   type MarketAction,
@@ -61,6 +63,14 @@ describe("lending", () => {
     );
   });
 
+  it("books receivables and interest into net worth without double-counting cash", () => {
+    const world = run(createWorld(1), { type: "begin" });
+    const summary = summarize(world);
+    expect(summary.totalAssets).toBe(600 + 110);
+    expect(summary.netWorth).toBe(710);
+    expect(summary.netCash).toBe(600);
+  });
+
   it("rejects an approval the bank cannot fund", () => {
     let world = run(createWorld(1), ...days(3));
     const request = world.customers.find((c) => c.status === "waiting");
@@ -72,6 +82,19 @@ describe("lending", () => {
     });
     expect(after.cash).toBe(world.cash);
     expect(after.loanCount).toBe(world.loanCount);
+  });
+});
+
+describe("campaign configuration", () => {
+  it("creates worlds from the selected stage config", () => {
+    const stage = marketCampaignStages[1]!;
+    const world = createWorld(1, stage.config);
+
+    expect(world.level).toBe(stage.config.level);
+    expect(world.cash).toBe(stage.config.startingCash);
+    expect(world.config.goals).toEqual(stage.config.goals);
+    expect(world.customers[0]?.amount).toBe(420);
+    expect(world.funding[0]?.amount).toBe(600);
   });
 });
 
@@ -131,6 +154,61 @@ describe("funding", () => {
     const summary = summarize(world);
     expect(summary.fundingLiabilities).toBeCloseTo(metro.amount * 1.08);
     expect(summary.netCash).toBeCloseTo(world.cash - metro.amount * 1.08);
+  });
+});
+
+describe("level two credit risk", () => {
+  it("derives higher default risk from a larger loan relative to income", () => {
+    const safe = { ...FIRST_CUSTOMER, income: 4_000, amount: 400 };
+    const risky = { ...FIRST_CUSTOMER, income: 800, amount: 800 };
+    expect(defaultRisk(risky)).toBeGreaterThan(defaultRisk(safe));
+  });
+
+  it("writes off a defaulted challenge loan deterministically", () => {
+    let world = createWorld(6, "credit-under-pressure");
+    const customer = world.customers[0]!;
+    world = {
+      ...world,
+      customers: [
+        {
+          ...customer,
+          income: 200,
+          amount: 400,
+          dueDay: 1,
+          status: "accepted",
+        },
+      ],
+    };
+    world = marketReducer(world, { type: "advance-day" });
+    expect(world.cash).toBe(900);
+    expect(world.customers).toHaveLength(0);
+    expect(world.events.some((event) => event.type === "default")).toBe(true);
+  });
+
+  it("collects challenge funding on its due day and fails on negative cash", () => {
+    let world: MarketWorld = {
+      ...createWorld(1, "credit-under-pressure"),
+      day: 3,
+      thirdLoanDay: 0,
+    };
+    world = marketReducer(world, { type: "borrow", lenderId: "civic" });
+    const civic = world.funding.find((lender) => lender.id === "civic")!;
+    world = {
+      ...world,
+      cash: 100,
+      funding: world.funding.map((lender) =>
+        lender.id === civic.id ? { ...lender, dueDay: world.day + 1 } : lender,
+      ),
+    };
+    world = marketReducer(world, { type: "advance-day" });
+    expect(world.cash).toBe(-536);
+    expect(
+      world.funding.find((lender) => lender.id === civic.id),
+    ).toBeUndefined();
+    expect(world.insolvent).toBe(true);
+    expect(
+      world.events.some((event) => event.type === "funding-repayment"),
+    ).toBe(true);
   });
 });
 

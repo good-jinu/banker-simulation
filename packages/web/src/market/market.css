@@ -876,6 +876,35 @@ button {
   font-weight: 950;
   cursor: pointer;
 }
+.loss-backdrop {
+  background:
+    radial-gradient(
+      circle at 50% 40%,
+      rgba(153, 54, 54, 0.35),
+      transparent 42%
+    ),
+    rgba(17, 5, 7, 0.93);
+}
+.loss-card {
+  border-color: #a45155;
+  background: linear-gradient(160deg, #35191c, #1b1019 62%);
+  box-shadow:
+    0 0 65px rgba(218, 87, 87, 0.2),
+    0 28px 80px rgba(0, 0, 0, 0.55);
+}
+.loss-card .clear-seal {
+  color: #3c1015;
+  border-color: #7c363b;
+  background: #ef8a84;
+  box-shadow: 0 0 30px rgba(239, 138, 132, 0.35);
+}
+.loss-card h2 {
+  color: #ffa19b;
+}
+.loss-card > button {
+  color: #351015;
+  background: #ef918a;
+}
 .modal-backdrop {
   position: fixed;
   z-index: 80;
