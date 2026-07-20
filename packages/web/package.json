@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build && node scripts/prepare-sites.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm run typecheck && pnpm run build"
+    "test": "vitest run",
+    "check": "pnpm run typecheck && pnpm run test && pnpm run build"
   },
   "dependencies": {
     "lucide-react": "^1.24.0",
@@ -20,6 +21,7 @@
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
     "typescript": "7.0.2",
-    "vite": "8.1.5"
+    "vite": "8.1.5",
+    "vitest": "^4.1.10"
   }
 }

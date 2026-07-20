@@ -1,172 +1,24 @@
 import { ArrowLeft, Check, Info, Landmark, Pause, Play, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { localize, type LocalText } from "../i18n/local-text.ts";
+import { useEffect, useReducer, useRef, useState } from "react";
+import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "../lib/game-clock.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
+import {
+  createWorld,
+  FIRST_CUSTOMER,
+  GOALS,
+  marketReducer,
+  summarize,
+  type Customer,
+  type Funding,
+} from "./market-world.ts";
 import "./market.css";
 
 const DAY_MS = 1_500;
 
-type CustomerStatus = "waiting" | "accepted";
-type Customer = {
-  id: string;
-  name: LocalText;
-  job: LocalText;
-  income: number;
-  amount: number;
-  rate: number;
-  term: number;
-  dueDay: number;
-  appears: number;
-  x: number;
-  y: number;
-  avatar: string;
-  status: CustomerStatus;
-};
-
-type Funding = {
-  id: string;
-  name: LocalText;
-  amount: number;
-  rate: number;
-  dueDay: number;
-  x: number;
-  y: number;
-  accepted: boolean;
-};
-
 type Transfer = { id: number; from: string; to: string; amount: number };
-
-const CUSTOMER_SEEDS: Customer[] = [
-  {
-    id: "mina",
-    name: { en: "Mina Kim", ko: "미나 김" },
-    job: { en: "Neighborhood bakery employee", ko: "동네 베이커리 직원" },
-    income: 2_400,
-    amount: 100,
-    rate: 10,
-    term: 12,
-    dueDay: 12,
-    appears: 0,
-    x: 19,
-    y: 21,
-    avatar: "/assets/avatars/mina-request.webp",
-    status: "waiting",
-  },
-];
-
-const RANDOM_NAMES: LocalText[] = [
-  { en: "Jun Park", ko: "준 박" },
-  { en: "Seoyeon Lee", ko: "서연 이" },
-  { en: "Doyoon Han", ko: "도윤 한" },
-  { en: "Jiwoo Choi", ko: "지우 최" },
-  { en: "Hajun Song", ko: "하준 송" },
-  { en: "Yuna Jung", ko: "유나 정" },
-  { en: "Hyunwoo Kang", ko: "현우 강" },
-  { en: "Subin Oh", ko: "수빈 오" },
-];
-const RANDOM_JOBS: LocalText[] = [
-  { en: "Delivery driver", ko: "택배 기사" },
-  { en: "Freelance designer", ko: "프리랜서 디자이너" },
-  { en: "Café owner", ko: "카페 운영자" },
-  { en: "Nurse", ko: "간호사" },
-  { en: "Academy instructor", ko: "학원 강사" },
-  { en: "Restaurant owner", ko: "식당 운영자" },
-  { en: "Software developer", ko: "소프트웨어 개발자" },
-  { en: "Craft studio owner", ko: "공방 운영자" },
-];
-const RANDOM_AVATARS = [
-  "/assets/avatars/jun-neutral.webp",
-  "/assets/avatars/auditor-neutral.webp",
-  "/assets/avatars/fund-manager-neutral.webp",
-  "/assets/avatars/mina-neutral.webp",
-  "/assets/avatars/regulator-neutral.webp",
-  "/assets/avatars/jun-evaluating.webp",
-];
-const MAX_VISIBLE_CUSTOMERS = 5;
-const CUSTOMER_POSITIONS = [
-  { x: 19, y: 21 },
-  { x: 81, y: 21 },
-  { x: 84, y: 76 },
-  { x: 18, y: 76 },
-  { x: 49, y: 14 },
-  { x: 67, y: 83 },
-  { x: 32, y: 83 },
-];
-
-function nextAvailablePosition(
-  customers: Customer[],
-): { x: number; y: number } | null {
-  const occupied = new Set(
-    customers.map((customer) => `${customer.x},${customer.y}`),
-  );
-  const available = CUSTOMER_POSITIONS.filter(
-    (position) => !occupied.has(`${position.x},${position.y}`),
-  );
-
-  if (available.length === 0) return null;
-  return available[Math.floor(Math.random() * available.length)]!;
-}
-
-function randomCustomer(
-  day: number,
-  position: { x: number; y: number },
-): Customer {
-  const nameIndex = Math.floor(Math.random() * RANDOM_NAMES.length);
-  const jobIndex = Math.floor(Math.random() * RANDOM_JOBS.length);
-  const amount = 80 + Math.floor(Math.random() * 38) * 10;
-  const term = 9 + Math.floor(Math.random() * 10);
-  return {
-    id: `customer-${day}-${Math.random().toString(36).slice(2, 7)}`,
-    name: RANDOM_NAMES[nameIndex]!,
-    job: RANDOM_JOBS[jobIndex]!,
-    income: 1_800 + Math.floor(Math.random() * 22) * 200,
-    amount,
-    rate: 7 + Math.floor(Math.random() * 10),
-    term,
-    dueDay: day + term,
-    appears: day,
-    x: position.x,
-    y: position.y,
-    avatar: RANDOM_AVATARS[Math.floor(Math.random() * RANDOM_AVATARS.length)]!,
-    status: "waiting",
-  };
-}
-
-const FUNDING_SEEDS: Funding[] = [
-  {
-    id: "civic",
-    name: { en: "Civic Credit Union", ko: "시민 신용금고" },
-    amount: 500,
-    rate: 5,
-    dueDay: 30,
-    x: 9,
-    y: 50,
-    accepted: false,
-  },
-  {
-    id: "metro",
-    name: { en: "Metro Bank", ko: "메트로 은행" },
-    amount: 800,
-    rate: 8,
-    dueDay: 35,
-    x: 50,
-    y: 88,
-    accepted: false,
-  },
-  {
-    id: "capital",
-    name: { en: "Capital Partners", ko: "캐피탈 파트너스" },
-    amount: 1_200,
-    rate: 12,
-    dueDay: 40,
-    x: 91,
-    y: 50,
-    accepted: false,
-  },
-];
 
 function money(value: number): string {
   return `$${Math.round(value).toLocaleString("en-US")}`;
@@ -184,22 +36,16 @@ export function MarketApp({
   onComplete?: () => void;
 }) {
   const m = messagesFor(locale).market;
+  const [world, dispatch] = useReducer(marketReducer, undefined, () =>
+    createWorld(Date.now() >>> 0),
+  );
   const [phase, setPhase] = useState<"intro" | "map">("intro");
   const [askedJob, setAskedJob] = useState(false);
   const [askedIncome, setAskedIncome] = useState(false);
-  const [cash, setCash] = useState(700);
-  const [day, setDay] = useState(0);
-  const [customers, setCustomers] = useState(CUSTOMER_SEEDS);
-  const [funding, setFunding] = useState(FUNDING_SEEDS);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [fundingOpen, setFundingOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
-  const [loanCount, setLoanCount] = useState(0);
-  const [cumulativeLent, setCumulativeLent] = useState(0);
-  const [thirdLoanDay, setThirdLoanDay] = useState<number | null>(null);
-  const [fundingPromptShown, setFundingPromptShown] = useState(false);
-  const [missionClear, setMissionClear] = useState(false);
   const [transfer, setTransfer] = useState<Transfer | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [clockView, setClockView] = useState<{
@@ -213,46 +59,54 @@ export function MarketApp({
 
   useEffect(() => {
     const clock = new GameClock(() => {
-      setDay((currentDay) => {
-        const nextDay = currentDay + 1;
-        setCustomers((current) => {
-          let repayment = 0;
-          const updated = current.flatMap((customer) => {
-            if (customer.status === "accepted" && customer.dueDay === nextDay) {
-              repayment += customer.amount * (1 + customer.rate / 100);
-              return [];
-            }
-            return [customer];
-          });
-          if (repayment > 0) {
-            setCash((value) => value + repayment);
-            setNotice(m.noticeRepayment(money(repayment)));
-          }
-          const position = nextAvailablePosition(updated);
-          if (
-            nextDay % 3 === 0 &&
-            updated.length < MAX_VISIBLE_CUSTOMERS &&
-            position
-          ) {
-            const newcomer = randomCustomer(nextDay, position);
-            setNotice(
-              m.noticeLoanRequest(
-                localize(newcomer.name, locale),
-                money(newcomer.amount),
-              ),
-            );
-            return [...updated, newcomer];
-          }
-          return updated;
-        });
-        return nextDay;
-      });
+      dispatch({ type: "advance-day" });
       return true;
     }, DAY_MS);
     clockRef.current = clock;
     clock.start();
     return () => clock.dispose();
   }, []);
+
+  useEffect(() => {
+    for (const event of world.events) {
+      switch (event.type) {
+        case "repayment":
+          setNotice(m.noticeRepayment(money(event.amount)));
+          break;
+        case "loan-request":
+          setNotice(
+            m.noticeLoanRequest(
+              localize(event.customer.name, locale),
+              money(event.customer.amount),
+            ),
+          );
+          break;
+        case "transfer":
+          transferId.current += 1;
+          setTransfer({
+            id: transferId.current,
+            from: event.from,
+            to: event.to,
+            amount: event.amount,
+          });
+          break;
+        case "borrowed":
+          setNotice(
+            m.borrowed(
+              localize(event.lender.name, locale),
+              money(event.lender.amount),
+            ),
+          );
+          break;
+        case "funding-unlocked":
+          setFundingOpen(true);
+          setNotice(m.fundingArrived);
+          break;
+        case "mission-clear":
+          break;
+      }
+    }
+  }, [locale, m, world.events]);
 
   useEffect(() => {
     if (!notice) return;
@@ -265,6 +119,8 @@ export function MarketApp({
     const handle = window.setTimeout(() => setTransfer(null), 1_100);
     return () => window.clearTimeout(handle);
   }, [transfer]);
+
+  const missionClear = world.missionCleared;
 
   useEffect(() => {
     const modalOpen = Boolean(
@@ -292,71 +148,24 @@ export function MarketApp({
     }
   }, [assetsOpen, fundingOpen, missionClear, selected]);
 
-  const loanReceivables = customers
-    .filter((customer) => customer.status === "accepted")
-    .reduce(
-      (total, customer) => total + customer.amount * (1 + customer.rate / 100),
-      0,
-    );
-  const fundingLiabilities = funding
-    .filter((lender) => lender.accepted)
-    .reduce(
-      (total, lender) => total + lender.amount * (1 + lender.rate / 100),
-      0,
-    );
-  const totalAssets = cash + loanReceivables;
-  const netWorth = totalAssets - fundingLiabilities;
-  const netCash = cash - fundingLiabilities;
-  const hasFunding = funding.some((item) => item.accepted);
-  const fundingEligible =
-    thirdLoanDay !== null && day >= thirdLoanDay + 3 && !hasFunding;
-
-  useEffect(() => {
-    if (
-      phase !== "map" ||
-      missionClear ||
-      loanCount < 1 ||
-      cumulativeLent < 500 ||
-      netCash < 2_000
-    )
-      return;
-    setMissionClear(true);
-  }, [cumulativeLent, loanCount, missionClear, netCash, phase]);
-
-  useEffect(() => {
-    if (
-      phase !== "map" ||
-      !fundingEligible ||
-      fundingPromptShown ||
-      fundingOpen
-    )
-      return;
-    setFundingPromptShown(true);
-    setFundingOpen(true);
-    setNotice(m.fundingArrived);
-  }, [fundingEligible, fundingOpen, fundingPromptShown, phase]);
-
-  function animate(from: string, to: string, amount: number): void {
-    transferId.current += 1;
-    setTransfer({ id: transferId.current, from, to, amount });
-  }
+  const {
+    loanReceivables,
+    fundingLiabilities,
+    totalAssets,
+    netWorth,
+    netCash,
+    fundingEligible,
+  } = summarize(world);
+  const { cash, day, customers, funding, loanCount, cumulativeLent } = world;
 
   function beginMap(): void {
-    setCash((value) => value - 100);
-    setCustomers((current) =>
-      current.map((customer) =>
-        customer.id === "mina" ? { ...customer, status: "accepted" } : customer,
-      ),
-    );
-    setLoanCount(1);
-    setCumulativeLent(100);
+    dispatch({ type: "begin" });
     setPhase("map");
-    window.setTimeout(() => animate("banker", "mina", 100), 180);
   }
 
   function approve(customer: Customer): void {
+    setSelected(null);
     if (cash < customer.amount) {
-      setSelected(null);
       if (fundingEligible) setFundingOpen(true);
       setNotice(
         fundingEligible
@@ -365,41 +174,17 @@ export function MarketApp({
       );
       return;
     }
-    setCash((value) => value - customer.amount);
-    setCustomers((current) =>
-      current.map((item) =>
-        item.id === customer.id
-          ? { ...item, status: "accepted", dueDay: day + item.term }
-          : item,
-      ),
-    );
-    const nextLoanCount = loanCount + 1;
-    setLoanCount(nextLoanCount);
-    setCumulativeLent((value) => value + customer.amount);
-    if (nextLoanCount === 3) setThirdLoanDay(day);
-    setSelected(null);
-    animate("banker", customer.id, customer.amount);
+    dispatch({ type: "approve", customerId: customer.id });
   }
 
   function reject(customer: Customer): void {
-    setCustomers((current) =>
-      current.filter((item) => item.id !== customer.id),
-    );
+    dispatch({ type: "reject", customerId: customer.id });
     setSelected(null);
   }
 
   function borrow(lender: Funding): void {
-    setFunding((current) =>
-      current.map((item) =>
-        item.id === lender.id
-          ? { ...item, accepted: true, dueDay: day + item.dueDay }
-          : item,
-      ),
-    );
-    setCash((value) => value + lender.amount);
+    dispatch({ type: "borrow", lenderId: lender.id });
     setFundingOpen(false);
-    animate(lender.id, "banker", lender.amount);
-    setNotice(m.borrowed(localize(lender.name, locale), money(lender.amount)));
   }
 
   function toggleClock(): void {
@@ -431,11 +216,11 @@ export function MarketApp({
           <div className="conversation-scene">
             <span className="scene-label">{m.firstCustomer}</span>
             <img
-              src="/assets/avatars/mina-request.webp"
-              alt={m.customerAlt(localize(CUSTOMER_SEEDS[0]!.name, locale))}
+              src={FIRST_CUSTOMER.avatar}
+              alt={m.customerAlt(localize(FIRST_CUSTOMER.name, locale))}
             />
             <div className="speech-bubble">
-              <small>{localize(CUSTOMER_SEEDS[0]!.name, locale)}</small>
+              <small>{localize(FIRST_CUSTOMER.name, locale)}</small>
               <p>
                 {m.greeting}
                 <br />
@@ -480,18 +265,18 @@ export function MarketApp({
   const goals = [
     {
       label: m.goalFirstLoan,
-      progress: `${m.loanProgress(Math.min(loanCount, 1))} / ${m.loanProgress(1)}`,
-      completed: loanCount >= 1,
+      progress: `${m.loanProgress(Math.min(loanCount, GOALS.loanCount))} / ${m.loanProgress(GOALS.loanCount)}`,
+      completed: loanCount >= GOALS.loanCount,
     },
     {
       label: m.goalCumulativeLoans,
-      progress: `${money(Math.min(cumulativeLent, 500))} / $500`,
-      completed: cumulativeLent >= 500,
+      progress: `${money(Math.min(cumulativeLent, GOALS.cumulativeLent))} / ${money(GOALS.cumulativeLent)}`,
+      completed: cumulativeLent >= GOALS.cumulativeLent,
     },
     {
       label: m.goalNetCash,
-      progress: `${money(netCash)} / $2,000`,
-      completed: netCash >= 2_000,
+      progress: `${money(netCash)} / ${money(GOALS.netCash)}`,
+      completed: netCash >= GOALS.netCash,
     },
   ];
   const activeGoalIndex = goals.findIndex((goal) => !goal.completed);
