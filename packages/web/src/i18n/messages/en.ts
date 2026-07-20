@@ -67,7 +67,7 @@ export const en = {
     timeRunning: "Time running",
     playTime: "Play time",
     pause: "Pause",
-    timeHint: "Advance time to see new customers appear and loans repaid.",
+    timeHint: "New customers & repayments",
     missionComplete: "Three bank-management goals completed.",
     challengeMissionComplete:
       "You balanced credit risk, liquidity, and debt maturity through day 26.",
@@ -86,8 +86,6 @@ export const en = {
     liabilities: "Liabilities",
     bankRepaymentObligation: "Bank repayment obligations",
     netCash: "Net cash",
-    assetNote:
-      "Loan receivables include the principal and interest owed by customers.",
     loanRequestTitle: "NEW LOAN REQUEST",
     requestCopy: (amount: string) =>
       `I would like to borrow ${amount} for my business and living expenses.`,
@@ -100,10 +98,9 @@ export const en = {
     fundingNeeded: "Insufficient cash · Borrow funds",
     interbankFunding: "INTERBANK FUNDING",
     borrowFromBank: "Borrow from another bank",
-    fundingDescription:
-      "Borrowed cash is added to your balance; repayment obligations appear as dotted lines on the map.",
-    challengeFundingDescription:
-      "Borrowed cash must be repaid with interest on its due day. If cash becomes negative, the bank fails.",
+    fundingCashNow: "Cash added now",
+    fundingRepayInterest: "Repay + interest on due day",
+    fundingRiskInsolvency: "Risk: bank fails if cash goes negative",
     dueInDays: (days: number) => `Due in ${days} days`,
     annualRate: (rate: number) => `${rate}% annual`,
     select: "Select",

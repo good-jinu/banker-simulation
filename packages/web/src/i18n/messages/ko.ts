@@ -67,7 +67,7 @@ export const ko: Messages = {
     timeRunning: "시간 진행 중",
     playTime: "시간 재생",
     pause: "일시정지",
-    timeHint: "시간을 진행하면 새로운 고객이 나타나고 대출이 상환됩니다.",
+    timeHint: "새 고객 · 대출 상환",
     missionComplete: "세 가지 은행 운영 목표를 모두 달성했습니다.",
     challengeMissionComplete:
       "26일까지 신용 위험, 유동성, 부채 만기를 균형 있게 관리했습니다.",
@@ -86,7 +86,6 @@ export const ko: Messages = {
     liabilities: "부채",
     bankRepaymentObligation: "타 은행 상환 의무",
     netCash: "순수 현금",
-    assetNote: "대출 채권은 고객에게 받을 원금과 이자를 합산한 금액입니다.",
     loanRequestTitle: "NEW LOAN REQUEST",
     requestCopy: (amount: string) =>
       `사업과 생활에 필요한 ${amount}를 빌리고 싶어요.`,
@@ -99,10 +98,9 @@ export const ko: Messages = {
     fundingNeeded: "현금이 부족합니다 · 자금 빌리기",
     interbankFunding: "INTERBANK FUNDING",
     borrowFromBank: "다른 은행에서 돈 빌리기",
-    fundingDescription:
-      "받은 돈은 현금이 되고, 갚을 의무는 맵에 점선으로 표시됩니다.",
-    challengeFundingDescription:
-      "받은 자금은 만기일에 이자와 함께 반드시 상환해야 합니다. 현금이 음수가 되면 은행은 파산합니다.",
+    fundingCashNow: "즉시 현금 지급",
+    fundingRepayInterest: "만기일에 이자와 함께 상환",
+    fundingRiskInsolvency: "위험: 현금이 음수가 되면 파산",
     dueInDays: (days: number) => `${days}일 후 상환`,
     annualRate: (rate: number) => `연 ${rate}%`,
     select: "선택",

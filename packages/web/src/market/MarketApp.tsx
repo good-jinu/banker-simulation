@@ -1,4 +1,25 @@
-import { ArrowLeft, Check, Info, Landmark, Pause, Play, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRightLeft,
+  Banknote,
+  CalendarClock,
+  Check,
+  Clock,
+  Coins,
+  Equal,
+  HandCoins,
+  Info,
+  Landmark,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  ShieldCheck,
+  Users,
+  Wallet,
+  X,
+} from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
@@ -315,11 +336,13 @@ export function MarketApp({
   const showFundingHint = fundingEligible && !fundingOpen;
   const goals = [
     {
+      icon: Users,
       label: isChallenge ? m.challengeGoalLoans : m.goalFirstLoan,
       progress: `${m.loanProgress(Math.min(loanCount, levelGoals.loanCount))} / ${m.loanProgress(levelGoals.loanCount)}`,
       completed: loanCount >= levelGoals.loanCount,
     },
     {
+      icon: Coins,
       label: isChallenge
         ? m.challengeGoalCumulativeLoans
         : m.goalCumulativeLoans,
@@ -327,6 +350,7 @@ export function MarketApp({
       completed: cumulativeLent >= levelGoals.cumulativeLent,
     },
     {
+      icon: Wallet,
       label: isChallenge ? m.challengeGoalNetCash : m.goalNetCash,
       progress: `${money(netCash)} / ${money(levelGoals.netCash)}`,
       completed: netCash >= levelGoals.netCash,
@@ -334,6 +358,7 @@ export function MarketApp({
     ...(isChallenge
       ? [
           {
+            icon: ShieldCheck,
             label: m.goalSurvive,
             progress: `${m.dayProgress(Math.min(day, survivalDay))} / ${m.dayProgress(survivalDay)}`,
             completed: day >= survivalDay,
@@ -395,26 +420,29 @@ export function MarketApp({
           </button>
           {goalsOpen && (
             <div className="goal-list">
-              {goals.map((goal, index) => (
-                <div
-                  key={goal.label}
-                  className={
-                    goal.completed
-                      ? "completed"
-                      : index === activeGoalIndex
-                        ? "active"
-                        : "locked"
-                  }
-                >
-                  <span className="goal-check">
-                    {goal.completed ? <Check /> : index + 1}
-                  </span>
-                  <p>
-                    <strong>{goal.label}</strong>
-                    <small>{goal.progress}</small>
-                  </p>
-                </div>
-              ))}
+              {goals.map((goal, index) => {
+                const GoalIcon = goal.icon;
+                return (
+                  <div
+                    key={goal.label}
+                    className={
+                      goal.completed
+                        ? "completed"
+                        : index === activeGoalIndex
+                          ? "active"
+                          : "locked"
+                    }
+                  >
+                    <span className="goal-check">
+                      {goal.completed ? <Check /> : <GoalIcon />}
+                    </span>
+                    <p>
+                      <strong>{goal.label}</strong>
+                      <small>{goal.progress}</small>
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -584,7 +612,10 @@ export function MarketApp({
         <button className="speed-time" onClick={cycleSpeed}>
           {clockView.speed}×
         </button>
-        <p>{m.timeHint}</p>
+        <p className="time-hint">
+          <Clock />
+          <span>{m.timeHint}</span>
+        </p>
       </footer>
 
       {notice && <div className="game-notice">{notice}</div>}
@@ -699,6 +730,22 @@ export function MarketApp({
                 <dd>{money(totalAssets)}</dd>
               </div>
             </dl>
+            <div className="asset-equation" aria-hidden="true">
+              <span>
+                <Wallet />
+                <small>{m.cash}</small>
+              </span>
+              <Plus className="eq-op" />
+              <span>
+                <Banknote />
+                <small>{m.loanReceivables}</small>
+              </span>
+              <Equal className="eq-op" />
+              <span>
+                <Landmark />
+                <small>{m.totalAssets}</small>
+              </span>
+            </div>
             <h3>{m.liabilities}</h3>
             <dl className="asset-rows">
               <div>
@@ -710,7 +757,22 @@ export function MarketApp({
                 <dd>{money(netCash)}</dd>
               </div>
             </dl>
-            <p className="asset-note">{m.assetNote}</p>
+            <div className="asset-equation" aria-hidden="true">
+              <span>
+                <Landmark />
+                <small>{m.totalAssets}</small>
+              </span>
+              <Minus className="eq-op" />
+              <span>
+                <HandCoins />
+                <small>{m.bankRepaymentObligation}</small>
+              </span>
+              <Equal className="eq-op" />
+              <span>
+                <Wallet />
+                <small>{m.netCash}</small>
+              </span>
+            </div>
           </section>
         </div>
       )}
@@ -806,11 +868,22 @@ export function MarketApp({
             </button>
             <small>INTERBANK FUNDING</small>
             <h2>{m.borrowFromBank}</h2>
-            <p>
-              {isChallenge
-                ? m.challengeFundingDescription
-                : m.fundingDescription}
-            </p>
+            <div className="funding-info-strip">
+              <span>
+                <ArrowRightLeft />
+                <small>{m.fundingCashNow}</small>
+              </span>
+              <span>
+                <CalendarClock />
+                <small>{m.fundingRepayInterest}</small>
+              </span>
+              {isChallenge && (
+                <span className="risk">
+                  <AlertTriangle />
+                  <small>{m.fundingRiskInsolvency}</small>
+                </span>
+              )}
+            </div>
             <div className="funding-options">
               {funding
                 .filter((item) => !item.accepted)
