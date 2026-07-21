@@ -16,6 +16,15 @@ import {
 
 export type CustomerStatus = "waiting" | "accepted";
 export type MarketLevel = "first-yield" | "credit-under-pressure";
+export type CustomerExpression =
+  "neutral" | "requesting" | "evaluating" | "worried" | "relieved" | "rejected";
+
+export type CustomerEvidence = {
+  purpose: LocalText;
+  employment: LocalText;
+  debt: LocalText;
+  collateral: LocalText;
+};
 
 export type Customer = {
   id: string;
@@ -30,6 +39,8 @@ export type Customer = {
   x: number;
   y: number;
   avatar: string;
+  avatarStates?: Partial<Record<CustomerExpression, string>>;
+  evidence: CustomerEvidence;
   status: CustomerStatus;
 };
 
@@ -74,6 +85,7 @@ export type MarketWorld = {
 };
 
 export type MarketAction =
+  | { type: "restore"; world: MarketWorld }
   | { type: "advance-day" }
   | { type: "begin" }
   | { type: "approve"; customerId: string }
@@ -110,12 +122,38 @@ const RANDOM_JOBS: LocalText[] = [
   { en: "Craft studio owner", ko: "공방 운영자" },
 ];
 const RANDOM_AVATARS = [
-  "/assets/avatars/jun-neutral.webp",
-  "/assets/avatars/auditor-neutral.webp",
-  "/assets/avatars/fund-manager-neutral.webp",
-  "/assets/avatars/mina-neutral.webp",
-  "/assets/avatars/regulator-neutral.webp",
-  "/assets/avatars/jun-evaluating.webp",
+  "/assets/pop-art/avatars/jun-neutral.png",
+  "/assets/pop-art/avatars/auditor-neutral.png",
+  "/assets/pop-art/avatars/fund-manager-neutral.png",
+  "/assets/pop-art/avatars/mina-neutral.png",
+  "/assets/pop-art/avatars/regulator-neutral.png",
+  "/assets/pop-art/avatars/jun-evaluating.png",
+];
+const RANDOM_PURPOSES: LocalText[] = [
+  { en: "Replace a delivery van tire", ko: "배달 차량 타이어 교체" },
+  { en: "Buy supplies for a design contract", ko: "디자인 계약용 자재 구입" },
+  { en: "Cover a slow café month", ko: "카페 비수기 운영비" },
+  { en: "Pay a professional certification fee", ko: "자격증 시험 비용" },
+  { en: "Restock a small restaurant", ko: "작은 식당 식자재 보충" },
+];
+const RANDOM_EMPLOYMENT: LocalText[] = [
+  { en: "Stable work, paid monthly", ko: "월급을 받는 안정적인 일자리" },
+  {
+    en: "Contract work with an uneven schedule",
+    ko: "일정하지 않은 계약직 일",
+  },
+  { en: "Growing business, first year", ko: "성장 중인 1년 차 사업" },
+];
+const RANDOM_DEBT: LocalText[] = [
+  { en: "No other loans", ko: "다른 대출 없음" },
+  { en: "One small credit-card balance", ko: "소액의 카드 잔액 하나" },
+  { en: "A family loan due next season", ko: "다음 계절에 갚을 가족 대출" },
+];
+const RANDOM_COLLATERAL: LocalText[] = [
+  { en: "A signed work contract", ko: "서명된 업무 계약서" },
+  { en: "A business deposit", ko: "사업 보증금" },
+  { en: "A guarantor from the workplace", ko: "직장의 보증인" },
+  { en: "Nothing offered", ko: "제시한 담보 없음" },
 ];
 const CUSTOMER_POSITIONS = [
   { x: 19, y: 21 },
@@ -182,19 +220,22 @@ export function defaultRisk(customer: Customer): number {
   return Math.min(55, Math.max(5, Math.round(62 - incomeToLoan * 18)));
 }
 
+export function avatarFor(
+  customer: Customer,
+  expression: CustomerExpression,
+): string {
+  return customer.avatarStates?.[expression] ?? customer.avatar;
+}
+
 export function summarize(world: MarketWorld) {
+  // Receivables and liabilities use principal value. Interest is recognized
+  // when a repayment actually moves cash, rather than at loan origination.
   const loanReceivables = world.customers
     .filter((customer) => customer.status === "accepted")
-    .reduce(
-      (total, customer) => total + customer.amount * (1 + customer.rate / 100),
-      0,
-    );
+    .reduce((total, customer) => total + customer.amount, 0);
   const fundingLiabilities = world.funding
     .filter((lender) => lender.accepted)
-    .reduce(
-      (total, lender) => total + lender.amount * (1 + lender.rate / 100),
-      0,
-    );
+    .reduce((total, lender) => total + lender.amount, 0);
   const totalAssets = world.cash + loanReceivables;
   const hasFunding = world.funding.some((lender) => lender.accepted);
   return {
@@ -202,7 +243,6 @@ export function summarize(world: MarketWorld) {
     fundingLiabilities,
     totalAssets,
     netWorth: totalAssets - fundingLiabilities,
-    netCash: world.cash - fundingLiabilities,
     hasFunding,
     fundingEligible:
       world.thirdLoanDay !== null &&
@@ -217,6 +257,7 @@ export function marketReducer(
   world: MarketWorld,
   action: MarketAction,
 ): MarketWorld {
+  if (action.type === "restore") return { ...action.world, events: [] };
   if (world.insolvent || world.missionCleared) return { ...world, events: [] };
   switch (action.type) {
     case "advance-day":
@@ -248,7 +289,7 @@ function withDerivedEvents(world: MarketWorld): MarketWorld {
     !missionCleared &&
     world.loanCount >= goals.loanCount &&
     world.cumulativeLent >= goals.cumulativeLent &&
-    summary.netCash >= goals.netCash &&
+    summary.netWorth >= goals.netWorth &&
     (goals.survivalDay === null || world.day >= goals.survivalDay)
   ) {
     missionCleared = true;
@@ -359,6 +400,12 @@ function randomCustomer(
     x: position.x,
     y: position.y,
     avatar: RANDOM_AVATARS[roll(RANDOM_AVATARS.length)]!,
+    evidence: {
+      purpose: RANDOM_PURPOSES[roll(RANDOM_PURPOSES.length)]!,
+      employment: RANDOM_EMPLOYMENT[roll(RANDOM_EMPLOYMENT.length)]!,
+      debt: RANDOM_DEBT[roll(RANDOM_DEBT.length)]!,
+      collateral: RANDOM_COLLATERAL[roll(RANDOM_COLLATERAL.length)]!,
+    },
     status: "waiting",
   };
   return [customer, seed];

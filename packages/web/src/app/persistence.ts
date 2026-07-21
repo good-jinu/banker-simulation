@@ -1,6 +1,13 @@
+import type { MarketStageConfig } from "../market/market-campaign.ts";
+import type { ConsultationProgress } from "../market/CustomerConsultation.tsx";
+import { CLOCK_SPEEDS, type ClockSpeed } from "../lib/game-clock.ts";
+import type { MarketWorld } from "../market/market-world.ts";
+
 const DATABASE_NAME = "banker-simulation";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const STORE_NAME = "save-parts";
+
+const MARKET_SESSION_SCHEMA_VERSION = 1;
 
 export interface CampaignProgress {
   schemaVersion: 2;
@@ -19,6 +26,16 @@ export interface SaveEnvelope {
   schemaVersion: 2;
   campaign: CampaignProgress;
   settings: PlayerSettings;
+}
+
+export interface MarketSessionSave {
+  schemaVersion: 1;
+  stageId: string;
+  phase: "intro" | "map";
+  world: MarketWorld;
+  consultation: ConsultationProgress;
+  clock: { paused: boolean; speed: ClockSpeed };
+  savedAt: number;
 }
 
 export function emptySave(): SaveEnvelope {
@@ -138,6 +155,137 @@ export async function saveGame(save: SaveEnvelope): Promise<void> {
         reject(transaction.error ?? new Error("Could not save the game"));
       transaction.onabort = () =>
         reject(transaction.error ?? new Error("Save was interrupted"));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+function marketSessionKey(stageId: string): string {
+  return `market-session:${stageId}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+function emptyConsultation(): ConsultationProgress {
+  return { asked: [], lastQuestion: null, expression: "requesting" };
+}
+
+export function migrateMarketSession(
+  value: unknown,
+  stageId: string,
+  config: MarketStageConfig,
+): MarketSessionSave | null {
+  if (!isRecord(value) || value.stageId !== stageId) return null;
+  const rawWorld = value.world;
+  if (
+    !isRecord(rawWorld) ||
+    typeof rawWorld.day !== "number" ||
+    typeof rawWorld.cash !== "number" ||
+    !Array.isArray(rawWorld.customers) ||
+    !Array.isArray(rawWorld.funding)
+  )
+    return null;
+
+  const rawConsultation = isRecord(value.consultation)
+    ? value.consultation
+    : {};
+  const asked = Array.isArray(rawConsultation.asked)
+    ? rawConsultation.asked.filter(
+        (question): question is "purpose" | "income" =>
+          question === "purpose" || question === "income",
+      )
+    : [];
+  const lastQuestion =
+    rawConsultation.lastQuestion === "purpose" ||
+    rawConsultation.lastQuestion === "income"
+      ? rawConsultation.lastQuestion
+      : null;
+  const expression =
+    rawConsultation.expression === "neutral" ||
+    rawConsultation.expression === "requesting" ||
+    rawConsultation.expression === "evaluating" ||
+    rawConsultation.expression === "worried" ||
+    rawConsultation.expression === "relieved" ||
+    rawConsultation.expression === "rejected"
+      ? rawConsultation.expression
+      : "requesting";
+  const rawClock = isRecord(value.clock) ? value.clock : {};
+  const speed = CLOCK_SPEEDS.includes(rawClock.speed as ClockSpeed)
+    ? (rawClock.speed as ClockSpeed)
+    : 1;
+
+  return {
+    schemaVersion: MARKET_SESSION_SCHEMA_VERSION,
+    stageId,
+    phase: value.phase === "map" ? "map" : "intro",
+    world: {
+      ...(rawWorld as MarketWorld),
+      level: config.level,
+      config,
+      events: [],
+    },
+    consultation: { asked, lastQuestion, expression },
+    clock: { paused: rawClock.paused !== false, speed },
+    savedAt: typeof value.savedAt === "number" ? value.savedAt : 0,
+  };
+}
+
+export async function loadMarketSession(
+  stageId: string,
+  config: MarketStageConfig,
+): Promise<MarketSessionSave | null> {
+  if (!("indexedDB" in globalThis)) return null;
+  const database = await openDatabase();
+  try {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const value = await requestValue(
+      transaction.objectStore(STORE_NAME).get(marketSessionKey(stageId)),
+    );
+    return migrateMarketSession(value, stageId, config);
+  } finally {
+    database.close();
+  }
+}
+
+export async function saveMarketSession(
+  session: MarketSessionSave,
+): Promise<void> {
+  if (!("indexedDB" in globalThis)) return;
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STORE_NAME, "readwrite");
+      transaction
+        .objectStore(STORE_NAME)
+        .put(structuredClone(session), marketSessionKey(session.stageId));
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () =>
+        reject(transaction.error ?? new Error("Could not save market session"));
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Market session save aborted"));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function deleteMarketSession(stageId: string): Promise<void> {
+  if (!("indexedDB" in globalThis)) return;
+  const database = await openDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(STORE_NAME, "readwrite");
+      transaction.objectStore(STORE_NAME).delete(marketSessionKey(stageId));
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () =>
+        reject(
+          transaction.error ?? new Error("Could not delete market session"),
+        );
+      transaction.onabort = () =>
+        reject(transaction.error ?? new Error("Market session delete aborted"));
     });
   } finally {
     database.close();

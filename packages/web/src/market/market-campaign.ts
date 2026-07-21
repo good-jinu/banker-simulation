@@ -4,7 +4,7 @@ import type { Customer, Funding, MarketLevel } from "./market-world.ts";
 export type MarketGoals = {
   loanCount: number;
   cumulativeLent: number;
-  netCash: number;
+  netWorth: number;
   survivalDay: number | null;
 };
 
@@ -53,7 +53,7 @@ const firstYieldConfig: MarketStageConfig = {
   goals: {
     loanCount: 1,
     cumulativeLent: 500,
-    netCash: 2_000,
+    netWorth: 1_500,
     survivalDay: null,
   },
   maxVisibleCustomers: 5,
@@ -76,7 +76,30 @@ const firstYieldConfig: MarketStageConfig = {
       appears: 0,
       x: 19,
       y: 21,
-      avatar: "/assets/avatars/mina-request.webp",
+      avatar: "/assets/pop-art/avatars/mina-request.png",
+      avatarStates: {
+        neutral: "/assets/pop-art/avatars/mina-neutral.png",
+        requesting: "/assets/pop-art/avatars/mina-request.png",
+        evaluating: "/assets/pop-art/avatars/mina-neutral.png",
+        worried: "/assets/pop-art/avatars/mina-request.png",
+        relieved: "/assets/pop-art/avatars/mina-neutral.png",
+        rejected: "/assets/pop-art/avatars/mina-request.png",
+      },
+      evidence: {
+        purpose: {
+          en: "Replace an oven belt before the morning shift",
+          ko: "아침 근무 전 오븐 벨트 교체",
+        },
+        employment: {
+          en: "Three years at the neighborhood bakery",
+          ko: "동네 베이커리 3년 근무",
+        },
+        debt: { en: "No other loans", ko: "다른 대출 없음" },
+        collateral: {
+          en: "A signed next-month work schedule",
+          ko: "다음 달 근무 일정표",
+        },
+      },
       status: "waiting",
     },
   ],
@@ -132,7 +155,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
   goals: {
     loanCount: 3,
     cumulativeLent: 1_500,
-    netCash: 1_400,
+    netWorth: 1_400,
     survivalDay: 26,
   },
   maxVisibleCustomers: 5,
@@ -155,7 +178,33 @@ const creditUnderPressureConfig: MarketStageConfig = {
       appears: 0,
       x: 19,
       y: 21,
-      avatar: "/assets/avatars/jun-evaluating.webp",
+      avatar: "/assets/pop-art/avatars/jun-evaluating.png",
+      avatarStates: {
+        neutral: "/assets/pop-art/avatars/jun-neutral.png",
+        requesting: "/assets/pop-art/avatars/jun-neutral.png",
+        evaluating: "/assets/pop-art/avatars/jun-evaluating.png",
+        worried: "/assets/pop-art/avatars/jun-evaluating.png",
+        relieved: "/assets/pop-art/avatars/jun-neutral.png",
+        rejected: "/assets/pop-art/avatars/jun-evaluating.png",
+      },
+      evidence: {
+        purpose: {
+          en: "Repair a loading dock before peak season",
+          ko: "성수기 전 하역장 수리",
+        },
+        employment: {
+          en: "Stable job, but overtime varies by month",
+          ko: "안정적인 직장이지만 월별 초과근무가 다름",
+        },
+        debt: {
+          en: "A $900 equipment balance remains",
+          ko: "장비 대금 $900이 남아 있음",
+        },
+        collateral: {
+          en: "A workplace guarantor is available",
+          ko: "직장 보증인 가능",
+        },
+      },
       status: "waiting",
     },
   ],
@@ -215,7 +264,7 @@ export const marketCampaignStages: readonly MarketCampaignStage[] = [
       ko: "간단한 대출로 은행을 성장시키세요",
     },
     rewardId: "level-one-complete",
-    image: "/assets/stages/stage-01.webp",
+    image: "/assets/pop-art/backgrounds/market-map.png",
     config: firstYieldConfig,
   },
   {
@@ -227,7 +276,7 @@ export const marketCampaignStages: readonly MarketCampaignStage[] = [
       ko: "위험, 유동성, 부채 상환을 균형 있게 관리하세요",
     },
     rewardId: "level-two-complete",
-    image: "/assets/stages/stage-01.webp",
+    image: "/assets/pop-art/backgrounds/underwriting-room.png",
     config: creditUnderPressureConfig,
   },
 ];

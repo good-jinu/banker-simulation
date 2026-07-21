@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   emptySave,
+  migrateMarketSession,
   migrateSaveParts,
   type SaveEnvelope,
 } from "./persistence.ts";
+import { marketCampaignStages } from "../market/market-campaign.ts";
+import { createWorld } from "../market/market-world.ts";
 
 describe("save migration", () => {
   it("returns a fresh version-two save for missing or malformed records", () => {
@@ -51,5 +54,42 @@ describe("save migration", () => {
       schemaVersion: 2,
       reducedMotion: true,
     });
+  });
+
+  it("restores a market session while dropping transient events", () => {
+    const config = marketCampaignStages[0]!.config;
+    const world = createWorld(7, config);
+    const migrated = migrateMarketSession(
+      {
+        schemaVersion: 1,
+        stageId: marketCampaignStages[0]!.id,
+        phase: "map",
+        world: { ...world, cash: 123, events: [{ type: "mission-clear" }] },
+        consultation: {
+          asked: ["purpose", "income", "unsupported"],
+          lastQuestion: "income",
+          expression: "relieved",
+        },
+        savedAt: 42,
+      },
+      marketCampaignStages[0]!.id,
+      config,
+    );
+
+    expect(migrated).not.toBeNull();
+    expect(migrated?.world.cash).toBe(123);
+    expect(migrated?.world.events).toEqual([]);
+    expect(migrated?.consultation).toEqual({
+      asked: ["purpose", "income"],
+      lastQuestion: "income",
+      expression: "relieved",
+    });
+  });
+
+  it("rejects a session belonging to another stage", () => {
+    const config = marketCampaignStages[0]!.config;
+    expect(
+      migrateMarketSession({ stageId: "other-stage" }, "first-yield", config),
+    ).toBeNull();
   });
 });

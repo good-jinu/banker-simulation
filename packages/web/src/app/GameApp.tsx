@@ -10,6 +10,7 @@ import {
 import { detectLocale, type Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import {
+  deleteMarketSession,
   emptySave,
   loadGame,
   saveGame,
@@ -21,10 +22,17 @@ import "./game.css";
 type Screen = "home" | "stages" | "campaign";
 
 export function GameApp() {
+  const devQuery = new URLSearchParams(window.location.search);
+  const devMode = import.meta.env.DEV && devQuery.get("dev") === "market";
+  const devStage = marketStageById(
+    devQuery.get("stage") ?? marketCampaignStages[0]!.id,
+  );
+  const devPhase = devQuery.get("phase") === "map" ? "map" : "intro";
+  const devFresh = devQuery.get("fresh") === "1";
   const [hydrated, setHydrated] = useState(false);
-  const [screen, setScreen] = useState<Screen>("home");
+  const [screen, setScreen] = useState<Screen>(devMode ? "campaign" : "home");
   const [selectedStageId, setSelectedStageId] = useState(
-    marketCampaignStages[0]!.id,
+    devMode ? devStage.id : marketCampaignStages[0]!.id,
   );
   const [campaign, setCampaign] = useState<CampaignProgress>(
     () => emptySave().campaign,
@@ -87,8 +95,12 @@ export function GameApp() {
       <MarketApp
         stage={selectedStage}
         locale={locale}
+        devMode={devMode}
+        devPhase={devPhase}
+        devFresh={devFresh}
         onBack={() => setScreen("stages")}
         onComplete={() => {
+          void deleteMarketSession(selectedStage.id);
           setCampaign((current) => {
             const stage = selectedStage;
             return {

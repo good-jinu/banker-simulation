@@ -1,0 +1,16 @@
+{
+  "naming": "<subject>-<state>.svg for atomic UI markers; <character>-<expression>.png for reusable portraits",
+  "notes": "All coordinates are percentages in the parent scene. Atomic assets are authored as flat SVGs so their ink weight remains crisp at mobile sizes.",
+  "assets": {
+    "approval-stamp": { "scale": "small-to-medium", "anchor": "center", "state": "approved", "usage": ["decision-card", "mission-result"] },
+    "rejection-stamp": { "scale": "small-to-medium", "anchor": "center", "state": "rejected", "usage": ["decision-card", "loss-result"] },
+    "cash-symbol": { "scale": "small", "anchor": "center", "state": "positive", "usage": ["evidence-card", "cash-flow"] },
+    "debt-symbol": { "scale": "small", "anchor": "center", "state": "risk", "usage": ["evidence-card", "liability"] },
+    "warning-burst": { "scale": "small-to-medium", "anchor": "center", "state": "warning", "usage": ["risk-card", "callout"] },
+    "goal-badge": { "scale": "small", "anchor": "center", "state": "goal", "usage": ["evidence-card", "goal-list"] },
+    "repayment-marker": { "scale": "small", "anchor": "bottom-center", "state": "repayment", "usage": ["market-node"] },
+    "funding-badge": { "scale": "small", "anchor": "center", "state": "funding", "usage": ["market-node", "funding-card"] },
+    "bank-hub-marker": { "scale": "medium", "anchor": "center", "state": "bank", "usage": ["market-hub"] },
+    "customer-marker": { "scale": "small", "anchor": "bottom-center", "state": "requesting", "usage": ["market-node"] }
+  }
+}

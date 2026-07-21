@@ -66,9 +66,8 @@ describe("lending", () => {
   it("books receivables and interest into net worth without double-counting cash", () => {
     const world = run(createWorld(1), { type: "begin" });
     const summary = summarize(world);
-    expect(summary.totalAssets).toBe(600 + 110);
-    expect(summary.netWorth).toBe(710);
-    expect(summary.netCash).toBe(600);
+    expect(summary.totalAssets).toBe(600 + 100);
+    expect(summary.netWorth).toBe(700);
   });
 
   it("rejects an approval the bank cannot fund", () => {
@@ -152,8 +151,8 @@ describe("funding", () => {
     expect(metro.accepted).toBe(true);
     expect(metro.dueDay).toBe(world.day + 35);
     const summary = summarize(world);
-    expect(summary.fundingLiabilities).toBeCloseTo(metro.amount * 1.08);
-    expect(summary.netCash).toBeCloseTo(world.cash - metro.amount * 1.08);
+    expect(summary.fundingLiabilities).toBe(metro.amount);
+    expect(summary.netWorth).toBeCloseTo(summary.totalAssets - metro.amount);
   });
 });
 
@@ -217,7 +216,7 @@ describe("mission clear", () => {
     let world = run(createWorld(1), { type: "begin" });
     world = {
       ...world,
-      cash: GOALS.netCash + 500,
+      cash: GOALS.netWorth + 500,
       cumulativeLent: GOALS.cumulativeLent,
     };
     world = marketReducer(world, { type: "advance-day" });

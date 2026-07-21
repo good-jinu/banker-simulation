@@ -1083,6 +1083,345 @@ button {
 .assets-modal {
   width: min(450px, 100%);
 }
+
+/* Pop-art game treatment. Generated raster plates carry the world; CSS only
+   supplies compositing, motion, and readable interaction layers. */
+.loan-intro,
+.loan-game {
+  color: #11100d;
+  background: #f7e5b7;
+}
+
+.loan-simple-header,
+.map-header {
+  height: 78px;
+  border-bottom: 4px solid #11100d;
+  background: #ee321d;
+  color: #f7e5b7;
+}
+
+.loan-simple-header button,
+.round-button {
+  color: #11100d;
+  border: 3px solid #11100d;
+  border-radius: 50%;
+  background: #ffd328;
+  box-shadow: 4px 4px 0 #11100d;
+}
+
+.loan-simple-header span,
+.loan-simple-header strong {
+  color: #f7e5b7;
+  text-shadow: 2px 2px 0 #11100d;
+}
+
+.conversation-card {
+  width: min(1120px, calc(100% - 28px));
+  min-height: min(690px, calc(100dvh - 120px));
+  border: 5px solid #11100d;
+  border-radius: 0;
+  background: #f7e5b7;
+  box-shadow: 10px 10px 0 #11100d;
+}
+
+.conversation-scene {
+  min-height: 620px;
+  padding: 20px;
+  background: #f7e5b7 url("/assets/pop-art/backgrounds/underwriting-room.png")
+    center / cover no-repeat;
+}
+
+.conversation-scene::before {
+  opacity: 0.08;
+  background-image: radial-gradient(circle, #11100d 1px, transparent 1.6px);
+  background-size: 8px 8px;
+}
+
+.scene-label {
+  top: 18px;
+  left: 18px;
+  color: #11100d;
+  border: 3px solid #11100d;
+  border-radius: 0;
+  background: #ffd328;
+  box-shadow: 4px 4px 0 #11100d;
+}
+
+.speech-bubble {
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  border: 4px solid #11100d;
+  border-radius: 22px 22px 22px 4px;
+  background: #f7e5b7;
+  box-shadow: 6px 6px 0 #11100d;
+}
+
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  left: 28px;
+  bottom: -19px;
+  width: 28px;
+  height: 28px;
+  border-right: 4px solid #11100d;
+  border-bottom: 4px solid #11100d;
+  background: #f7e5b7;
+  transform: skew(-22deg) rotate(45deg);
+}
+
+.conversation-actions {
+  align-self: stretch;
+  padding: 34px;
+  background:
+    radial-gradient(circle, rgba(17, 16, 13, 0.2) 1px, transparent 1.5px),
+    #3eaf3c;
+  background-size:
+    8px 8px,
+    auto;
+  border-left: 5px solid #11100d;
+}
+
+.action-guide,
+.conversation-actions > button,
+.answer-line,
+.approve-reveal {
+  color: #11100d;
+}
+
+.conversation-actions > button {
+  border: 3px solid #11100d;
+  border-radius: 0;
+  background: #ffd328;
+  box-shadow: 4px 4px 0 #11100d;
+}
+
+.conversation-actions > button:hover,
+.conversation-actions > button.asked {
+  color: #f7e5b7;
+  border-color: #11100d;
+  background: #ee321d;
+}
+
+.answer-line {
+  border-left: 4px solid #11100d;
+  background: #f7e5b7;
+  font-weight: 800;
+}
+
+.approve-reveal {
+  border-top: 4px solid #11100d;
+}
+
+.approve-reveal button {
+  color: #11100d;
+  border: 3px solid #11100d;
+  border-radius: 0;
+  background: #ffd328;
+  box-shadow: 5px 5px 0 #11100d;
+}
+
+.loan-game {
+  grid-template-rows: 78px minmax(0, 1fr) 88px;
+}
+
+.brand > svg {
+  color: #11100d;
+}
+
+.brand small,
+.brand strong,
+.day-display small,
+.day-display strong {
+  color: #11100d;
+}
+
+.day-display {
+  border: 3px solid #11100d;
+  border-radius: 0;
+  background: #ffd328;
+  box-shadow: 4px 4px 0 #11100d;
+}
+
+.state-map {
+  background: #f7e5b7 url("/assets/pop-art/backgrounds/market-map.png") center /
+    cover no-repeat;
+}
+
+.state-map::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(17, 16, 13, 0.25) 1px,
+    transparent 1.5px
+  );
+  background-size: 8px 8px;
+  mix-blend-mode: multiply;
+}
+
+.goal-overlay,
+.funding-hint,
+.time-controller {
+  border: 4px solid #11100d;
+  border-radius: 0;
+  background: #f7e5b7;
+  color: #11100d;
+  box-shadow: 6px 6px 0 #11100d;
+}
+
+.goal-toggle span,
+.goal-toggle strong,
+.goal-toggle b,
+.goal-list p strong,
+.goal-list p small,
+.goal-list > div,
+.goal-list .goal-check {
+  color: #11100d;
+}
+
+.goal-toggle b,
+.goal-list > div,
+.goal-list .goal-check {
+  border-color: #11100d;
+  border-radius: 0;
+  background: #ffd328;
+}
+
+.goal-list > div.active {
+  background: #ee321d;
+}
+
+.bank-icon {
+  color: #11100d;
+  border: 4px solid #11100d;
+  border-radius: 50%;
+  background: #ffd328;
+  box-shadow: 5px 5px 0 #11100d;
+}
+
+.portrait {
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 4px solid #11100d;
+  border-radius: 50%;
+  background: #f7e5b7;
+  box-shadow: 5px 5px 0 #11100d;
+  overflow: hidden;
+}
+
+.portrait img {
+  border-radius: 0;
+  object-fit: contain;
+  transform: scale(1.15) translateY(8%);
+}
+
+.map-node strong,
+.map-node small {
+  color: #11100d;
+  text-shadow: 1px 1px 0 #f7e5b7;
+}
+
+.request-tag,
+.customer-node button,
+.flying-money,
+.funding-hint button,
+.play-time,
+.speed-time {
+  color: #11100d;
+  border: 3px solid #11100d;
+  border-radius: 0;
+  background: #ffd328;
+  box-shadow: 4px 4px 0 #11100d;
+}
+
+.customer-node.waiting .portrait {
+  border-color: #ee321d;
+}
+
+.customer-node button:hover,
+.funding-hint button:hover,
+.play-time:hover {
+  color: #f7e5b7;
+  background: #ee321d;
+}
+
+.time-controller {
+  border-width: 4px 0 0;
+  box-shadow: none;
+}
+
+.status-dot {
+  background: #ee321d;
+  box-shadow: 0 0 0 3px #11100d;
+}
+
+.game-notice,
+.detail-modal,
+.funding-modal,
+.assets-modal,
+.mission-clear-card {
+  color: #11100d;
+  border: 4px solid #11100d;
+  border-radius: 0;
+  background: #f7e5b7;
+  box-shadow: 8px 8px 0 #11100d;
+}
+
+.game-notice {
+  background: #ffd328;
+}
+
+.modal-backdrop,
+.mission-clear-backdrop {
+  background: rgba(17, 16, 13, 0.78);
+}
+
+.detail-modal > img {
+  width: 132px;
+  height: 132px;
+  object-fit: contain;
+  border: 4px solid #11100d;
+  border-radius: 50%;
+  background: #3eaf3c;
+}
+
+.modal-close,
+.reject-button,
+.accept-button,
+.need-funding,
+.mission-clear-card > button {
+  color: #11100d;
+  border: 3px solid #11100d;
+  border-radius: 0;
+  background: #ffd328;
+  box-shadow: 4px 4px 0 #11100d;
+}
+
+.accept-button,
+.mission-clear-card > button {
+  background: #3eaf3c;
+}
+
+@media (max-width: 760px) {
+  .conversation-card {
+    display: block;
+    min-height: 0;
+  }
+
+  .conversation-scene {
+    min-height: 57dvh;
+  }
+
+  .conversation-actions {
+    border-top: 5px solid #11100d;
+    border-left: 0;
+  }
+}
 .asset-summary {
   display: flex;
   align-items: flex-end;
@@ -1303,4 +1642,513 @@ button {
   .result-grid > div {
     padding: 10px;
   }
+}
+
+/* Second-pass composition layer: reusable paper, ink, and evidence atoms. */
+.loan-intro,
+.loan-game {
+  --ink: #11100d;
+  --paper: #f7e5b7;
+  --red: #ee321d;
+  --green: #3eaf3c;
+  --yellow: #ffd328;
+  --orange: #f36b24;
+  font-family: "Avenir Next", Inter, ui-sans-serif, sans-serif;
+}
+
+.loan-intro {
+  overflow: auto;
+}
+
+.conversation-scene {
+  isolation: isolate;
+}
+
+.conversation-scene::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    rgba(247, 229, 183, 0.18),
+    transparent 52%
+  );
+  pointer-events: none;
+}
+
+.consultation-character {
+  transition:
+    filter 180ms ease,
+    transform 180ms ease;
+}
+
+.expression-requesting {
+  transform: translateY(2%);
+}
+
+.expression-evaluating {
+  filter: saturate(0.82) contrast(1.08);
+}
+
+.expression-worried {
+  filter: saturate(0.7) hue-rotate(-8deg);
+  transform: translateX(-2%);
+}
+
+.expression-relieved {
+  filter: saturate(1.12) brightness(1.04);
+  transform: translateY(-1%);
+}
+
+.conversation-messages {
+  position: absolute;
+  z-index: 4;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  padding: 4px 4px 8px 0;
+}
+
+.conversation-messages > .speech-bubble {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  margin-left: 0;
+  border-radius: 22px 22px 22px 4px;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.question-list {
+  display: grid;
+  gap: 9px;
+}
+
+.question-group {
+  display: grid;
+  gap: 6px;
+}
+
+.question-group > button {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  color: var(--ink);
+  text-align: left;
+  border: 3px solid var(--ink);
+  border-radius: 0;
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+}
+
+.question-group > button:hover:not(:disabled),
+.question-group > button.asked {
+  color: var(--paper);
+  background: var(--red);
+}
+
+.question-group > button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.underwriting-callout img,
+.evidence-grid img,
+.risk-row img,
+.node-marker {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.underwriting-callout small {
+  color: #6b4a18;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.underwriting-callout {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.underwriting-callout > img {
+  width: 40px;
+  height: 40px;
+}
+
+.underwriting-callout span {
+  display: grid;
+  gap: 4px;
+}
+
+.underwriting-callout strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.consultation-modal {
+  position: relative;
+  width: min(820px, calc(100% - 28px));
+  max-height: calc(100dvh - 28px);
+  overflow: auto;
+  padding: 14px;
+  color: var(--ink);
+  border: 4px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+.request-conversation {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  background: var(--paper);
+  box-shadow: none;
+}
+
+.request-conversation .conversation-scene {
+  min-height: 430px;
+}
+
+.request-conversation .conversation-actions {
+  padding: 22px;
+}
+
+.request-conversation .approve-reveal {
+  margin-top: 18px;
+}
+
+.map-caption {
+  position: absolute;
+  z-index: 4;
+  left: 16px;
+  bottom: 18px;
+  display: grid;
+  gap: 2px;
+  max-width: min(320px, calc(100% - 32px));
+  padding: 9px 12px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  transform: rotate(-2deg);
+}
+
+.map-caption span {
+  color: var(--red);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+}
+
+.map-caption strong {
+  font-size: 12px;
+}
+
+.stage-credit-under-pressure .map-caption span {
+  color: var(--orange);
+}
+
+.bank-icon img {
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+}
+
+.node-marker {
+  position: absolute;
+  width: 23px;
+  height: 23px;
+  top: 41px;
+  right: -18px;
+  z-index: -1;
+}
+
+.lender-node .bank-icon img {
+  width: 74%;
+  height: 74%;
+}
+
+.game-notice {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(470px, calc(100% - 28px));
+  line-height: 1.35;
+}
+
+.game-notice img {
+  width: 28px;
+  height: 23px;
+  flex: 0 0 auto;
+}
+
+.detail-portrait {
+  width: 132px;
+  height: 132px;
+  display: grid;
+  place-items: end center;
+  margin: 0 auto 15px;
+  overflow: hidden;
+  border: 4px solid var(--ink);
+  background: var(--green);
+}
+
+.detail-portrait img {
+  width: 100%;
+  height: 124%;
+  object-fit: contain;
+  transform: translateY(8%);
+}
+
+.evidence-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 14px 0;
+}
+
+.evidence-grid article {
+  display: grid;
+  grid-template-columns: 25px 1fr;
+  grid-template-rows: auto 1fr;
+  align-items: start;
+  gap: 2px 7px;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  background: #fff1c8;
+}
+
+.evidence-grid article img {
+  grid-row: 1 / span 2;
+  width: 25px;
+  height: 25px;
+}
+
+.evidence-grid article small {
+  color: #6b4a18;
+  font-size: 9px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.evidence-grid article strong {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.risk-row dd {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.risk-row dd img {
+  width: 23px;
+  height: 23px;
+}
+
+.clear-seal img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+}
+
+.stage-credit-under-pressure .state-map {
+  background-image: url("/assets/pop-art/backgrounds/market-map.png");
+  background-position: 55% center;
+}
+
+@media (max-width: 720px) {
+  .conversation-actions {
+    padding: 18px;
+  }
+
+  .conversation-scene {
+    min-height: 48dvh;
+  }
+
+  .consultation-character {
+    max-height: 230px;
+  }
+
+  .speech-bubble {
+    padding: 12px 14px;
+  }
+
+  .evidence-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-caption {
+    bottom: 10px;
+    left: 10px;
+  }
+
+  .goal-overlay {
+    max-height: 46%;
+    overflow: auto;
+  }
+
+  .node-marker {
+    top: 30px;
+    right: -14px;
+    width: 18px;
+    height: 18px;
+  }
+
+  .consultation-modal {
+    width: calc(100% - 16px);
+    max-height: calc(100dvh - 16px);
+    padding: 8px;
+  }
+
+  .request-conversation {
+    display: block;
+  }
+
+  .request-conversation .conversation-scene {
+    min-height: 330px;
+    border-bottom: 4px solid var(--ink);
+  }
+
+  .request-conversation .conversation-actions {
+    padding: 18px 12px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .connection-layer .future-edge {
+    animation: none;
+  }
+}
+
+.portfolio-details {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 3px solid var(--ink);
+}
+
+.portfolio-details h3 {
+  margin: 0 0 8px;
+  color: var(--red);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.portfolio-details h3:not(:first-child) {
+  margin-top: 18px;
+}
+
+.portfolio-list {
+  display: grid;
+  gap: 6px;
+}
+
+.portfolio-list article {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 9px 10px;
+  border: 2px solid var(--ink);
+  background: #fff1c8;
+}
+
+.portfolio-list article strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.portfolio-list article span {
+  font-size: 12px;
+  font-weight: 950;
+}
+
+.portfolio-list article small {
+  grid-column: 1 / -1;
+  color: #6b4a18;
+  font-size: 10px;
+}
+
+.portfolio-empty {
+  margin: 0;
+  padding: 10px;
+  color: #6b4a18;
+  border: 2px dashed var(--ink);
+  font-size: 11px;
+}
+
+.dev-test-panel {
+  position: fixed;
+  z-index: 140;
+  left: 12px;
+  bottom: 12px;
+  display: grid;
+  gap: 7px;
+  width: min(360px, calc(100vw - 24px));
+  padding: 10px;
+  border: 3px solid var(--ink);
+  background: #fff1c8;
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.dev-test-panel > strong {
+  color: var(--red);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.dev-test-panel > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dev-test-panel button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.dev-test-panel button:hover {
+  background: var(--yellow);
+}
+
+.dev-test-panel small {
+  color: #6b4a18;
+  font-size: 10px;
+  font-weight: 800;
 }

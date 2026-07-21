@@ -8,10 +8,7 @@ import {
   Clock,
   Coins,
   Equal,
-  HandCoins,
-  Info,
   Landmark,
-  Minus,
   Pause,
   Play,
   Plus,
@@ -20,16 +17,27 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "../lib/game-clock.ts";
+import {
+  CustomerConsultation,
+  type ConsultationProgress,
+} from "./CustomerConsultation.tsx";
+import {
+  deleteMarketSession,
+  loadMarketSession,
+  saveMarketSession,
+  type MarketSessionSave,
+} from "../app/persistence.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
+import { money } from "./market-format.ts";
 import {
   createWorld,
   FIRST_CUSTOMER,
-  defaultRisk,
+  avatarFor,
   goalsFor,
   marketReducer,
   summarize,
@@ -42,8 +50,8 @@ const DAY_MS = 1_500;
 
 type Transfer = { id: number; from: string; to: string; amount: number };
 
-function money(value: number): string {
-  return `$${Math.round(value).toLocaleString("en-US")}`;
+function emptyConsultationProgress(): ConsultationProgress {
+  return { asked: [], lastQuestion: null, expression: "requesting" };
 }
 
 export function MarketApp({
@@ -51,11 +59,17 @@ export function MarketApp({
   onBack,
   stage,
   onComplete,
+  devMode = false,
+  devPhase = "intro",
+  devFresh = false,
 }: {
   locale: Locale;
   onBack: () => void;
   stage: MarketCampaignStage;
   onComplete?: () => void;
+  devMode?: boolean;
+  devPhase?: "intro" | "map";
+  devFresh?: boolean;
 }) {
   const m = messagesFor(locale).market;
   const [world, dispatch] = useReducer(marketReducer, undefined, () =>
@@ -64,8 +78,10 @@ export function MarketApp({
   const isChallenge = world.level === "credit-under-pressure";
   const introCustomer = world.customers[0] ?? FIRST_CUSTOMER;
   const [phase, setPhase] = useState<"intro" | "map">("intro");
-  const [askedJob, setAskedJob] = useState(false);
-  const [askedIncome, setAskedIncome] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [consultationProgress, setConsultationProgress] =
+    useState<ConsultationProgress>(emptyConsultationProgress);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [fundingOpen, setFundingOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
@@ -82,8 +98,51 @@ export function MarketApp({
   const transferId = useRef(0);
   const modalWasOpenRef = useRef(false);
   const resumeAfterModalRef = useRef(false);
+  const createMarketSessionSnapshot = useCallback(
+    (): MarketSessionSave => ({
+      schemaVersion: 1,
+      stageId: stage.id,
+      phase,
+      world: { ...world, events: [] },
+      consultation:
+        phase === "intro" ? consultationProgress : emptyConsultationProgress(),
+      clock: clockView,
+      savedAt: Date.now(),
+    }),
+    [clockView, consultationProgress, phase, stage.id, world],
+  );
 
   useEffect(() => {
+    let cancelled = false;
+    loadMarketSession(stage.id, stage.config)
+      .then((session) => {
+        if (cancelled) return;
+        if (session && !(devMode && devFresh)) {
+          dispatch({ type: "restore", world: session.world });
+          setPhase(session.phase);
+          setConsultationProgress(session.consultation);
+          setClockView(session.clock);
+        } else if (devMode && devPhase === "map") {
+          const freshWorld = createWorld(Date.now() >>> 0, stage.config);
+          dispatch({
+            type: "restore",
+            world: marketReducer(freshWorld, { type: "begin" }),
+          });
+          setPhase("map");
+        }
+        setSessionReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [devFresh, devMode, devPhase, stage.config, stage.id]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     const clock = new GameClock(() => {
       dispatchRef.current({ type: "advance-day" });
       return true;
@@ -91,7 +150,17 @@ export function MarketApp({
     clockRef.current = clock;
     clock.start();
     return () => clock.dispose();
-  }, []);
+  }, [sessionReady]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    const handle = window.setTimeout(() => {
+      void saveMarketSession(createMarketSessionSnapshot()).catch(() => {
+        if (devMode) setSaveStatus("Save unavailable");
+      });
+    }, 180);
+    return () => window.clearTimeout(handle);
+  }, [createMarketSessionSnapshot, devMode, sessionReady]);
 
   useEffect(() => {
     for (const event of world.events) {
@@ -193,14 +262,8 @@ export function MarketApp({
     }
   }, [assetsOpen, fundingOpen, missionClear, selected, world.insolvent]);
 
-  const {
-    loanReceivables,
-    fundingLiabilities,
-    totalAssets,
-    netWorth,
-    netCash,
-    fundingEligible,
-  } = summarize(world);
+  const { loanReceivables, totalAssets, netWorth, fundingEligible } =
+    summarize(world);
   const levelGoals = goalsFor(world);
   const survivalDay = levelGoals.survivalDay ?? 0;
   const { cash, day, customers, funding, loanCount, cumulativeLent } = world;
@@ -249,6 +312,71 @@ export function MarketApp({
     setClockView((current) => ({ ...current, speed }));
   }
 
+  async function saveSnapshot(): Promise<void> {
+    await saveMarketSession(createMarketSessionSnapshot());
+    setSaveStatus("Saved");
+  }
+
+  async function loadSnapshot(): Promise<void> {
+    const session = await loadMarketSession(stage.id, stage.config);
+    if (!session) {
+      setSaveStatus("No saved session");
+      return;
+    }
+    dispatch({ type: "restore", world: session.world });
+    setPhase(session.phase);
+    setConsultationProgress(session.consultation);
+    setClockView(session.clock);
+    clockRef.current?.setSpeed(session.clock.speed);
+    if (session.clock.paused) clockRef.current?.pause();
+    else clockRef.current?.play();
+    setSaveStatus("Loaded");
+  }
+
+  async function resetDevRun(): Promise<void> {
+    await deleteMarketSession(stage.id);
+    const freshWorld = createWorld(Date.now() >>> 0, stage.config);
+    const nextWorld =
+      devPhase === "map"
+        ? marketReducer(freshWorld, { type: "begin" })
+        : freshWorld;
+    dispatch({ type: "restore", world: nextWorld });
+    setPhase(devPhase);
+    setConsultationProgress(emptyConsultationProgress());
+    setClockView({ paused: true, speed: 1 });
+    clockRef.current?.pause();
+    clockRef.current?.setSpeed(1);
+    setSaveStatus("Reset");
+  }
+
+  function exportSnapshot(): void {
+    const blob = new Blob(
+      [JSON.stringify(createMarketSessionSnapshot(), null, 2)],
+      {
+        type: "application/json",
+      },
+    );
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `banker-${stage.id}-snapshot.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setSaveStatus("Exported");
+  }
+
+  if (!sessionReady) {
+    return (
+      <main className="loading-screen" aria-live="polite">
+        <div className="brand-mark">
+          <Landmark aria-hidden="true" />
+        </div>
+        <p className="eyebrow">Banker Simulation</p>
+        <h1>{m.loadingMarket}</h1>
+      </main>
+    );
+  }
+
   if (phase === "intro") {
     return (
       <main className="loan-intro">
@@ -259,73 +387,25 @@ export function MarketApp({
           <span>LEVEL {String(stage.number).padStart(2, "0")}</span>
           <strong>{isChallenge ? m.challengeIntroTitle : m.introTitle}</strong>
         </header>
-        <section className="conversation-card">
-          <div className="conversation-scene">
-            <span className="scene-label">
-              {isChallenge ? m.firstAssessment : m.firstCustomer}
-            </span>
-            <img
-              src={introCustomer.avatar}
-              alt={m.customerAlt(localize(introCustomer.name, locale))}
-            />
-            <div className="speech-bubble">
-              <small>{localize(introCustomer.name, locale)}</small>
-              <p>
-                {isChallenge ? m.challengeGreeting : m.greeting}
-                <br />
-                <strong>
-                  {isChallenge
-                    ? m.challengeLoanQuestion(money(introCustomer.amount))
-                    : m.loanQuestion}
-                </strong>
-              </p>
-            </div>
-          </div>
-          <div className="conversation-actions">
-            <p className="action-guide">
-              {isChallenge ? m.challengeLearnCustomer : m.learnCustomer}
-            </p>
-            <button
-              className={askedJob ? "asked" : ""}
-              onClick={() => setAskedJob(true)}
-            >
-              {askedJob ? <Check /> : <Info />} {m.askJob}
-            </button>
-            {askedJob && (
-              <p className="answer-line">
-                “
-                {isChallenge
-                  ? localize(introCustomer.job, locale)
-                  : m.jobAnswer}
-                ”
-              </p>
-            )}
-            <button
-              className={askedIncome ? "asked" : ""}
-              onClick={() => setAskedIncome(true)}
-            >
-              {askedIncome ? <Check /> : <Info />} {m.askIncome}
-            </button>
-            {askedIncome && (
-              <p className="answer-line">
-                “{isChallenge ? money(introCustomer.income) : m.incomeAnswer}”
-              </p>
-            )}
-            {askedJob && askedIncome && (
-              <div className="approve-reveal">
-                <span>
-                  {isChallenge
-                    ? m.challengeInformationComplete(defaultRisk(introCustomer))
-                    : m.informationComplete}
-                </span>
-                <button onClick={beginMap}>
-                  <Landmark />
-                  {isChallenge ? m.openUnderwriting : m.lendAtRate}
-                </button>
-              </div>
-            )}
-          </div>
-        </section>
+        <CustomerConsultation
+          customer={introCustomer}
+          locale={locale}
+          isChallenge={isChallenge}
+          mode="intro"
+          sceneLabel={isChallenge ? m.firstAssessment : m.firstCustomer}
+          onProceed={beginMap}
+          initialProgress={consultationProgress}
+          onProgressChange={setConsultationProgress}
+        />
+        {devMode && (
+          <DevTestPanel
+            onSave={() => void saveSnapshot()}
+            onLoad={() => void loadSnapshot()}
+            onReset={() => void resetDevRun()}
+            onExport={exportSnapshot}
+            status={saveStatus}
+          />
+        )}
       </main>
     );
   }
@@ -351,9 +431,9 @@ export function MarketApp({
     },
     {
       icon: Wallet,
-      label: isChallenge ? m.challengeGoalNetCash : m.goalNetCash,
-      progress: `${money(netCash)} / ${money(levelGoals.netCash)}`,
-      completed: netCash >= levelGoals.netCash,
+      label: isChallenge ? m.challengeGoalNetWorth : m.goalNetWorth,
+      progress: `${money(netWorth)} / ${money(levelGoals.netWorth)}`,
+      completed: netWorth >= levelGoals.netWorth,
     },
     ...(isChallenge
       ? [
@@ -375,7 +455,7 @@ export function MarketApp({
   };
 
   return (
-    <main className="loan-game">
+    <main className={`loan-game stage-${stage.id}`}>
       <header className="map-header">
         <button className="round-button" onClick={onBack} aria-label={m.back}>
           <ArrowLeft />
@@ -398,6 +478,14 @@ export function MarketApp({
       </header>
 
       <section className="state-map" aria-label={m.loanStatusMap}>
+        <div className="map-caption" aria-hidden="true">
+          <span>
+            {stage.number === 1 ? m.districtMarket : m.districtPressure}
+          </span>
+          <strong>
+            {stage.number === 1 ? m.mapMotifGrowth : m.mapMotifRisk}
+          </strong>
+        </div>
         <div
           className={`goal-overlay ${activeGoalIndex >= 0 ? "has-active" : "all-complete"}`}
         >
@@ -499,7 +587,7 @@ export function MarketApp({
         >
           <span className="node-orbit" />
           <span className="bank-icon">
-            <Landmark />
+            <img src="/assets/pop-art/atoms/bank-hub-marker.svg" alt="" />
           </span>
           <strong>{money(cash)}</strong>
           <small>{m.currentCash}</small>
@@ -517,8 +605,22 @@ export function MarketApp({
               </span>
             )}
             <span className="portrait">
-              <img src={customer.avatar} alt="" />
+              <img
+                src={avatarFor(
+                  customer,
+                  customer.status === "waiting" ? "requesting" : "relieved",
+                )}
+                alt={m.customerAlt(
+                  localize(customer.name, locale),
+                  m.mapMarker,
+                )}
+              />
             </span>
+            <img
+              className="node-marker"
+              src={`/assets/pop-art/atoms/${customer.status === "waiting" ? "customer-marker" : "repayment-marker"}.svg`}
+              alt=""
+            />
             <strong>
               {customer.status === "waiting"
                 ? money(customer.amount)
@@ -546,7 +648,7 @@ export function MarketApp({
               style={{ left: `${lender.x}%`, top: `${lender.y}%` }}
             >
               <span className="bank-icon small">
-                <Landmark />
+                <img src="/assets/pop-art/atoms/funding-badge.svg" alt="" />
               </span>
               <strong>{m.repaymentIn(Math.max(lender.dueDay - day, 0))}</strong>
               <small>
@@ -618,7 +720,22 @@ export function MarketApp({
         </p>
       </footer>
 
-      {notice && <div className="game-notice">{notice}</div>}
+      {notice && (
+        <div className="game-notice" role="status" aria-live="polite">
+          <img src="/assets/pop-art/atoms/speech-bubble.svg" alt="" />
+          <span>{notice}</span>
+        </div>
+      )}
+
+      {devMode && (
+        <DevTestPanel
+          onSave={() => void saveSnapshot()}
+          onLoad={() => void loadSnapshot()}
+          onReset={() => void resetDevRun()}
+          onExport={exportSnapshot}
+          status={saveStatus}
+        />
+      )}
 
       {missionClear && (
         <div
@@ -645,7 +762,7 @@ export function MarketApp({
           </div>
           <section className="mission-clear-card">
             <span className="clear-seal">
-              <Check />
+              <img src="/assets/pop-art/atoms/approval-stamp.svg" alt="" />
             </span>
             <small>
               LEVEL {String(stage.number).padStart(2, "0")} COMPLETE
@@ -746,32 +863,50 @@ export function MarketApp({
                 <small>{m.totalAssets}</small>
               </span>
             </div>
-            <h3>{m.liabilities}</h3>
-            <dl className="asset-rows">
-              <div>
-                <dt>{m.bankRepaymentObligation}</dt>
-                <dd>{money(fundingLiabilities)}</dd>
-              </div>
-              <div className="net-cash">
-                <dt>{m.netCash}</dt>
-                <dd>{money(netCash)}</dd>
-              </div>
-            </dl>
-            <div className="asset-equation" aria-hidden="true">
-              <span>
-                <Landmark />
-                <small>{m.totalAssets}</small>
-              </span>
-              <Minus className="eq-op" />
-              <span>
-                <HandCoins />
-                <small>{m.bankRepaymentObligation}</small>
-              </span>
-              <Equal className="eq-op" />
-              <span>
-                <Wallet />
-                <small>{m.netCash}</small>
-              </span>
+            <div className="portfolio-details">
+              <h3>{m.loanBook}</h3>
+              {customers.filter((customer) => customer.status === "accepted")
+                .length === 0 ? (
+                <p className="portfolio-empty">{m.noOutstandingLoans}</p>
+              ) : (
+                <div className="portfolio-list">
+                  {customers
+                    .filter((customer) => customer.status === "accepted")
+                    .map((customer) => (
+                      <article key={customer.id}>
+                        <strong>{localize(customer.name, locale)}</strong>
+                        <span>{money(customer.amount)}</span>
+                        <small>
+                          {m.dueInDays(Math.max(customer.dueDay - day, 0))} ·{" "}
+                          {m.repaymentDue(
+                            money(customer.amount * (1 + customer.rate / 100)),
+                          )}
+                        </small>
+                      </article>
+                    ))}
+                </div>
+              )}
+              <h3>{m.fundingBook}</h3>
+              {funding.filter((lender) => lender.accepted).length === 0 ? (
+                <p className="portfolio-empty">{m.noFundingObligations}</p>
+              ) : (
+                <div className="portfolio-list">
+                  {funding
+                    .filter((lender) => lender.accepted)
+                    .map((lender) => (
+                      <article key={lender.id}>
+                        <strong>{localize(lender.name, locale)}</strong>
+                        <span>{money(lender.amount)}</span>
+                        <small>
+                          {m.dueInDays(Math.max(lender.dueDay - day, 0))} ·{" "}
+                          {m.repaymentDue(
+                            money(lender.amount * (1 + lender.rate / 100)),
+                          )}
+                        </small>
+                      </article>
+                    ))}
+                </div>
+              )}
             </div>
           </section>
         </div>
@@ -780,7 +915,7 @@ export function MarketApp({
       {selected && (
         <div className="modal-backdrop" onMouseDown={() => setSelected(null)}>
           <section
-            className="detail-modal"
+            className="consultation-modal"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <button
@@ -790,62 +925,20 @@ export function MarketApp({
             >
               <X />
             </button>
-            <img src={selected.avatar} alt="" />
-            <small>{m.loanRequestTitle}</small>
-            <h2>{localize(selected.name, locale)}</h2>
-            <p className="request-copy">
-              “{m.requestCopy(money(selected.amount))}”
-            </p>
-            <dl>
-              <div>
-                <dt>{m.job}</dt>
-                <dd>{localize(selected.job, locale)}</dd>
-              </div>
-              <div>
-                <dt>{m.monthlyIncome}</dt>
-                <dd>{money(selected.income)}</dd>
-              </div>
-              {isChallenge && (
-                <div className="risk-row">
-                  <dt>{m.defaultRisk}</dt>
-                  <dd>{m.defaultRiskValue(defaultRisk(selected))}</dd>
-                </div>
-              )}
-              <div>
-                <dt>{m.loanAmount}</dt>
-                <dd>{money(selected.amount)}</dd>
-              </div>
-              <div>
-                <dt>{m.repaymentTerms}</dt>
-                <dd>{m.loanTerms(selected.term, selected.rate)}</dd>
-              </div>
-            </dl>
-            <div className="decision-row">
-              <button
-                className="reject-button"
-                onClick={() => reject(selected)}
-              >
-                {m.reject}
-              </button>
-              <button
-                className="accept-button"
-                onClick={() => approve(selected)}
-                disabled={cash < selected.amount}
-              >
-                {m.lend(money(selected.amount))}
-              </button>
-            </div>
-            {cash < selected.amount && fundingEligible && (
-              <button
-                className="need-funding"
-                onClick={() => {
-                  setSelected(null);
-                  setFundingOpen(true);
-                }}
-              >
-                {m.fundingNeeded}
-              </button>
-            )}
+            <CustomerConsultation
+              customer={selected}
+              locale={locale}
+              isChallenge={isChallenge}
+              mode="request"
+              sceneLabel={m.loanRequestTitle}
+              onApprove={() => approve(selected)}
+              onReject={() => reject(selected)}
+              onNeedFunding={() => {
+                setSelected(null);
+                setFundingOpen(true);
+              }}
+              canApprove={cash >= selected.amount}
+            />
           </section>
         </div>
       )}
@@ -917,7 +1010,7 @@ export function MarketApp({
         >
           <section className="mission-clear-card loss-card">
             <span className="clear-seal">
-              <X />
+              <img src="/assets/pop-art/atoms/rejection-stamp.svg" alt="" />
             </span>
             <small>LEVEL {String(stage.number).padStart(2, "0")}</small>
             <h2 id="loss-title">{m.insolventTitle}</h2>
@@ -927,5 +1020,32 @@ export function MarketApp({
         </div>
       )}
     </main>
+  );
+}
+
+function DevTestPanel({
+  onSave,
+  onLoad,
+  onReset,
+  onExport,
+  status,
+}: {
+  onSave: () => void;
+  onLoad: () => void;
+  onReset: () => void;
+  onExport: () => void;
+  status: string | null;
+}) {
+  return (
+    <aside className="dev-test-panel" aria-label="Manual test controls">
+      <strong>DEV TEST</strong>
+      <div>
+        <button onClick={onSave}>Save</button>
+        <button onClick={onLoad}>Load</button>
+        <button onClick={onReset}>Reset</button>
+        <button onClick={onExport}>Export JSON</button>
+      </div>
+      {status && <small>{status}</small>}
+    </aside>
   );
 }
