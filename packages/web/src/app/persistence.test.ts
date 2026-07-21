@@ -61,7 +61,7 @@ describe("save migration", () => {
     const world = createWorld(7, config);
     const migrated = migrateMarketSession(
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         stageId: marketCampaignStages[0]!.id,
         phase: "map",
         world: { ...world, cash: 123, events: [{ type: "mission-clear" }] },
@@ -79,6 +79,8 @@ describe("save migration", () => {
     expect(migrated).not.toBeNull();
     expect(migrated?.world.cash).toBe(123);
     expect(migrated?.world.events).toEqual([]);
+    expect(migrated?.world.trust).toBe(80);
+    expect(migrated?.world.funding[0]?.defaulted).toBe(false);
     expect(migrated?.consultation).toEqual({
       asked: ["purpose", "income"],
       lastQuestion: "income",
@@ -89,7 +91,31 @@ describe("save migration", () => {
   it("rejects a session belonging to another stage", () => {
     const config = marketCampaignStages[0]!.config;
     expect(
-      migrateMarketSession({ stageId: "other-stage" }, "first-yield", config),
+      migrateMarketSession(
+        { schemaVersion: 2, stageId: "other-stage" },
+        "first-yield",
+        config,
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects legacy market sessions instead of inventing trust", () => {
+    const config = marketCampaignStages[0]!.config;
+    const world = createWorld(7, config);
+    const legacyWorld = { ...world } as Record<string, unknown>;
+    delete legacyWorld.trust;
+
+    expect(
+      migrateMarketSession(
+        {
+          schemaVersion: 1,
+          stageId: marketCampaignStages[0]!.id,
+          phase: "map",
+          world: legacyWorld,
+        },
+        marketCampaignStages[0]!.id,
+        config,
+      ),
     ).toBeNull();
   });
 });

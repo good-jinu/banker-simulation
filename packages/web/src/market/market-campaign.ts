@@ -6,6 +6,7 @@ export type MarketGoals = {
   cumulativeLent: number;
   netWorth: number;
   survivalDay: number | null;
+  productCount: number;
 };
 
 export type CustomerGenerationConfig = {
@@ -55,6 +56,7 @@ const firstYieldConfig: MarketStageConfig = {
     cumulativeLent: 500,
     netWorth: 1_500,
     survivalDay: null,
+    productCount: 0,
   },
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
@@ -62,7 +64,7 @@ const firstYieldConfig: MarketStageConfig = {
   introCustomerId: "mina",
   introApprovesAutomatically: true,
   randomizeDefaultRisk: false,
-  fundingRepaymentsEnabled: false,
+  fundingRepaymentsEnabled: true,
   customerSeeds: [
     {
       id: "mina",
@@ -113,6 +115,7 @@ const firstYieldConfig: MarketStageConfig = {
       x: 9,
       y: 50,
       accepted: false,
+      defaulted: false,
     },
     {
       id: "metro",
@@ -123,6 +126,7 @@ const firstYieldConfig: MarketStageConfig = {
       x: 50,
       y: 88,
       accepted: false,
+      defaulted: false,
     },
     {
       id: "capital",
@@ -133,6 +137,7 @@ const firstYieldConfig: MarketStageConfig = {
       x: 91,
       y: 50,
       accepted: false,
+      defaulted: false,
     },
   ],
   customerGeneration: {
@@ -157,6 +162,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
     cumulativeLent: 1_500,
     netWorth: 1_400,
     survivalDay: 26,
+    productCount: 1,
   },
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
@@ -169,12 +175,13 @@ const creditUnderPressureConfig: MarketStageConfig = {
     {
       id: "jun",
       name: { en: "Jun Park", ko: "준 박" },
-      job: { en: "Warehouse supervisor", ko: "물류센터 반장" },
-      income: 3_600,
+      job: { en: "No current job", ko: "현재 직업 없음" },
+      occupation: "unemployed",
+      income: 0,
       amount: 420,
       rate: 12,
-      term: 8,
-      dueDay: 8,
+      term: 4,
+      dueDay: 4,
       appears: 0,
       x: 19,
       y: 21,
@@ -189,20 +196,20 @@ const creditUnderPressureConfig: MarketStageConfig = {
       },
       evidence: {
         purpose: {
-          en: "Repair a loading dock before peak season",
-          ko: "성수기 전 하역장 수리",
+          en: "Cover rent while looking for work",
+          ko: "구직 중인 동안 월세 충당",
         },
         employment: {
-          en: "Stable job, but overtime varies by month",
-          ko: "안정적인 직장이지만 월별 초과근무가 다름",
+          en: "No current job or regular income",
+          ko: "현재 직업과 정기 소득이 없음",
         },
         debt: {
-          en: "A $900 equipment balance remains",
-          ko: "장비 대금 $900이 남아 있음",
+          en: "A $900 credit-card balance remains",
+          ko: "신용카드 잔액 $900이 남아 있음",
         },
         collateral: {
-          en: "A workplace guarantor is available",
-          ko: "직장 보증인 가능",
+          en: "No collateral or guarantor offered",
+          ko: "제시한 담보나 보증인이 없음",
         },
       },
       status: "waiting",
@@ -218,6 +225,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
       x: 9,
       y: 50,
       accepted: false,
+      defaulted: false,
     },
     {
       id: "metro",
@@ -228,6 +236,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
       x: 50,
       y: 88,
       accepted: false,
+      defaulted: false,
     },
     {
       id: "capital",
@@ -238,6 +247,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
       x: 91,
       y: 50,
       accepted: false,
+      defaulted: false,
     },
   ],
   customerGeneration: {

@@ -7,7 +7,7 @@ const DATABASE_NAME = "banker-simulation";
 const DATABASE_VERSION = 3;
 const STORE_NAME = "save-parts";
 
-const MARKET_SESSION_SCHEMA_VERSION = 1;
+const MARKET_SESSION_SCHEMA_VERSION = 2;
 
 export interface CampaignProgress {
   schemaVersion: 2;
@@ -29,7 +29,7 @@ export interface SaveEnvelope {
 }
 
 export interface MarketSessionSave {
-  schemaVersion: 1;
+  schemaVersion: 2;
   stageId: string;
   phase: "intro" | "map";
   world: MarketWorld;
@@ -178,14 +178,30 @@ export function migrateMarketSession(
   stageId: string,
   config: MarketStageConfig,
 ): MarketSessionSave | null {
-  if (!isRecord(value) || value.stageId !== stageId) return null;
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== MARKET_SESSION_SCHEMA_VERSION ||
+    value.stageId !== stageId
+  )
+    return null;
   const rawWorld = value.world;
   if (
     !isRecord(rawWorld) ||
     typeof rawWorld.day !== "number" ||
     typeof rawWorld.cash !== "number" ||
     !Array.isArray(rawWorld.customers) ||
-    !Array.isArray(rawWorld.funding)
+    !Array.isArray(rawWorld.funding) ||
+    typeof rawWorld.trust !== "number" ||
+    !Number.isFinite(rawWorld.trust) ||
+    rawWorld.trust < 0 ||
+    rawWorld.trust > 100 ||
+    (rawWorld.failureReason !== null &&
+      rawWorld.failureReason !== "cash" &&
+      rawWorld.failureReason !== "trust") ||
+    typeof rawWorld.insolvent !== "boolean" ||
+    !rawWorld.funding.every(
+      (lender) => isRecord(lender) && typeof lender.defaulted === "boolean",
+    )
   )
     return null;
 
@@ -216,7 +232,6 @@ export function migrateMarketSession(
   const speed = CLOCK_SPEEDS.includes(rawClock.speed as ClockSpeed)
     ? (rawClock.speed as ClockSpeed)
     : 1;
-
   return {
     schemaVersion: MARKET_SESSION_SCHEMA_VERSION,
     stageId,
@@ -225,6 +240,10 @@ export function migrateMarketSession(
       ...(rawWorld as MarketWorld),
       level: config.level,
       config,
+      funding: rawWorld.funding as MarketWorld["funding"],
+      products: Array.isArray(rawWorld.products)
+        ? (rawWorld.products as MarketWorld["products"])
+        : [],
       events: [],
     },
     consultation: { asked, lastQuestion, expression },
@@ -239,15 +258,20 @@ export async function loadMarketSession(
 ): Promise<MarketSessionSave | null> {
   if (!("indexedDB" in globalThis)) return null;
   const database = await openDatabase();
+  let value: unknown;
   try {
     const transaction = database.transaction(STORE_NAME, "readonly");
-    const value = await requestValue(
+    value = await requestValue(
       transaction.objectStore(STORE_NAME).get(marketSessionKey(stageId)),
     );
-    return migrateMarketSession(value, stageId, config);
   } finally {
     database.close();
   }
+  const session = migrateMarketSession(value, stageId, config);
+  if (value !== undefined && session === null) {
+    await deleteMarketSession(stageId);
+  }
+  return session;
 }
 
 export async function saveMarketSession(

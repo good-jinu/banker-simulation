@@ -1422,6 +1422,529 @@ button {
     border-left: 0;
   }
 }
+
+/* Product nodes are small rule engines on the board. They deliberately use
+   the same cash-flight language as the bank so the automation stays legible. */
+.product-edge {
+  stroke: var(--yellow);
+  stroke-width: 3;
+}
+
+.product-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 10px;
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.product-launcher svg {
+  width: 15px;
+}
+
+.product-node {
+  z-index: 8;
+  min-width: 126px;
+  padding: 7px 9px 8px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.product-icon,
+.product-builder-icon {
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.product-icon {
+  width: 35px;
+  height: 31px;
+  margin-top: -22px;
+}
+
+.product-icon svg,
+.product-builder-icon svg {
+  width: 19px;
+}
+
+.product-node strong {
+  margin-top: 5px;
+  color: var(--red);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.product-node small {
+  max-width: 150px;
+  color: var(--ink);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+.product-builder {
+  position: relative;
+  width: min(600px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
+  padding: 30px;
+  color: var(--ink);
+  border: 5px solid var(--ink);
+  background:
+    radial-gradient(circle, rgba(17, 16, 13, 0.17) 1px, transparent 1.5px),
+    var(--paper);
+  background-size: 8px 8px;
+  box-shadow: 10px 10px 0 var(--ink);
+}
+
+.product-builder-icon {
+  width: 52px;
+  height: 48px;
+  margin-bottom: 13px;
+}
+
+.product-builder > small {
+  display: block;
+  color: var(--red);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+}
+
+.product-builder h2 {
+  margin: 5px 0 8px;
+  font-size: clamp(25px, 5vw, 34px);
+  line-height: 1;
+}
+
+.product-builder > p {
+  max-width: 490px;
+  margin: 0 0 20px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.product-rule-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.product-rule-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px;
+  border: 3px solid var(--ink);
+  background: #fff6d8;
+  font-size: 10px;
+  font-weight: 950;
+}
+
+.product-rule-grid input,
+.product-rule-grid select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.product-range-inputs {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 4px;
+}
+
+.product-range-inputs b {
+  font-size: 14px;
+}
+
+.product-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 14px;
+  padding: 11px;
+  border: 3px solid var(--ink);
+  background: var(--green);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.product-preview strong {
+  font-size: 10px;
+}
+.product-preview span {
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.create-product-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 14px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 5px 5px 0 var(--ink);
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.create-product-button:hover {
+  transform: translate(-1px, -1px);
+}
+.create-product-button svg {
+  width: 18px;
+}
+
+@media (max-width: 620px) {
+  .product-builder {
+    padding: 24px 17px;
+  }
+  .product-rule-grid {
+    grid-template-columns: 1fr;
+  }
+  .product-node {
+    transform: translate(-50%, -50%) scale(0.86);
+  }
+}
+
+/* Event comic: every cash movement gets a route, a token, and a result stamp. */
+.event-edge {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 2 7;
+  animation: event-edge 0.8s ease both;
+}
+
+.event-edge-loan-out,
+.event-edge-customer-repayment {
+  stroke: var(--green);
+}
+
+.event-edge-funding-in,
+.event-edge-funding-repayment,
+.event-edge-funding-settlement {
+  stroke: var(--orange);
+}
+
+.event-edge-default {
+  stroke: var(--red);
+  stroke-dasharray: 8 5;
+}
+
+@keyframes event-edge {
+  from {
+    stroke-dashoffset: 30;
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+    opacity: 0.9;
+  }
+}
+
+.flow-layer {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.flow-token {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 66px;
+  padding: 6px 8px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--green);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+  animation: flow-token 1.05s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.flow-token img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
+
+.flow-funding-in,
+.flow-funding-repayment,
+.flow-funding-settlement {
+  background: var(--orange);
+}
+
+.flow-funding-settlement {
+  border-style: dashed;
+}
+
+.flow-default {
+  color: var(--paper);
+  background: var(--red);
+  animation-name: flow-default;
+}
+
+@keyframes flow-token {
+  0% {
+    transform: translate(calc(var(--from-x) - 50%), calc(var(--from-y) - 50%))
+      rotate(-5deg) scale(0.55);
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+  }
+  72% {
+    transform: translate(calc(var(--to-x) - 50%), calc(var(--to-y) - 50%))
+      rotate(4deg) scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(calc(var(--to-x) - 50%), calc(var(--to-y) - 50%))
+      rotate(7deg) scale(0.86);
+    opacity: 0;
+  }
+}
+
+@keyframes flow-default {
+  0% {
+    transform: translate(calc(var(--from-x) - 50%), calc(var(--from-y) - 50%))
+      rotate(-5deg) scale(0.55);
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+  }
+  48%,
+  60% {
+    transform: translate(calc(var(--mid-x) - 50%), calc(var(--mid-y) - 50%))
+      rotate(-12deg) scale(1.05);
+    opacity: 1;
+  }
+  72% {
+    transform: translate(calc(var(--mid-x) - 50%), calc(var(--mid-y) - 50%))
+      rotate(18deg) scale(0.76);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate(calc(var(--mid-x) - 50%), calc(var(--mid-y) - 50%))
+      rotate(30deg) scale(0.3);
+    opacity: 0;
+  }
+}
+
+.flow-stamp {
+  position: absolute;
+  top: var(--stamp-y);
+  left: var(--stamp-x);
+  padding: 4px 7px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  animation: flow-stamp 0.45s 0.66s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+
+.flow-stamp-customer-repayment,
+.flow-stamp-funding-repayment,
+.flow-stamp-product-cash-in {
+  color: var(--paper);
+  background: var(--green);
+}
+
+.flow-stamp-funding-settlement {
+  color: var(--ink);
+  background: var(--orange);
+}
+
+.flow-stamp-default {
+  color: var(--paper);
+  background: var(--red);
+  transform: translate(-50%, -50%) rotate(-8deg);
+  animation-delay: 0.48s;
+}
+
+.event-edge-product-cash-in {
+  stroke: var(--green);
+}
+
+.flow-product-cash-in {
+  background: var(--yellow);
+}
+
+@keyframes flow-stamp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) rotate(-8deg) scale(0.45);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+  }
+}
+
+.trust-pulse-up,
+.trust-pulse-down {
+  animation-duration: 0.9s;
+  animation-timing-function: ease-out;
+}
+
+.trust-pulse-up {
+  animation-name: trust-pulse-up;
+}
+
+.trust-pulse-down {
+  animation-name: trust-pulse-down;
+}
+
+@keyframes trust-pulse-up {
+  0%,
+  100% {
+    transform: rotate(1deg);
+  }
+  35% {
+    transform: rotate(1deg) translateY(-5px) scale(1.04);
+    box-shadow:
+      6px 6px 0 var(--ink),
+      0 0 0 7px rgba(35, 145, 95, 0.2);
+  }
+}
+
+@keyframes trust-pulse-down {
+  0%,
+  100% {
+    transform: rotate(1deg);
+  }
+  20%,
+  55% {
+    transform: rotate(-2deg) translateX(-3px);
+    box-shadow:
+      6px 6px 0 var(--ink),
+      0 0 0 7px rgba(238, 50, 29, 0.23);
+  }
+  38% {
+    transform: rotate(3deg) translateX(3px);
+  }
+}
+
+.lender-node.defaulted {
+  animation: defaulted-node 2s ease-in-out infinite;
+}
+
+@keyframes defaulted-node {
+  0%,
+  100% {
+    transform: translate(-50%, -50%);
+  }
+  50% {
+    transform: translate(-50%, calc(-50% - 3px)) rotate(-2deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-edge,
+  .flow-token,
+  .flow-stamp,
+  .trust-pulse-up,
+  .trust-pulse-down,
+  .lender-node.defaulted {
+    animation: none;
+  }
+}
+
+/* Compact status icons replace repeated labels without hiding meaning. */
+.trust-display {
+  min-width: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.trust-display > svg,
+.day-display > svg {
+  width: 16px;
+  height: 16px;
+}
+
+.day-display {
+  min-width: 76px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.day-display strong {
+  margin-top: 0;
+}
+
+.map-node > small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.term-symbol {
+  display: inline-grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.term-symbol svg {
+  width: 11px;
+  height: 11px;
+}
 .asset-summary {
   display: flex;
   align-items: flex-end;
@@ -2151,4 +2674,522 @@ button {
   color: #6b4a18;
   font-size: 10px;
   font-weight: 800;
+}
+
+.trust-display {
+  min-width: 118px;
+  display: grid;
+  gap: 2px;
+  margin-right: 10px;
+  padding: 7px 10px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  text-align: right;
+}
+
+.trust-rail {
+  position: absolute;
+  z-index: 16;
+  top: 122px;
+  right: 18px;
+  width: 108px;
+  padding: 10px 9px 9px;
+  border: 4px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 6px 6px 0 var(--ink);
+  transform: rotate(1deg);
+}
+
+.trust-rail::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  height: 7px;
+  background: var(--yellow);
+}
+
+.trust-rail-header {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.trust-rail-header span {
+  color: var(--red);
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.trust-rail-header strong {
+  font-size: 16px;
+}
+
+.trust-rail-gauge {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+  justify-content: center;
+  gap: 6px;
+  height: 174px;
+}
+
+.trust-rail-meter {
+  position: relative;
+  width: 32px;
+  height: 100%;
+  overflow: hidden;
+  border: 3px solid var(--ink);
+  background:
+    repeating-linear-gradient(
+      to top,
+      rgba(17, 16, 13, 0.12) 0,
+      rgba(17, 16, 13, 0.12) 2px,
+      transparent 2px,
+      transparent 15px
+    ),
+    #f2c3a3;
+}
+
+.trust-rail-meter > span {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: var(--green);
+  transition:
+    height 300ms ease,
+    background 300ms ease;
+}
+
+.trust-rail-meter > i {
+  position: absolute;
+  right: -3px;
+  left: -3px;
+  height: 0;
+  border-top: 2px dashed var(--ink);
+}
+
+.trust-rail-scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1px 0;
+  color: #6b4a18;
+  font-size: 8px;
+  font-weight: 950;
+}
+
+.trust-rail-caption {
+  display: block;
+  margin-top: 7px;
+  color: #6b4a18;
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.trust-rail.trust-steady .trust-rail-meter > span {
+  background: var(--orange);
+}
+
+.trust-rail.trust-at-risk .trust-rail-meter > span,
+.trust-rail.trust-blocked .trust-rail-meter > span {
+  background: var(--red);
+}
+
+.trust-display small,
+.trust-card small {
+  color: #6b4a18;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.trust-display strong {
+  font-size: 14px;
+}
+
+.trust-strong strong,
+.trust-strong > small {
+  color: var(--green);
+}
+
+.trust-steady strong,
+.trust-steady > small {
+  color: #8a6810;
+}
+
+.trust-at-risk strong,
+.trust-at-risk > small,
+.trust-blocked strong,
+.trust-blocked > small {
+  color: var(--red);
+}
+
+.trust-card {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 20px;
+  padding: 13px;
+  border: 3px solid var(--ink);
+  background: #fff1c8;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.trust-card > div:first-child {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.trust-card > div:first-child span {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.trust-card > div:first-child strong {
+  font-size: 18px;
+}
+
+.trust-meter {
+  height: 12px;
+  overflow: hidden;
+  border: 2px solid var(--ink);
+  background: #f2c3a3;
+}
+
+.trust-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  transition:
+    width 250ms ease,
+    background 250ms ease;
+}
+
+.trust-at-risk .trust-meter > span,
+.trust-blocked .trust-meter > span {
+  background: var(--red);
+}
+
+.trust-steady .trust-meter > span {
+  background: var(--orange);
+}
+
+.trust-card > small {
+  text-transform: none;
+}
+
+.lender-node.defaulted .bank-icon {
+  border-color: var(--red);
+  background: #f2a48f;
+  box-shadow: 0 0 28px rgba(238, 50, 29, 0.28);
+}
+
+.lender-node.defaulted > strong,
+.lender-node.defaulted > small {
+  color: var(--red);
+}
+
+@media (max-width: 620px) {
+  .trust-display {
+    min-width: 92px;
+    margin-right: 4px;
+    padding: 6px 7px;
+  }
+
+  .trust-display small {
+    font-size: 8px;
+  }
+
+  .trust-display strong {
+    font-size: 12px;
+  }
+
+  .trust-rail {
+    top: 112px;
+    right: 9px;
+    width: 70px;
+    padding: 8px 6px 7px;
+  }
+
+  .trust-rail-header span {
+    font-size: 7px;
+  }
+
+  .trust-rail-header strong {
+    font-size: 13px;
+  }
+
+  .trust-rail-gauge {
+    height: 132px;
+  }
+
+  .trust-rail-meter {
+    width: 23px;
+  }
+
+  .trust-rail-caption {
+    font-size: 7px;
+  }
+}
+
+/* Interbank offers use the same character-led rhythm as customer lending. */
+.funding-modal {
+  width: min(1000px, calc(100% - 16px));
+  max-height: calc(100dvh - 16px);
+  padding: 8px;
+  overflow: auto;
+}
+
+.funding-modal > .modal-close {
+  z-index: 6;
+}
+
+.funding-conversation {
+  width: 100%;
+  min-height: 620px;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--paper);
+}
+
+.funding-conversation .conversation-scene {
+  min-height: 620px;
+  background:
+    linear-gradient(145deg, rgba(247, 229, 183, 0.08), transparent 55%),
+    url("/assets/pop-art/backgrounds/underwriting-room.png") center / cover,
+    #17354a;
+}
+
+.funding-character {
+  width: min(380px, 82%) !important;
+  max-height: 470px !important;
+}
+
+.funding-conversation .conversation-actions {
+  padding: 34px 30px;
+  color: var(--ink);
+}
+
+.funding-conversation .action-guide {
+  color: #6b4a18;
+  font-weight: 850;
+}
+
+.funding-lesson {
+  margin: 0 0 20px;
+  padding: 12px;
+  border: 3px solid var(--ink);
+  background: #fff1c8;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.funding-lesson-flow {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) 26px minmax(130px, 1.2fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.funding-lesson-flow > span {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+  gap: 4px 7px;
+}
+
+.funding-lesson-flow svg {
+  grid-row: 1 / span 2;
+  width: 22px;
+  color: var(--red);
+}
+
+.funding-lesson-flow > svg {
+  width: 24px;
+  color: var(--ink);
+}
+
+.funding-lesson-flow strong {
+  font-size: 15px;
+}
+
+.funding-lesson-flow small {
+  grid-column: 2;
+  color: #6b4a18;
+  font-size: 9px;
+  font-weight: 850;
+  line-height: 1.25;
+}
+
+.funding-lesson-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-top: 9px;
+  color: #9c2b1c;
+  border-top: 2px dashed var(--ink);
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.funding-lesson-warning svg {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.funding-conversation-options {
+  display: grid;
+  gap: 10px;
+}
+
+.funding-offer {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  color: var(--ink);
+  text-align: left;
+  border: 3px solid var(--ink);
+  border-radius: 0;
+  background: #f8eac5;
+  box-shadow: 4px 4px 0 var(--ink);
+  cursor: pointer;
+  transition:
+    transform 150ms ease,
+    background 150ms ease;
+}
+
+.funding-offer:hover,
+.funding-offer:focus-visible {
+  background: var(--yellow);
+  outline: none;
+  transform: translate(-1px, -1px);
+}
+
+.funding-offer-index {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--red);
+  font-weight: 950;
+}
+
+.funding-offer-main,
+.funding-offer-amount,
+.funding-offer-terms {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.funding-offer-main strong,
+.funding-offer-amount strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.funding-offer-main small,
+.funding-offer-amount small,
+.funding-offer-terms small {
+  margin-top: 3px;
+  color: #6b4a18;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.funding-offer-amount {
+  text-align: right;
+}
+
+.funding-offer-amount strong {
+  color: var(--red);
+  font-size: 15px;
+}
+
+.funding-offer-terms {
+  min-width: 80px;
+}
+
+.funding-offer-terms small + small {
+  color: var(--ink);
+}
+
+.funding-offer-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 9px;
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  background: var(--green);
+  font-size: 10px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.funding-offer-select svg {
+  width: 13px;
+}
+
+@media (max-width: 760px) {
+  .funding-modal {
+    width: calc(100% - 12px);
+    max-height: calc(100dvh - 12px);
+    padding: 4px;
+  }
+
+  .funding-conversation .conversation-scene {
+    min-height: 390px;
+  }
+
+  .funding-character {
+    max-height: 300px !important;
+  }
+
+  .funding-conversation .conversation-actions {
+    padding: 22px 14px 18px;
+  }
+
+  .funding-lesson-flow {
+    grid-template-columns: minmax(80px, 1fr) 20px minmax(100px, 1.2fr);
+    gap: 6px;
+  }
+
+  .funding-offer {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+  }
+
+  .funding-offer-terms {
+    grid-column: 2;
+  }
+
+  .funding-offer-select {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+  }
 }

@@ -142,6 +142,12 @@ describe("funding", () => {
     });
   });
 
+  it("blocks new funding when trust falls below 30", () => {
+    const world = run(worldWithThreeLoans(), ...days(3));
+    expect(summarize(world).fundingEligible).toBe(true);
+    expect(summarize({ ...world, trust: 20 }).fundingEligible).toBe(false);
+  });
+
   it("borrowing adds cash and books the liability", () => {
     let world = run(worldWithThreeLoans(), ...days(3));
     const before = world.cash;
@@ -154,6 +160,29 @@ describe("funding", () => {
     expect(summary.fundingLiabilities).toBe(metro.amount);
     expect(summary.netWorth).toBeCloseTo(summary.totalAssets - metro.amount);
   });
+
+  it("repays first-level funding on time and removes the lender node", () => {
+    let world = run(worldWithThreeLoans(), ...days(3));
+    world = marketReducer(world, { type: "borrow", lenderId: "metro" });
+    const lender = world.funding.find((item) => item.id === "metro")!;
+    world = {
+      ...world,
+      customers: [],
+      funding: world.funding.map((item) =>
+        item.id === lender.id ? { ...item, dueDay: world.day + 1 } : item,
+      ),
+    };
+    const before = world.cash;
+    world = marketReducer(world, { type: "advance-day" });
+
+    expect(world.cash).toBe(before - lender.amount * (1 + lender.rate / 100));
+    expect(world.funding.find((item) => item.id === lender.id)).toBeUndefined();
+    expect(world.trust).toBe(82);
+    expect(world.insolvent).toBe(false);
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ type: "funding-repayment", trustDelta: 2 }),
+    );
+  });
 });
 
 describe("level two credit risk", () => {
@@ -161,6 +190,65 @@ describe("level two credit risk", () => {
     const safe = { ...FIRST_CUSTOMER, income: 4_000, amount: 400 };
     const risky = { ...FIRST_CUSTOMER, income: 800, amount: 800 };
     expect(defaultRisk(risky)).toBeGreaterThan(defaultRisk(safe));
+  });
+
+  it("makes an applicant without income a certain default", () => {
+    const applicant = createWorld(1, "credit-under-pressure").customers[0]!;
+    expect(applicant.income).toBe(0);
+    expect(defaultRisk(applicant)).toBe(100);
+  });
+
+  it("automatically lends only to customers inside a loan product's rules", () => {
+    const start = createWorld(1, "credit-under-pressure");
+    const eligible = {
+      ...start.customers[0]!,
+      id: "eligible",
+      income: 2_500,
+      occupation: "employed" as const,
+      amount: 500,
+      term: 8,
+      status: "waiting" as const,
+    };
+    const excluded = {
+      ...eligible,
+      id: "excluded",
+      income: 0,
+      occupation: "unemployed" as const,
+    };
+    const world = marketReducer(
+      { ...start, customers: [eligible, excluded] },
+      {
+        type: "create-product",
+        product: {
+          id: "income-guard",
+          kind: "loan",
+          name: "Income Guard",
+          x: 50,
+          y: 26,
+          rules: {
+            minimumIncome: 1_500,
+            occupation: "employed",
+            minimumAmount: 300,
+            maximumAmount: 1_000,
+            minimumTerm: 6,
+            maximumTerm: 12,
+          },
+        },
+      },
+    );
+
+    expect(
+      world.customers.find((customer) => customer.id === "eligible")?.status,
+    ).toBe("accepted");
+    expect(
+      world.customers.find((customer) => customer.id === "eligible")?.productId,
+    ).toBe("income-guard");
+    expect(
+      world.customers.find((customer) => customer.id === "excluded")?.status,
+    ).toBe("waiting");
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ type: "product-lent" }),
+    );
   });
 
   it("writes off a defaulted challenge loan deterministically", () => {
@@ -184,7 +272,7 @@ describe("level two credit risk", () => {
     expect(world.events.some((event) => event.type === "default")).toBe(true);
   });
 
-  it("collects challenge funding on its due day and fails on negative cash", () => {
+  it("defaults challenge funding on its due day when cash is insufficient", () => {
     let world: MarketWorld = {
       ...createWorld(1, "credit-under-pressure"),
       day: 3,
@@ -200,14 +288,62 @@ describe("level two credit risk", () => {
       ),
     };
     world = marketReducer(world, { type: "advance-day" });
-    expect(world.cash).toBe(-536);
+    expect(world.cash).toBe(100);
     expect(
-      world.funding.find((lender) => lender.id === civic.id),
-    ).toBeUndefined();
-    expect(world.insolvent).toBe(true);
-    expect(
-      world.events.some((event) => event.type === "funding-repayment"),
+      world.funding.find((lender) => lender.id === civic.id)?.defaulted,
     ).toBe(true);
+    expect(world.trust).toBe(60);
+    expect(world.insolvent).toBe(false);
+    expect(world.events.some((event) => event.type === "funding-default")).toBe(
+      true,
+    );
+  });
+
+  it("settles a defaulted lender automatically once cash recovers", () => {
+    let world: MarketWorld = {
+      ...createWorld(1, "credit-under-pressure"),
+      day: 3,
+      thirdLoanDay: 0,
+      cash: 700,
+      funding: createWorld(1, "credit-under-pressure").funding.map((lender) =>
+        lender.id === "civic"
+          ? { ...lender, accepted: true, defaulted: true, dueDay: 1 }
+          : lender,
+      ),
+    };
+    world = marketReducer(world, { type: "advance-day" });
+
+    expect(world.cash).toBe(64);
+    expect(
+      world.funding.find((lender) => lender.id === "civic"),
+    ).toBeUndefined();
+    expect(world.trust).toBe(80);
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ type: "funding-settlement", amount: 636 }),
+    );
+  });
+
+  it("fails the game when trust reaches zero", () => {
+    let world: MarketWorld = {
+      ...createWorld(1, "credit-under-pressure"),
+      day: 3,
+      thirdLoanDay: 0,
+      trust: 20,
+      funding: createWorld(1, "credit-under-pressure").funding.map((lender) =>
+        lender.id === "civic"
+          ? { ...lender, accepted: true, dueDay: 4 }
+          : lender,
+      ),
+    };
+    world = {
+      ...world,
+      cash: 100,
+    };
+    world = marketReducer(world, { type: "advance-day" });
+
+    expect(world.trust).toBe(0);
+    expect(world.insolvent).toBe(true);
+    expect(world.failureReason).toBe("trust");
   });
 });
 

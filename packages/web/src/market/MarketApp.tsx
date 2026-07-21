@@ -1,9 +1,6 @@
 import {
-  AlertTriangle,
   ArrowLeft,
-  ArrowRightLeft,
   Banknote,
-  CalendarClock,
   Check,
   Clock,
   Coins,
@@ -12,6 +9,7 @@ import {
   Pause,
   Play,
   Plus,
+  SlidersHorizontal,
   ShieldCheck,
   Users,
   Wallet,
@@ -26,6 +24,7 @@ import {
   CustomerConsultation,
   type ConsultationProgress,
 } from "./CustomerConsultation.tsx";
+import { InterbankConversation } from "./InterbankConversation.tsx";
 import {
   deleteMarketSession,
   loadMarketSession,
@@ -43,12 +42,145 @@ import {
   summarize,
   type Customer,
   type Funding,
+  type MarketEvent,
+  type LoanProduct,
+  type LoanProductRules,
+  type OccupationRule,
+  type Product,
 } from "./market-world.ts";
 import "./market.css";
 
 const DAY_MS = 1_500;
 
-type Transfer = { id: number; from: string; to: string; amount: number };
+type MapPoint = { x: number; y: number };
+type FlowKind =
+  | "loan-out"
+  | "funding-in"
+  | "customer-repayment"
+  | "funding-repayment"
+  | "funding-settlement"
+  | "default"
+  | "product-cash-in";
+type FlowAnimation = {
+  id: number;
+  from: MapPoint;
+  to: MapPoint;
+  stampAt: MapPoint;
+  amount: number;
+  kind: FlowKind;
+  label: string;
+};
+
+type FlowLabels = {
+  funded: string;
+  cashIn: string;
+  repaid: string;
+  paid: string;
+  settled: string;
+  defaulted: string;
+  automated: string;
+  retrieved: string;
+};
+
+function pointForId(
+  id: string,
+  customers: Customer[],
+  funding: Funding[],
+  products: Product[],
+): MapPoint {
+  if (id === "banker") return { x: 50, y: 49 };
+  return (
+    customers.find((customer) => customer.id === id) ??
+    funding.find((lender) => lender.id === id) ??
+    products.find((product) => product.id === id) ?? { x: 50, y: 50 }
+  );
+}
+
+function flowForEvent(
+  event: MarketEvent,
+  pointFor: (id: string) => MapPoint,
+  labels: FlowLabels,
+): Omit<FlowAnimation, "id"> | null {
+  const customerPoint = (customer: Customer): MapPoint => customer;
+  const lenderPoint = (lender: Funding): MapPoint => lender;
+  switch (event.type) {
+    case "transfer": {
+      const fundingIn = event.to === "banker";
+      const automated = event.from !== "banker" && event.to !== "banker";
+      const from = pointFor(event.from);
+      const to = pointFor(event.to);
+      return {
+        from,
+        to,
+        stampAt: to,
+        amount: event.amount,
+        kind: fundingIn ? "funding-in" : "loan-out",
+        label: fundingIn
+          ? labels.cashIn
+          : automated
+            ? labels.automated
+            : labels.funded,
+      };
+    }
+    case "customer-repayment":
+      if (event.customer.productId) return null;
+      return {
+        from: customerPoint(event.customer),
+        to: pointFor("banker"),
+        stampAt: pointFor("banker"),
+        amount: event.amount,
+        kind: "customer-repayment",
+        label: labels.repaid,
+      };
+    case "product-cash-in":
+      return {
+        from: customerPoint(event.customer),
+        to: pointFor(event.product.id),
+        stampAt: pointFor(event.product.id),
+        amount: event.amount,
+        kind: "product-cash-in",
+        label: labels.retrieved,
+      };
+    case "funding-repayment":
+      return {
+        from: pointFor("banker"),
+        to: lenderPoint(event.lender),
+        stampAt: lenderPoint(event.lender),
+        amount: event.amount,
+        kind: "funding-repayment",
+        label: labels.paid,
+      };
+    case "funding-settlement":
+      return {
+        from: pointFor("banker"),
+        to: lenderPoint(event.lender),
+        stampAt: lenderPoint(event.lender),
+        amount: event.amount,
+        kind: "funding-settlement",
+        label: labels.settled,
+      };
+    case "default":
+      return {
+        from: customerPoint(event.customer),
+        to: pointFor("banker"),
+        stampAt: customerPoint(event.customer),
+        amount: event.customer.amount,
+        kind: "default",
+        label: labels.defaulted,
+      };
+    case "funding-default":
+      return {
+        from: pointFor("banker"),
+        to: lenderPoint(event.lender),
+        stampAt: lenderPoint(event.lender),
+        amount: event.amount,
+        kind: "default",
+        label: labels.defaulted,
+      };
+    default:
+      return null;
+  }
+}
 
 function emptyConsultationProgress(): ConsultationProgress {
   return { asked: [], lastQuestion: null, expression: "requesting" };
@@ -83,10 +215,13 @@ export function MarketApp({
     useState<ConsultationProgress>(emptyConsultationProgress);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [selected, setSelected] = useState<Customer | null>(null);
+  const [productBuilderOpen, setProductBuilderOpen] = useState(false);
   const [fundingOpen, setFundingOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
   const [goalsOpen, setGoalsOpen] = useState(false);
-  const [transfer, setTransfer] = useState<Transfer | null>(null);
+  const [flowQueue, setFlowQueue] = useState<FlowAnimation[]>([]);
+  const [activeFlow, setActiveFlow] = useState<FlowAnimation | null>(null);
+  const [trustPulse, setTrustPulse] = useState<"up" | "down" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [clockView, setClockView] = useState<{
     paused: boolean;
@@ -95,12 +230,12 @@ export function MarketApp({
   const clockRef = useRef<GameClock | null>(null);
   const dispatchRef = useRef(dispatch);
   dispatchRef.current = dispatch;
-  const transferId = useRef(0);
+  const flowId = useRef(0);
   const modalWasOpenRef = useRef(false);
   const resumeAfterModalRef = useRef(false);
   const createMarketSessionSnapshot = useCallback(
     (): MarketSessionSave => ({
-      schemaVersion: 1,
+      schemaVersion: 2,
       stageId: stage.id,
       phase,
       world: { ...world, events: [] },
@@ -175,6 +310,8 @@ export function MarketApp({
               money(event.customer.amount),
             ),
           );
+          if (isChallenge && world.products.length === 0)
+            setProductBuilderOpen(true);
           break;
         case "loan-request":
           setNotice(
@@ -184,14 +321,7 @@ export function MarketApp({
             ),
           );
           break;
-        case "transfer":
-          transferId.current += 1;
-          setTransfer({
-            id: transferId.current,
-            from: event.from,
-            to: event.to,
-            amount: event.amount,
-          });
+        case "customer-repayment":
           break;
         case "borrowed":
           setNotice(
@@ -206,6 +336,23 @@ export function MarketApp({
             m.noticeFundingRepayment(
               localize(event.lender.name, locale),
               money(event.amount),
+              event.trustDelta,
+            ),
+          );
+          break;
+        case "funding-default":
+          setNotice(
+            m.noticeFundingDefault(
+              localize(event.lender.name, locale),
+              money(event.amount),
+            ),
+          );
+          break;
+        case "funding-settlement":
+          setNotice(
+            m.noticeFundingSettlement(
+              localize(event.lender.name, locale),
+              money(event.amount),
             ),
           );
           break;
@@ -216,11 +363,76 @@ export function MarketApp({
         case "mission-clear":
           break;
         case "insolvent":
-          setNotice(m.noticeInsolvent);
+          setNotice(
+            world.failureReason === "trust"
+              ? m.trustFailureTitle
+              : m.noticeInsolvent,
+          );
           break;
       }
     }
-  }, [locale, m, world.events]);
+  }, [
+    isChallenge,
+    locale,
+    m,
+    world.events,
+    world.failureReason,
+    world.products.length,
+  ]);
+
+  useEffect(() => {
+    const pointFor = (id: string) =>
+      pointForId(id, world.customers, world.funding, world.products);
+    const labels: FlowLabels = {
+      funded: m.flowFunded,
+      cashIn: m.flowCashIn,
+      repaid: m.flowRepaid,
+      paid: m.flowPaid,
+      settled: m.flowSettled,
+      defaulted: m.flowDefaulted,
+      automated: m.flowAutomated,
+      retrieved: m.flowRetrieved,
+    };
+    const flows = world.events
+      .map((event) => flowForEvent(event, pointFor, labels))
+      .filter((flow): flow is Omit<FlowAnimation, "id"> => flow !== null)
+      .map((flow) => ({ ...flow, id: ++flowId.current }));
+    if (flows.length > 0) {
+      setFlowQueue((pending) => [...pending, ...flows]);
+    }
+
+    const fundingTrustEvent = world.events.find(
+      (event) =>
+        event.type === "funding-repayment" || event.type === "funding-default",
+    );
+    if (fundingTrustEvent) {
+      setTrustPulse(
+        fundingTrustEvent.type === "funding-repayment" ? "up" : "down",
+      );
+    }
+  }, [m, world.events, world.funding, world.customers, world.products]);
+
+  useEffect(() => {
+    if (activeFlow || flowQueue.length === 0) return;
+    const [next, ...rest] = flowQueue;
+    setFlowQueue(rest);
+    setActiveFlow(next ?? null);
+  }, [activeFlow, flowQueue]);
+
+  useEffect(() => {
+    if (!activeFlow) return;
+    const handle = window.setTimeout(
+      () => setActiveFlow(null),
+      activeFlow.kind === "default" ? 1_250 : 1_100,
+    );
+    return () => window.clearTimeout(handle);
+  }, [activeFlow]);
+
+  useEffect(() => {
+    if (!trustPulse) return;
+    const handle = window.setTimeout(() => setTrustPulse(null), 900);
+    return () => window.clearTimeout(handle);
+  }, [trustPulse]);
 
   useEffect(() => {
     if (!notice) return;
@@ -228,17 +440,16 @@ export function MarketApp({
     return () => window.clearTimeout(handle);
   }, [notice]);
 
-  useEffect(() => {
-    if (!transfer) return;
-    const handle = window.setTimeout(() => setTransfer(null), 1_100);
-    return () => window.clearTimeout(handle);
-  }, [transfer]);
-
   const missionClear = world.missionCleared;
 
   useEffect(() => {
     const modalOpen = Boolean(
-      selected || fundingOpen || assetsOpen || missionClear || world.insolvent,
+      selected ||
+      productBuilderOpen ||
+      fundingOpen ||
+      assetsOpen ||
+      missionClear ||
+      world.insolvent,
     );
     const clock = clockRef.current;
     if (!clock) return;
@@ -260,17 +471,47 @@ export function MarketApp({
       }
       resumeAfterModalRef.current = false;
     }
-  }, [assetsOpen, fundingOpen, missionClear, selected, world.insolvent]);
+  }, [
+    assetsOpen,
+    fundingOpen,
+    missionClear,
+    productBuilderOpen,
+    selected,
+    world.insolvent,
+  ]);
 
-  const { loanReceivables, totalAssets, netWorth, fundingEligible } =
+  const { loanReceivables, totalAssets, netWorth, fundingEligible, trustBand } =
     summarize(world);
   const levelGoals = goalsFor(world);
   const survivalDay = levelGoals.survivalDay ?? 0;
-  const { cash, day, customers, funding, loanCount, cumulativeLent } = world;
+  const {
+    cash,
+    day,
+    customers,
+    funding,
+    products,
+    loanCount,
+    cumulativeLent,
+    trust,
+  } = world;
+
+  function trustLabel(): string {
+    switch (trustBand) {
+      case "strong":
+        return m.trustStrong;
+      case "steady":
+        return m.trustSteady;
+      case "at-risk":
+        return m.trustAtRisk;
+      default:
+        return m.trustBlocked;
+    }
+  }
 
   function beginMap(): void {
     dispatch({ type: "begin" });
     setPhase("map");
+    if (isChallenge) setSelected(introCustomer);
   }
 
   function approve(customer: Customer): void {
@@ -290,6 +531,21 @@ export function MarketApp({
   function reject(customer: Customer): void {
     dispatch({ type: "reject", customerId: customer.id });
     setSelected(null);
+    if (isChallenge && world.products.length === 0) setProductBuilderOpen(true);
+  }
+
+  function createLoanProduct(rules: LoanProductRules): void {
+    const product: LoanProduct = {
+      id: `loan-product-${world.products.filter((item) => item.kind === "loan").length + 1}`,
+      kind: "loan",
+      name: m.loanProductName,
+      x: 50,
+      y: 26,
+      rules,
+    };
+    dispatch({ type: "create-product", product });
+    setProductBuilderOpen(false);
+    setNotice(m.productActivated);
   }
 
   function borrow(lender: Funding): void {
@@ -415,6 +671,16 @@ export function MarketApp({
   );
   const showFundingHint = fundingEligible && !fundingOpen;
   const goals = [
+    ...(isChallenge
+      ? [
+          {
+            icon: SlidersHorizontal,
+            label: m.challengeGoalProduct,
+            progress: `${Math.min(products.length, levelGoals.productCount)} / ${levelGoals.productCount}`,
+            completed: products.length >= levelGoals.productCount,
+          },
+        ]
+      : []),
     {
       icon: Users,
       label: isChallenge ? m.challengeGoalLoans : m.goalFirstLoan,
@@ -447,12 +713,18 @@ export function MarketApp({
       : []),
   ];
   const activeGoalIndex = goals.findIndex((goal) => !goal.completed);
-  const pointFor = (id: string): { x: number; y: number } => {
-    if (id === "banker") return { x: 50, y: 49 };
-    const customer = customers.find((item) => item.id === id);
-    if (customer) return customer;
-    return funding.find((item) => item.id === id) ?? { x: 50, y: 50 };
-  };
+  const flowStyle = activeFlow
+    ? ({
+        "--from-x": `${activeFlow.from.x}%`,
+        "--from-y": `${activeFlow.from.y}%`,
+        "--to-x": `${activeFlow.to.x}%`,
+        "--to-y": `${activeFlow.to.y}%`,
+        "--mid-x": `${(activeFlow.from.x + activeFlow.to.x) / 2}%`,
+        "--mid-y": `${(activeFlow.from.y + activeFlow.to.y) / 2}%`,
+        "--stamp-x": `${activeFlow.stampAt.x}%`,
+        "--stamp-y": `${activeFlow.stampAt.y}%`,
+      } as React.CSSProperties)
+    : undefined;
 
   return (
     <main className={`loan-game stage-${stage.id}`}>
@@ -471,8 +743,25 @@ export function MarketApp({
             <strong>{money(cash)}</strong>
           </span>
         </button>
+        <div
+          className={`trust-display trust-${trustBand}`}
+          aria-label={`${m.trust} ${m.trustScore(trust)}`}
+        >
+          <ShieldCheck aria-hidden="true" />
+          <strong>{m.trustScore(trust)}</strong>
+        </div>
+        {isChallenge && (
+          <button
+            className="product-launcher"
+            onClick={() => setProductBuilderOpen(true)}
+            aria-label={m.openProducts}
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            <span>{m.products}</span>
+          </button>
+        )}
         <div className="day-display">
-          <small>{m.currentDate}</small>
+          <Clock aria-hidden="true" />
           <strong>DAY {day + 1}</strong>
         </div>
       </header>
@@ -482,10 +771,28 @@ export function MarketApp({
           <span>
             {stage.number === 1 ? m.districtMarket : m.districtPressure}
           </span>
-          <strong>
-            {stage.number === 1 ? m.mapMotifGrowth : m.mapMotifRisk}
-          </strong>
         </div>
+        <aside
+          className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
+          aria-label={`${m.trust} ${m.trustScore(trust)}`}
+        >
+          <div className="trust-rail-header">
+            <span>{m.trust}</span>
+            <strong>{m.trustScore(trust)}</strong>
+          </div>
+          <div className="trust-rail-gauge">
+            <div className="trust-rail-meter" aria-hidden="true">
+              <span style={{ height: `${trust}%` }} />
+              <i style={{ bottom: "80%" }} />
+              <i style={{ bottom: "60%" }} />
+              <i style={{ bottom: "30%" }} />
+            </div>
+            <div className="trust-rail-scale" aria-hidden="true">
+              <small>100</small>
+              <small>0</small>
+            </div>
+          </div>
+        </aside>
         <div
           className={`goal-overlay ${activeGoalIndex >= 0 ? "has-active" : "all-complete"}`}
         >
@@ -566,6 +873,27 @@ export function MarketApp({
                 markerEnd="url(#arrow-in)"
               />
             ))}
+          {products
+            .filter((product) => product.kind === "loan")
+            .flatMap((product) =>
+              visibleCustomers
+                .filter(
+                  (customer) =>
+                    customer.status === "accepted" &&
+                    customer.productId === product.id,
+                )
+                .map((customer) => (
+                  <line
+                    key={`${product.id}-${customer.id}`}
+                    className="future-edge product-edge"
+                    x1={product.x}
+                    y1={product.y}
+                    x2={customer.x}
+                    y2={customer.y}
+                    markerEnd="url(#arrow-in)"
+                  />
+                )),
+            )}
           {funding
             .filter((lender) => lender.accepted)
             .map((lender) => (
@@ -579,6 +907,15 @@ export function MarketApp({
                 markerEnd="url(#arrow-in)"
               />
             ))}
+          {activeFlow && (
+            <line
+              className={`event-edge event-edge-${activeFlow.kind}`}
+              x1={activeFlow.from.x}
+              y1={activeFlow.from.y}
+              x2={activeFlow.to.x}
+              y2={activeFlow.to.y}
+            />
+          )}
         </svg>
 
         <div
@@ -590,8 +927,29 @@ export function MarketApp({
             <img src="/assets/pop-art/atoms/bank-hub-marker.svg" alt="" />
           </span>
           <strong>{money(cash)}</strong>
-          <small>{m.currentCash}</small>
         </div>
+
+        {products
+          .filter((product): product is LoanProduct => product.kind === "loan")
+          .map((product) => (
+            <div
+              key={product.id}
+              className="product-node map-node"
+              style={{ left: `${product.x}%`, top: `${product.y}%` }}
+            >
+              <span className="product-icon">
+                <SlidersHorizontal aria-hidden="true" />
+              </span>
+              <strong>{m.productAutoLending}</strong>
+              <small>
+                {m.productRuleSummary(
+                  money(product.rules.minimumIncome),
+                  money(product.rules.minimumAmount),
+                  money(product.rules.maximumAmount),
+                )}
+              </small>
+            </div>
+          ))}
 
         {visibleCustomers.map((customer) => (
           <div
@@ -627,8 +985,11 @@ export function MarketApp({
                 : m.repaymentIn(Math.max(customer.dueDay - day, 0))}
             </strong>
             <small>
+              <span className="term-symbol" aria-hidden="true">
+                {customer.status === "waiting" ? "%" : <Banknote />}
+              </span>
               {customer.status === "waiting"
-                ? m.loanRequest(customer.rate)
+                ? `${customer.rate}%`
                 : m.repaymentDue(
                     money(customer.amount * (1 + customer.rate / 100)),
                   )}
@@ -644,40 +1005,53 @@ export function MarketApp({
           .map((lender) => (
             <div
               key={lender.id}
-              className="lender-node map-node"
+              className={`lender-node map-node${lender.defaulted ? " defaulted" : ""}`}
               style={{ left: `${lender.x}%`, top: `${lender.y}%` }}
             >
               <span className="bank-icon small">
-                <img src="/assets/pop-art/atoms/funding-badge.svg" alt="" />
+                <img
+                  src={`/assets/pop-art/atoms/${lender.defaulted ? "rejection-stamp" : "funding-badge"}.svg`}
+                  alt=""
+                />
               </span>
-              <strong>{m.repaymentIn(Math.max(lender.dueDay - day, 0))}</strong>
+              <strong>
+                {lender.defaulted
+                  ? m.defaulted
+                  : m.repaymentIn(Math.max(lender.dueDay - day, 0))}
+              </strong>
               <small>
-                {m.repaymentDue(money(lender.amount * (1 + lender.rate / 100)))}
+                <span className="term-symbol" aria-hidden="true">
+                  <Banknote />
+                </span>
+                {lender.defaulted
+                  ? m.defaultedDebt(
+                      money(lender.amount * (1 + lender.rate / 100)),
+                    )
+                  : m.repaymentDue(
+                      money(lender.amount * (1 + lender.rate / 100)),
+                    )}
               </small>
             </div>
           ))}
 
-        {transfer &&
-          (() => {
-            const from = pointFor(transfer.from);
-            const to = pointFor(transfer.to);
-            return (
-              <div
-                key={transfer.id}
-                className="flying-money"
-                style={
-                  {
-                    "--from-x": `${from.x}vw`,
-                    "--from-y": `${from.y}vh`,
-                    "--to-x": `${to.x}vw`,
-                    "--to-y": `${to.y}vh`,
-                  } as React.CSSProperties
-                }
-              >
-                {money(transfer.amount)}
-              </div>
-            );
-          })()}
+        {activeFlow && (
+          <div className="flow-layer" aria-hidden="true">
+            <div
+              key={activeFlow.id}
+              className={`flow-token flow-${activeFlow.kind}`}
+              style={flowStyle}
+            >
+              <img src="/assets/pop-art/atoms/cash-symbol.svg" alt="" />
+              <span>{money(activeFlow.amount)}</span>
+            </div>
+            <span
+              className={`flow-stamp flow-stamp-${activeFlow.kind}`}
+              style={flowStyle}
+            >
+              {activeFlow.label}
+            </span>
+          </div>
+        )}
 
         {showFundingHint && (
           <aside className="funding-hint">
@@ -832,6 +1206,16 @@ export function MarketApp({
               <span>{m.netWorth}</span>
               <strong>{money(netWorth)}</strong>
             </div>
+            <div className={`trust-card trust-${trustBand}`}>
+              <div>
+                <span>{m.trust}</span>
+                <strong>{m.trustScore(trust)}</strong>
+              </div>
+              <div className="trust-meter" aria-hidden="true">
+                <span style={{ width: `${trust}%` }} />
+              </div>
+              <small>{trustLabel()}</small>
+            </div>
             <h3>{m.assets}</h3>
             <dl className="asset-rows">
               <div>
@@ -898,10 +1282,11 @@ export function MarketApp({
                         <strong>{localize(lender.name, locale)}</strong>
                         <span>{money(lender.amount)}</span>
                         <small>
-                          {m.dueInDays(Math.max(lender.dueDay - day, 0))} ·{" "}
-                          {m.repaymentDue(
-                            money(lender.amount * (1 + lender.rate / 100)),
-                          )}
+                          {lender.defaulted
+                            ? m.defaultedDebt(
+                                money(lender.amount * (1 + lender.rate / 100)),
+                              )
+                            : `${m.dueInDays(Math.max(lender.dueDay - day, 0))} · ${m.repaymentDue(money(lender.amount * (1 + lender.rate / 100)))}`}
                         </small>
                       </article>
                     ))}
@@ -943,6 +1328,16 @@ export function MarketApp({
         </div>
       )}
 
+      {productBuilderOpen && (
+        <div className="modal-backdrop">
+          <ProductBuilder
+            locale={locale}
+            onCreate={createLoanProduct}
+            onClose={() => setProductBuilderOpen(false)}
+          />
+        </div>
+      )}
+
       {fundingOpen && (
         <div
           className="modal-backdrop"
@@ -959,44 +1354,13 @@ export function MarketApp({
             >
               <X />
             </button>
-            <small>INTERBANK FUNDING</small>
-            <h2>{m.borrowFromBank}</h2>
-            <div className="funding-info-strip">
-              <span>
-                <ArrowRightLeft />
-                <small>{m.fundingCashNow}</small>
-              </span>
-              <span>
-                <CalendarClock />
-                <small>{m.fundingRepayInterest}</small>
-              </span>
-              {isChallenge && (
-                <span className="risk">
-                  <AlertTriangle />
-                  <small>{m.fundingRiskInsolvency}</small>
-                </span>
-              )}
-            </div>
-            <div className="funding-options">
-              {funding
-                .filter((item) => !item.accepted)
-                .map((lender) => (
-                  <article key={lender.id}>
-                    <span className="bank-icon small">
-                      <Landmark />
-                    </span>
-                    <div>
-                      <strong>{localize(lender.name, locale)}</strong>
-                      <small>{m.dueInDays(lender.dueDay)}</small>
-                    </div>
-                    <div className="funding-rate">
-                      <strong>{money(lender.amount)}</strong>
-                      <small>{m.annualRate(lender.rate)}</small>
-                    </div>
-                    <button onClick={() => borrow(lender)}>{m.select}</button>
-                  </article>
-                ))}
-            </div>
+            <InterbankConversation
+              funding={funding}
+              locale={locale}
+              isChallenge={isChallenge}
+              currentCash={cash}
+              onBorrow={borrow}
+            />
           </section>
         </div>
       )}
@@ -1013,8 +1377,16 @@ export function MarketApp({
               <img src="/assets/pop-art/atoms/rejection-stamp.svg" alt="" />
             </span>
             <small>LEVEL {String(stage.number).padStart(2, "0")}</small>
-            <h2 id="loss-title">{m.insolventTitle}</h2>
-            <p>{m.insolventDescription}</p>
+            <h2 id="loss-title">
+              {world.failureReason === "trust"
+                ? m.trustFailureTitle
+                : m.insolventTitle}
+            </h2>
+            <p>
+              {world.failureReason === "trust"
+                ? m.trustFailureDescription
+                : m.insolventDescription}
+            </p>
             <button onClick={onBack}>{m.returnToStages}</button>
           </section>
         </div>
@@ -1047,5 +1419,127 @@ function DevTestPanel({
       </div>
       {status && <small>{status}</small>}
     </aside>
+  );
+}
+
+function ProductBuilder({
+  locale,
+  onCreate,
+  onClose,
+}: {
+  locale: Locale;
+  onCreate: (rules: LoanProductRules) => void;
+  onClose: () => void;
+}) {
+  const m = messagesFor(locale).market;
+  const [rules, setRules] = useState<LoanProductRules>({
+    minimumIncome: 1_500,
+    occupation: "employed",
+    minimumAmount: 300,
+    maximumAmount: 1_000,
+    minimumTerm: 6,
+    maximumTerm: 12,
+  });
+  const setNumber =
+    (key: Exclude<keyof LoanProductRules, "occupation">) =>
+    (event: React.ChangeEvent<HTMLInputElement>) =>
+      setRules((current) => ({
+        ...current,
+        [key]: Number(event.target.value),
+      }));
+
+  return (
+    <section className="product-builder" role="dialog" aria-modal="true">
+      <button className="modal-close" onClick={onClose} aria-label={m.close}>
+        <X />
+      </button>
+      <span className="product-builder-icon">
+        <SlidersHorizontal aria-hidden="true" />
+      </span>
+      <small>{m.productLessonEyebrow}</small>
+      <h2>{m.productBuilderTitle}</h2>
+      <p>{m.productBuilderCopy}</p>
+      <div className="product-rule-grid">
+        <label>
+          <span>{m.productMinimumIncome}</span>
+          <input
+            type="number"
+            min="0"
+            step="100"
+            value={rules.minimumIncome}
+            onChange={setNumber("minimumIncome")}
+          />
+        </label>
+        <label>
+          <span>{m.productOccupation}</span>
+          <select
+            value={rules.occupation}
+            onChange={(event) =>
+              setRules((current) => ({
+                ...current,
+                occupation: event.target.value as OccupationRule,
+              }))
+            }
+          >
+            <option value="any">{m.productOccupationAny}</option>
+            <option value="employed">{m.productOccupationEmployed}</option>
+            <option value="self-employed">
+              {m.productOccupationSelfEmployed}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>{m.productLoanRange}</span>
+          <div className="product-range-inputs">
+            <input
+              type="number"
+              min="0"
+              step="100"
+              value={rules.minimumAmount}
+              onChange={setNumber("minimumAmount")}
+            />
+            <b>–</b>
+            <input
+              type="number"
+              min={rules.minimumAmount}
+              step="100"
+              value={rules.maximumAmount}
+              onChange={setNumber("maximumAmount")}
+            />
+          </div>
+        </label>
+        <label>
+          <span>{m.productDueRange}</span>
+          <div className="product-range-inputs">
+            <input
+              type="number"
+              min="1"
+              value={rules.minimumTerm}
+              onChange={setNumber("minimumTerm")}
+            />
+            <b>–</b>
+            <input
+              type="number"
+              min={rules.minimumTerm}
+              value={rules.maximumTerm}
+              onChange={setNumber("maximumTerm")}
+            />
+          </div>
+        </label>
+      </div>
+      <div className="product-preview">
+        <strong>{m.productPreview}</strong>
+        <span>
+          {m.productRuleSummary(
+            money(rules.minimumIncome),
+            money(rules.minimumAmount),
+            money(rules.maximumAmount),
+          )}
+        </span>
+      </div>
+      <button className="create-product-button" onClick={() => onCreate(rules)}>
+        <SlidersHorizontal /> {m.createLoanProduct}
+      </button>
+    </section>
   );
 }
