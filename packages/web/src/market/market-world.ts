@@ -15,7 +15,8 @@ import {
  */
 
 export type CustomerStatus = "waiting" | "accepted";
-export type MarketLevel = "first-yield" | "credit-under-pressure";
+/** A stage id string. Not a closed union — new stages don't need a type edit. */
+export type MarketLevel = string;
 /** Product types are deliberately a discriminated union so deposits and
  * insurance can add their own rules and lifecycle without changing loans. */
 export type ProductKind = "loan" | "deposit" | "insurance";
@@ -279,6 +280,17 @@ export function defaultRisk(customer: Customer): number {
   return Math.min(55, Math.max(5, Math.round(62 - incomeToLoan * 18)));
 }
 
+/**
+ * How many customers a loan product can sign in a single day. A trusted bank
+ * draws a bigger queue than one the market is wary of, so this scales with
+ * the same trust bands the trust rail shows the player.
+ */
+export function loanAutomationCapacity(trust: number): number {
+  if (trust >= 80) return 3;
+  if (trust >= 60) return 2;
+  return 1;
+}
+
 export function avatarFor(
   customer: Customer,
   expression: CustomerExpression,
@@ -362,7 +374,9 @@ function withDerivedEvents(world: MarketWorld): MarketWorld {
     world.cumulativeLent >= goals.cumulativeLent &&
     world.products.length >= goals.productCount &&
     summary.netWorth >= goals.netWorth &&
-    (goals.survivalDay === null || world.day >= goals.survivalDay)
+    // world.day is 0-indexed; the UI's "DAY N" header shows world.day + 1,
+    // so the goal must clear against that same displayed day number.
+    (goals.survivalDay === null || world.day + 1 >= goals.survivalDay)
   ) {
     missionCleared = true;
     events = [...events, { type: "mission-clear" }];
@@ -657,20 +671,28 @@ function automateLoans(world: MarketWorld): MarketWorld {
   let next = world;
   for (const product of next.products) {
     if (product.kind !== "loan") continue;
-    const eligible = next.customers.find((customer) =>
-      customerMatchesLoanProduct(customer, product),
-    );
-    if (eligible && next.cash >= eligible.amount)
-      next = lend(next, eligible, product);
+    const capacity = loanAutomationCapacity(next.trust);
+    let signed = 0;
+    for (const customer of next.customers) {
+      if (signed >= capacity) break;
+      if (!customerMatchesLoanProduct(customer, product)) continue;
+      if (next.cash < customer.amount) continue;
+      next = lend(next, customer, product);
+      signed += 1;
+    }
   }
   return next;
 }
 
 function createProduct(world: MarketWorld, product: LoanProduct): MarketWorld {
-  if (world.products.some((item) => item.id === product.id))
+  if (
+    world.products.some((item) => item.id === product.id) ||
+    world.cash < world.config.productCreationCost
+  )
     return { ...world, events: [] };
   return automateLoans({
     ...world,
+    cash: world.cash - world.config.productCreationCost,
     products: [...world.products, product],
     events: [{ type: "product-created", product }],
   });

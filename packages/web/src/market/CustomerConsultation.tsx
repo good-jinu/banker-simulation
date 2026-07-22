@@ -24,7 +24,8 @@ const CONSULTATION_QUESTIONS: ConsultationQuestionId[] = ["purpose", "income"];
 export function CustomerConsultation({
   customer,
   locale,
-  isChallenge,
+  showRiskEstimate,
+  learnCustomerHint,
   mode,
   sceneLabel,
   onProceed,
@@ -37,7 +38,10 @@ export function CustomerConsultation({
 }: {
   customer: Customer;
   locale: Locale;
-  isChallenge: boolean;
+  /** Show the computed default-risk % instead of a plain repayment amount —
+   * only meaningful on stages where defaults are actually randomized. */
+  showRiskEstimate: boolean;
+  learnCustomerHint: string;
   mode: ConversationMode;
   sceneLabel: string;
   onProceed?: () => void;
@@ -102,7 +106,7 @@ export function CustomerConsultation({
 
   const openingMessage =
     mode === "intro"
-      ? `${isChallenge ? m.challengeGreeting : m.greeting} ${isChallenge ? m.challengeLoanQuestion(money(customer.amount)) : m.loanQuestion}`
+      ? `${showRiskEstimate ? m.challengeGreeting : m.greeting} ${showRiskEstimate ? m.challengeLoanQuestion(money(customer.amount)) : m.loanQuestion}`
       : m.requestCopy(money(customer.amount));
 
   return (
@@ -127,9 +131,7 @@ export function CustomerConsultation({
         </div>
       </div>
       <div className="conversation-actions">
-        <p className="action-guide">
-          {isChallenge ? m.challengeLearnCustomer : m.learnCustomer}
-        </p>
+        <p className="action-guide">{learnCustomerHint}</p>
         <div className="question-list">
           {CONSULTATION_QUESTIONS.map((question) => {
             const asked = Boolean(consultation[question]);
@@ -150,13 +152,13 @@ export function CustomerConsultation({
           <div className="approve-reveal">
             <div className="underwriting-callout">
               <img
-                src={`/assets/pop-art/atoms/${isChallenge && risk >= 40 ? "warning-burst" : "goal-badge"}.svg`}
+                src={`/assets/pop-art/atoms/${showRiskEstimate && risk >= 40 ? "warning-burst" : "goal-badge"}.svg`}
                 alt=""
               />
               <span>
                 <small>{m.underwritingDecision}</small>
                 <strong>
-                  {isChallenge
+                  {showRiskEstimate
                     ? `${m.estimatedRisk}: ${risk}% · ${riskLabel(risk)}`
                     : m.informationChecked(
                         money(customer.amount * (1 + customer.rate / 100)),
@@ -168,7 +170,7 @@ export function CustomerConsultation({
             {mode === "intro" ? (
               <button onClick={onProceed}>
                 <Landmark />
-                {isChallenge ? m.openUnderwriting : m.approveRequest}
+                {showRiskEstimate ? m.openUnderwriting : m.approveRequest}
               </button>
             ) : (
               <div className="decision-row">

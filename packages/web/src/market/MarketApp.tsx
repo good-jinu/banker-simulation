@@ -20,10 +20,7 @@ import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS, GameClock, type ClockSpeed } from "../lib/game-clock.ts";
-import {
-  CustomerConsultation,
-  type ConsultationProgress,
-} from "./CustomerConsultation.tsx";
+import { CustomerConsultation } from "./CustomerConsultation.tsx";
 import { InterbankConversation } from "./InterbankConversation.tsx";
 import {
   deleteMarketSession,
@@ -35,7 +32,6 @@ import type { MarketCampaignStage } from "./market-campaign.ts";
 import { money } from "./market-format.ts";
 import {
   createWorld,
-  FIRST_CUSTOMER,
   avatarFor,
   goalsFor,
   marketReducer,
@@ -182,10 +178,6 @@ function flowForEvent(
   }
 }
 
-function emptyConsultationProgress(): ConsultationProgress {
-  return { asked: [], lastQuestion: null, expression: "requesting" };
-}
-
 export function MarketApp({
   locale,
   onBack,
@@ -207,12 +199,11 @@ export function MarketApp({
   const [world, dispatch] = useReducer(marketReducer, undefined, () =>
     createWorld(Date.now() >>> 0, stage.config),
   );
-  const isChallenge = world.level === "credit-under-pressure";
-  const introCustomer = world.customers[0] ?? FIRST_CUSTOMER;
-  const [phase, setPhase] = useState<"intro" | "map">("intro");
+  // Stage-flavored behavior is driven by each stage's own goal config, not a
+  // hardcoded "which level is this" flag — so a new stage opts in just by
+  // setting its goals, no code branch required.
+  const hasProductGoal = world.config.goals.productCount > 0;
   const [sessionReady, setSessionReady] = useState(false);
-  const [consultationProgress, setConsultationProgress] =
-    useState<ConsultationProgress>(emptyConsultationProgress);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
   const [selected, setSelected] = useState<Customer | null>(null);
   const [productBuilderOpen, setProductBuilderOpen] = useState(false);
@@ -237,14 +228,13 @@ export function MarketApp({
     (): MarketSessionSave => ({
       schemaVersion: 2,
       stageId: stage.id,
-      phase,
+      phase: "map",
       world: { ...world, events: [] },
-      consultation:
-        phase === "intro" ? consultationProgress : emptyConsultationProgress(),
+      consultation: { asked: [], lastQuestion: null, expression: "requesting" },
       clock: clockView,
       savedAt: Date.now(),
     }),
-    [clockView, consultationProgress, phase, stage.id, world],
+    [clockView, stage.id, world],
   );
 
   useEffect(() => {
@@ -254,16 +244,10 @@ export function MarketApp({
         if (cancelled) return;
         if (session && !(devMode && devFresh)) {
           dispatch({ type: "restore", world: session.world });
-          setPhase(session.phase);
-          setConsultationProgress(session.consultation);
           setClockView(session.clock);
         } else if (devMode && devPhase === "map") {
           const freshWorld = createWorld(Date.now() >>> 0, stage.config);
-          dispatch({
-            type: "restore",
-            world: marketReducer(freshWorld, { type: "begin" }),
-          });
-          setPhase("map");
+          dispatch({ type: "restore", world: freshWorld });
         }
         setSessionReady(true);
       })
@@ -310,7 +294,7 @@ export function MarketApp({
               money(event.customer.amount),
             ),
           );
-          if (isChallenge && world.products.length === 0)
+          if (hasProductGoal && world.products.length === 0)
             setProductBuilderOpen(true);
           break;
         case "loan-request":
@@ -372,7 +356,7 @@ export function MarketApp({
       }
     }
   }, [
-    isChallenge,
+    hasProductGoal,
     locale,
     m,
     world.events,
@@ -483,6 +467,7 @@ export function MarketApp({
   const { loanReceivables, totalAssets, netWorth, fundingEligible, trustBand } =
     summarize(world);
   const levelGoals = goalsFor(world);
+  const hasSurvivalGoal = levelGoals.survivalDay !== null;
   const survivalDay = levelGoals.survivalDay ?? 0;
   const {
     cash,
@@ -508,12 +493,6 @@ export function MarketApp({
     }
   }
 
-  function beginMap(): void {
-    dispatch({ type: "begin" });
-    setPhase("map");
-    if (isChallenge) setSelected(introCustomer);
-  }
-
   function approve(customer: Customer): void {
     setSelected(null);
     if (cash < customer.amount) {
@@ -531,10 +510,17 @@ export function MarketApp({
   function reject(customer: Customer): void {
     dispatch({ type: "reject", customerId: customer.id });
     setSelected(null);
-    if (isChallenge && world.products.length === 0) setProductBuilderOpen(true);
+    if (hasProductGoal && world.products.length === 0)
+      setProductBuilderOpen(true);
   }
 
   function createLoanProduct(rules: LoanProductRules): void {
+    if (cash < world.config.productCreationCost) {
+      setNotice(
+        m.productInsufficientCash(money(world.config.productCreationCost)),
+      );
+      return;
+    }
     const product: LoanProduct = {
       id: `loan-product-${world.products.filter((item) => item.kind === "loan").length + 1}`,
       kind: "loan",
@@ -580,8 +566,6 @@ export function MarketApp({
       return;
     }
     dispatch({ type: "restore", world: session.world });
-    setPhase(session.phase);
-    setConsultationProgress(session.consultation);
     setClockView(session.clock);
     clockRef.current?.setSpeed(session.clock.speed);
     if (session.clock.paused) clockRef.current?.pause();
@@ -592,13 +576,7 @@ export function MarketApp({
   async function resetDevRun(): Promise<void> {
     await deleteMarketSession(stage.id);
     const freshWorld = createWorld(Date.now() >>> 0, stage.config);
-    const nextWorld =
-      devPhase === "map"
-        ? marketReducer(freshWorld, { type: "begin" })
-        : freshWorld;
-    dispatch({ type: "restore", world: nextWorld });
-    setPhase(devPhase);
-    setConsultationProgress(emptyConsultationProgress());
+    dispatch({ type: "restore", world: freshWorld });
     setClockView({ paused: true, speed: 1 });
     clockRef.current?.pause();
     clockRef.current?.setSpeed(1);
@@ -633,49 +611,22 @@ export function MarketApp({
     );
   }
 
-  if (phase === "intro") {
-    return (
-      <main className="loan-intro">
-        <header className="loan-simple-header">
-          <button onClick={onBack} aria-label={m.back}>
-            <ArrowLeft />
-          </button>
-          <span>LEVEL {String(stage.number).padStart(2, "0")}</span>
-          <strong>{isChallenge ? m.challengeIntroTitle : m.introTitle}</strong>
-        </header>
-        <CustomerConsultation
-          customer={introCustomer}
-          locale={locale}
-          isChallenge={isChallenge}
-          mode="intro"
-          sceneLabel={isChallenge ? m.firstAssessment : m.firstCustomer}
-          onProceed={beginMap}
-          initialProgress={consultationProgress}
-          onProgressChange={setConsultationProgress}
-        />
-        {devMode && (
-          <DevTestPanel
-            onSave={() => void saveSnapshot()}
-            onLoad={() => void loadSnapshot()}
-            onReset={() => void resetDevRun()}
-            onExport={exportSnapshot}
-            status={saveStatus}
-          />
-        )}
-      </main>
-    );
-  }
-
   const visibleCustomers = customers.filter(
     (customer) => customer.appears <= day,
   );
+  const introCustomer = customers.find(
+    (customer) => customer.id === world.config.introCustomerId,
+  );
+  const productLessonReady =
+    hasProductGoal && introCustomer?.status !== "waiting";
+  const highlightProductButton = productLessonReady && products.length === 0;
   const showFundingHint = fundingEligible && !fundingOpen;
   const goals = [
-    ...(isChallenge
+    ...(hasProductGoal
       ? [
           {
             icon: SlidersHorizontal,
-            label: m.challengeGoalProduct,
+            label: localize(stage.config.copy.goalProductLabel, locale),
             progress: `${Math.min(products.length, levelGoals.productCount)} / ${levelGoals.productCount}`,
             completed: products.length >= levelGoals.productCount,
           },
@@ -683,31 +634,29 @@ export function MarketApp({
       : []),
     {
       icon: Users,
-      label: isChallenge ? m.challengeGoalLoans : m.goalFirstLoan,
+      label: localize(stage.config.copy.goalLoansLabel, locale),
       progress: `${m.loanProgress(Math.min(loanCount, levelGoals.loanCount))} / ${m.loanProgress(levelGoals.loanCount)}`,
       completed: loanCount >= levelGoals.loanCount,
     },
     {
       icon: Coins,
-      label: isChallenge
-        ? m.challengeGoalCumulativeLoans
-        : m.goalCumulativeLoans,
+      label: localize(stage.config.copy.goalCumulativeLentLabel, locale),
       progress: `${money(Math.min(cumulativeLent, levelGoals.cumulativeLent))} / ${money(levelGoals.cumulativeLent)}`,
       completed: cumulativeLent >= levelGoals.cumulativeLent,
     },
     {
       icon: Wallet,
-      label: isChallenge ? m.challengeGoalNetWorth : m.goalNetWorth,
+      label: localize(stage.config.copy.goalNetWorthLabel, locale),
       progress: `${money(netWorth)} / ${money(levelGoals.netWorth)}`,
       completed: netWorth >= levelGoals.netWorth,
     },
-    ...(isChallenge
+    ...(hasSurvivalGoal
       ? [
           {
             icon: ShieldCheck,
-            label: m.goalSurvive,
-            progress: `${m.dayProgress(Math.min(day, survivalDay))} / ${m.dayProgress(survivalDay)}`,
-            completed: day >= survivalDay,
+            label: m.goalSurvive(survivalDay),
+            progress: `${m.dayProgress(Math.min(day + 1, survivalDay))} / ${m.dayProgress(survivalDay)}`,
+            completed: day + 1 >= survivalDay,
           },
         ]
       : []),
@@ -743,22 +692,23 @@ export function MarketApp({
             <strong>{money(cash)}</strong>
           </span>
         </button>
-        <div
-          className={`trust-display trust-${trustBand}`}
-          aria-label={`${m.trust} ${m.trustScore(trust)}`}
-        >
-          <ShieldCheck aria-hidden="true" />
-          <strong>{m.trustScore(trust)}</strong>
-        </div>
-        {isChallenge && (
-          <button
-            className="product-launcher"
-            onClick={() => setProductBuilderOpen(true)}
-            aria-label={m.openProducts}
-          >
-            <SlidersHorizontal aria-hidden="true" />
-            <span>{m.products}</span>
-          </button>
+        {hasProductGoal && (
+          <div className="product-launcher-wrap">
+            {highlightProductButton && (
+              <span className="product-tutorial-callout">
+                {m.productTutorialClick}
+              </span>
+            )}
+            <button
+              className={`product-launcher${highlightProductButton ? " tutorial-highlight" : ""}`}
+              onClick={() => setProductBuilderOpen(true)}
+              aria-label={m.openProducts}
+              disabled={!productLessonReady && products.length === 0}
+            >
+              <Plus aria-hidden="true" />
+              <span>{m.addProduct}</span>
+            </button>
+          </div>
         )}
         <div className="day-display">
           <Clock aria-hidden="true" />
@@ -768,9 +718,7 @@ export function MarketApp({
 
       <section className="state-map" aria-label={m.loanStatusMap}>
         <div className="map-caption" aria-hidden="true">
-          <span>
-            {stage.number === 1 ? m.districtMarket : m.districtPressure}
-          </span>
+          <span>{localize(stage.config.copy.districtLabel, locale)}</span>
         </div>
         <aside
           className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
@@ -803,9 +751,7 @@ export function MarketApp({
           >
             <span>
               {activeGoalIndex >= 0
-                ? isChallenge
-                  ? m.challengeGoals
-                  : m.levelCompleteGoal
+                ? m.goalsPanelTitle(String(stage.number).padStart(2, "0"))
                 : m.allGoalsComplete}
             </span>
             <strong>
@@ -954,7 +900,12 @@ export function MarketApp({
         {visibleCustomers.map((customer) => (
           <div
             key={customer.id}
-            className={`customer-node map-node ${customer.status}`}
+            className={`customer-node map-node ${customer.status}${
+              customer.id === world.config.introCustomerId &&
+              customer.status === "waiting"
+                ? " intro-customer"
+                : ""
+            }`}
             style={{ left: `${customer.x}%`, top: `${customer.y}%` }}
           >
             {customer.status === "waiting" && (
@@ -995,7 +946,11 @@ export function MarketApp({
                   )}
             </small>
             {customer.status === "waiting" && (
-              <button onClick={() => setSelected(customer)}>{m.details}</button>
+              <button onClick={() => setSelected(customer)}>
+                {customer.id === world.config.introCustomerId
+                  ? m.reviewRequest
+                  : m.details}
+              </button>
             )}
           </div>
         ))}
@@ -1142,15 +1097,13 @@ export function MarketApp({
               LEVEL {String(stage.number).padStart(2, "0")} COMPLETE
             </small>
             <h2 id="mission-clear-title">MISSION CLEAR!</h2>
-            <p>
-              {isChallenge ? m.challengeMissionComplete : m.missionComplete}
-            </p>
+            <p>{localize(stage.config.copy.missionCompleteLabel, locale)}</p>
             <div className="result-grid">
               <div>
                 <span>{m.elapsedTime}</span>
                 <strong>DAY {day + 1}</strong>
               </div>
-              {isChallenge && (
+              {hasSurvivalGoal && (
                 <div>
                   <span>{m.defaults}</span>
                   <strong>{m.survived}</strong>
@@ -1313,7 +1266,11 @@ export function MarketApp({
             <CustomerConsultation
               customer={selected}
               locale={locale}
-              isChallenge={isChallenge}
+              showRiskEstimate={world.config.randomizeDefaultRisk}
+              learnCustomerHint={localize(
+                stage.config.copy.learnCustomerHint,
+                locale,
+              )}
               mode="request"
               sceneLabel={m.loanRequestTitle}
               onApprove={() => approve(selected)}
@@ -1332,6 +1289,7 @@ export function MarketApp({
         <div className="modal-backdrop">
           <ProductBuilder
             locale={locale}
+            creationCost={world.config.productCreationCost}
             onCreate={createLoanProduct}
             onClose={() => setProductBuilderOpen(false)}
           />
@@ -1357,7 +1315,7 @@ export function MarketApp({
             <InterbankConversation
               funding={funding}
               locale={locale}
-              isChallenge={isChallenge}
+              showRiskWarning={world.config.randomizeDefaultRisk}
               currentCash={cash}
               onBorrow={borrow}
             />
@@ -1424,10 +1382,12 @@ function DevTestPanel({
 
 function ProductBuilder({
   locale,
+  creationCost,
   onCreate,
   onClose,
 }: {
   locale: Locale;
+  creationCost: number;
   onCreate: (rules: LoanProductRules) => void;
   onClose: () => void;
 }) {
@@ -1447,6 +1407,31 @@ function ProductBuilder({
         ...current,
         [key]: Number(event.target.value),
       }));
+  const setRange =
+    (range: "amount" | "term", boundary: "minimum" | "maximum") =>
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const value = Number(event.target.value);
+      setRules((current) => {
+        const minimumKey = range === "amount" ? "minimumAmount" : "minimumTerm";
+        const maximumKey = range === "amount" ? "maximumAmount" : "maximumTerm";
+        return {
+          ...current,
+          [minimumKey]:
+            boundary === "minimum"
+              ? Math.min(value, current[maximumKey])
+              : current[minimumKey],
+          [maximumKey]:
+            boundary === "maximum"
+              ? Math.max(value, current[minimumKey])
+              : current[maximumKey],
+        };
+      });
+    };
+  const rangeStyle = (minimum: number, maximum: number, ceiling: number) =>
+    ({
+      "--range-start": `${(minimum / ceiling) * 100}%`,
+      "--range-end": `${(maximum / ceiling) * 100}%`,
+    }) as React.CSSProperties;
 
   return (
     <section className="product-builder" role="dialog" aria-modal="true">
@@ -1459,6 +1444,10 @@ function ProductBuilder({
       <small>{m.productLessonEyebrow}</small>
       <h2>{m.productBuilderTitle}</h2>
       <p>{m.productBuilderCopy}</p>
+      <div className="product-cost">
+        <Coins aria-hidden="true" />
+        <span>{m.productSetupCost(money(creationCost))}</span>
+      </div>
       <div className="product-rule-grid">
         <label>
           <span>{m.productMinimumIncome}</span>
@@ -1490,40 +1479,63 @@ function ProductBuilder({
         </label>
         <label>
           <span>{m.productLoanRange}</span>
-          <div className="product-range-inputs">
+          <div
+            className="product-range-slider"
+            style={rangeStyle(rules.minimumAmount, rules.maximumAmount, 2_500)}
+          >
             <input
-              type="number"
+              className="range-thumb range-minimum"
+              type="range"
               min="0"
+              max="2500"
               step="100"
               value={rules.minimumAmount}
-              onChange={setNumber("minimumAmount")}
+              onChange={setRange("amount", "minimum")}
+              aria-label={m.rangeMinimum(m.productLoanRange)}
             />
-            <b>–</b>
             <input
-              type="number"
-              min={rules.minimumAmount}
+              className="range-thumb range-maximum"
+              type="range"
+              min="0"
+              max="2500"
               step="100"
               value={rules.maximumAmount}
-              onChange={setNumber("maximumAmount")}
+              onChange={setRange("amount", "maximum")}
+              aria-label={m.rangeMaximum(m.productLoanRange)}
             />
+            <output>
+              {money(rules.minimumAmount)} – {money(rules.maximumAmount)}
+            </output>
           </div>
         </label>
         <label>
           <span>{m.productDueRange}</span>
-          <div className="product-range-inputs">
+          <div
+            className="product-range-slider"
+            style={rangeStyle(rules.minimumTerm, rules.maximumTerm, 20)}
+          >
             <input
-              type="number"
+              className="range-thumb range-minimum"
+              type="range"
               min="1"
+              max="20"
               value={rules.minimumTerm}
-              onChange={setNumber("minimumTerm")}
+              onChange={setRange("term", "minimum")}
+              aria-label={m.rangeMinimum(m.productDueRange)}
             />
-            <b>–</b>
             <input
-              type="number"
-              min={rules.minimumTerm}
+              className="range-thumb range-maximum"
+              type="range"
+              min="1"
+              max="20"
               value={rules.maximumTerm}
-              onChange={setNumber("maximumTerm")}
+              onChange={setRange("term", "maximum")}
+              aria-label={m.rangeMaximum(m.productDueRange)}
             />
+            <output>
+              {m.rangeDays(rules.minimumTerm)} –{" "}
+              {m.rangeDays(rules.maximumTerm)}
+            </output>
           </div>
         </label>
       </div>
@@ -1538,7 +1550,7 @@ function ProductBuilder({
         </span>
       </div>
       <button className="create-product-button" onClick={() => onCreate(rules)}>
-        <SlidersHorizontal /> {m.createLoanProduct}
+        <SlidersHorizontal /> {m.createLoanProduct(money(creationCost))}
       </button>
     </section>
   );

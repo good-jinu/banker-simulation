@@ -22,6 +22,21 @@ export type CustomerGenerationConfig = {
   rateRange: number;
 };
 
+/**
+ * Narrative copy that varies per stage but isn't a goal number or a rule —
+ * kept here (like title/subtitle) so a new stage is pure data, never a new
+ * branch in MarketApp.tsx.
+ */
+export type MarketStageCopy = {
+  districtLabel: LocalText;
+  goalLoansLabel: LocalText;
+  goalCumulativeLentLabel: LocalText;
+  goalNetWorthLabel: LocalText;
+  goalProductLabel: LocalText;
+  missionCompleteLabel: LocalText;
+  learnCustomerHint: LocalText;
+};
+
 export type MarketStageConfig = {
   level: MarketLevel;
   startingCash: number;
@@ -29,6 +44,7 @@ export type MarketStageConfig = {
   maxVisibleCustomers: number;
   spawnEveryDays: number;
   fundingUnlockDelayDays: number;
+  productCreationCost: number;
   introCustomerId: string | null;
   introApprovesAutomatically: boolean;
   randomizeDefaultRisk: boolean;
@@ -36,6 +52,7 @@ export type MarketStageConfig = {
   customerSeeds: readonly Customer[];
   fundingSeeds: readonly Funding[];
   customerGeneration: CustomerGenerationConfig;
+  copy: MarketStageCopy;
 };
 
 export type MarketCampaignStage = {
@@ -61,6 +78,7 @@ const firstYieldConfig: MarketStageConfig = {
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
   fundingUnlockDelayDays: 3,
+  productCreationCost: 100,
   introCustomerId: "mina",
   introApprovesAutomatically: true,
   randomizeDefaultRisk: false,
@@ -152,6 +170,22 @@ const firstYieldConfig: MarketStageConfig = {
     rateMin: 7,
     rateRange: 10,
   },
+  copy: {
+    districtLabel: { en: "RIVERSIDE DISTRICT", ko: "리버사이드 지구" },
+    goalLoansLabel: { en: "First loan", ko: "첫 대출" },
+    goalCumulativeLentLabel: { en: "Lend $500", ko: "$500 대출" },
+    goalNetWorthLabel: { en: "Net worth $1,500", ko: "순자산 $1,500" },
+    // Stage has no product goal (productCount: 0), so this never renders.
+    goalProductLabel: { en: "Create a loan product", ko: "대출 상품 만들기" },
+    missionCompleteLabel: {
+      en: "Three bank-management goals completed.",
+      ko: "세 가지 은행 운영 목표를 모두 달성했습니다.",
+    },
+    learnCustomerHint: {
+      en: "Get to know the customer before lending.",
+      ko: "대출하기 전에 고객을 알아보세요.",
+    },
+  },
 };
 
 const creditUnderPressureConfig: MarketStageConfig = {
@@ -167,6 +201,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
   fundingUnlockDelayDays: 3,
+  productCreationCost: 100,
   introCustomerId: "jun",
   introApprovesAutomatically: false,
   randomizeDefaultRisk: true,
@@ -261,6 +296,27 @@ const creditUnderPressureConfig: MarketStageConfig = {
     amountRange: 19,
     rateMin: 10,
     rateRange: 11,
+  },
+  copy: {
+    districtLabel: { en: "NORTH YARD DISTRICT", ko: "노스 야드 지구" },
+    goalLoansLabel: { en: "Issue 3 loans", ko: "대출 3건 실행하기" },
+    goalCumulativeLentLabel: {
+      en: "Lend at least $1,500",
+      ko: "대출 누적 $1,500 이상",
+    },
+    goalNetWorthLabel: {
+      en: "Reach $1,400 in net worth",
+      ko: "순자산 $1,400 달성",
+    },
+    goalProductLabel: { en: "Create a loan product", ko: "대출 상품 만들기" },
+    missionCompleteLabel: {
+      en: "You balanced credit risk, liquidity, and debt maturity through day 26.",
+      ko: "26일까지 신용 위험, 유동성, 부채 만기를 균형 있게 관리했습니다.",
+    },
+    learnCustomerHint: {
+      en: "Income relative to the loan amount determines repayment risk.",
+      ko: "소득 대비 대출 금액이 상환 위험을 결정합니다.",
+    },
   },
 };
 

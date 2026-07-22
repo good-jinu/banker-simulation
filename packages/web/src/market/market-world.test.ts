@@ -5,6 +5,7 @@ import {
   FIRST_CUSTOMER,
   GOALS,
   defaultRisk,
+  loanAutomationCapacity,
   marketReducer,
   summarize,
   type MarketAction,
@@ -249,6 +250,53 @@ describe("level two credit risk", () => {
     expect(world.events).toContainEqual(
       expect.objectContaining({ type: "product-lent" }),
     );
+    expect(world.cash).toBe(300); // $900 start − $100 setup − $500 loan
+  });
+
+  it("signs more same-day customers when trust is higher", () => {
+    const start = createWorld(1, "credit-under-pressure");
+    const applicants = ["a", "b", "c"].map((id) => ({
+      ...start.customers[0]!,
+      id,
+      income: 2_500,
+      occupation: "employed" as const,
+      amount: 200,
+      term: 8,
+      status: "waiting" as const,
+    }));
+    const product = {
+      id: "wide-net",
+      kind: "loan" as const,
+      name: "Wide Net",
+      x: 50,
+      y: 26,
+      rules: {
+        minimumIncome: 1_500,
+        occupation: "employed" as const,
+        minimumAmount: 100,
+        maximumAmount: 1_000,
+        minimumTerm: 6,
+        maximumTerm: 12,
+      },
+    };
+
+    const trusted = marketReducer(
+      { ...start, trust: 80, customers: applicants },
+      { type: "create-product", product },
+    );
+    expect(loanAutomationCapacity(80)).toBe(3);
+    expect(
+      trusted.customers.filter((customer) => customer.status === "accepted"),
+    ).toHaveLength(3);
+
+    const wary = marketReducer(
+      { ...start, trust: 50, customers: applicants },
+      { type: "create-product", product },
+    );
+    expect(loanAutomationCapacity(50)).toBe(1);
+    expect(
+      wary.customers.filter((customer) => customer.status === "accepted"),
+    ).toHaveLength(1);
   });
 
   it("writes off a defaulted challenge loan deterministically", () => {

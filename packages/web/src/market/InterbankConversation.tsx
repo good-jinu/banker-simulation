@@ -14,13 +14,13 @@ import type { Funding } from "./market-world.ts";
 export function InterbankConversation({
   funding,
   locale,
-  isChallenge,
+  showRiskWarning,
   currentCash,
   onBorrow,
 }: {
   funding: Funding[];
   locale: Locale;
-  isChallenge: boolean;
+  showRiskWarning: boolean;
   currentCash: number;
   onBorrow: (lender: Funding) => void;
 }) {
@@ -59,7 +59,7 @@ export function InterbankConversation({
               <small>{m.fundingConversationLesson}</small>
             </span>
           </div>
-          {isChallenge && (
+          {showRiskWarning && (
             <p className="funding-lesson-warning">
               <CalendarClock /> {m.fundingRiskInsolvency}
             </p>
