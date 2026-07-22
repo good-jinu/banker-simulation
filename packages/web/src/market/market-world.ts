@@ -667,21 +667,91 @@ function customerMatchesLoanProduct(
   );
 }
 
+/**
+ * Processes automated loan approvals based on active loan products.
+ *
+ * Performance Optimization:
+ * Instead of creating intermediate World objects on every loan approval,
+ * this function accumulates state updates using local mutable variables
+ * and constructs a single new World object at the end.
+ */
 function automateLoans(world: MarketWorld): MarketWorld {
-  let next = world;
-  for (const product of next.products) {
+  // Track state changes in local variables to avoid creating multiple intermediate World objects
+  let currentCash = world.cash;
+  let loanCount = world.loanCount;
+  let cumulativeLent = world.cumulativeLent;
+  let thirdLoanDay = world.thirdLoanDay;
+
+  // Create a single shallow copy of the customers array to mutate safely
+  const nextCustomers = [...world.customers];
+  const newEvents: MarketEvent[] = [];
+
+  for (const product of world.products) {
     if (product.kind !== "loan") continue;
-    const capacity = loanAutomationCapacity(next.trust);
+
+    // Daily capacity limits how many customers this product can sign per day
+    const capacity = loanAutomationCapacity(world.trust);
     let signed = 0;
-    for (const customer of next.customers) {
+
+    for (let i = 0; i < nextCustomers.length; i++) {
       if (signed >= capacity) break;
+
+      const customer = nextCustomers[i]!;
       if (!customerMatchesLoanProduct(customer, product)) continue;
-      if (next.cash < customer.amount) continue;
-      next = lend(next, customer, product);
+      if (currentCash < customer.amount) continue;
+
+      // Update counters and cash
+      loanCount += 1;
+      currentCash -= customer.amount;
+      cumulativeLent += customer.amount;
+      if (loanCount === 3 && thirdLoanDay === null) {
+        thirdLoanDay = world.day;
+      }
+
+      // Update individual customer state
+      const acceptedCustomer: Customer = {
+        ...customer,
+        status: "accepted",
+        dueDay: world.day + customer.term,
+        productId: product.id,
+      };
+
+      nextCustomers[i] = acceptedCustomer;
       signed += 1;
+
+      // Push events directly to the local array
+      newEvents.push(
+        {
+          type: "transfer",
+          from: product.id,
+          to: customer.id,
+          amount: customer.amount,
+        },
+        {
+          type: "product-lent",
+          product,
+          customer: acceptedCustomer,
+        },
+      );
     }
   }
-  return next;
+
+  // Referential Integrity: If no loans were issued, return the original world reference unchanged.
+  // This helps prevent unnecessary React re-renders.
+  if (newEvents.length === 0) {
+    return world;
+  }
+
+  // Construct and return the updated World object once at the end
+  return {
+    ...world,
+    cash: currentCash,
+    customers: nextCustomers,
+    loanCount,
+    cumulativeLent,
+    thirdLoanDay,
+    events: [...world.events, ...newEvents],
+  };
 }
 
 function createProduct(world: MarketWorld, product: LoanProduct): MarketWorld {
