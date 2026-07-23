@@ -115,7 +115,7 @@ export const en = {
       `DAY ${day} · ${paused ? "PAUSED" : "RUNNING"}`,
     playTime: "Play time",
     pause: "Pause",
-    timeHint: "New events",
+    speed: "Speed",
     elapsedTime: "Elapsed time",
     loansIssued: "Loans issued",
     cumulativeLoans: "Cumulative lending",

@@ -116,7 +116,7 @@ export const ko: Messages = {
       `DAY ${day} · ${paused ? "일시정지" : "진행 중"}`,
     playTime: "시간 재생",
     pause: "일시정지",
-    timeHint: "새 이벤트",
+    speed: "속도",
     elapsedTime: "경과 시간",
     loansIssued: "실행 대출",
     cumulativeLoans: "누적 대출",

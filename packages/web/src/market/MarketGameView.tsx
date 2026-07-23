@@ -4,7 +4,6 @@ import {
   ArrowUpFromLine,
   Banknote,
   Check,
-  Clock,
   Coins,
   Landmark,
   Pause,
@@ -535,30 +534,30 @@ export function MarketGameView({
         )}
       </section>
       <footer className="time-controller">
-        <div>
+        <div className="time-status">
           <span
             className={clockView.paused ? "status-dot paused" : "status-dot"}
           />
           <strong>{m.dayStatus(day + 1, clockView.paused)}</strong>
         </div>
-        <button
-          className="play-time"
-          onClick={onToggleClock}
-          aria-label={clockView.paused ? m.playTime : m.pause}
-        >
-          {clockView.paused ? (
-            <Play fill="currentColor" />
-          ) : (
-            <Pause fill="currentColor" />
-          )}
-        </button>
-        <button className="speed-time" onClick={onCycleSpeed}>
-          {clockView.speed}×
-        </button>
-        <p className="time-hint">
-          <Clock aria-hidden="true" />
-          <span>{m.timeHint}</span>
-        </p>
+        <div className="time-actions">
+          <button
+            className="play-time"
+            onClick={onToggleClock}
+            aria-label={clockView.paused ? m.playTime : m.pause}
+          >
+            {clockView.paused ? (
+              <Play fill="currentColor" />
+            ) : (
+              <Pause fill="currentColor" />
+            )}
+            <span>{clockView.paused ? m.playTime : m.pause}</span>
+          </button>
+          <button className="speed-time" onClick={onCycleSpeed}>
+            <span>{clockView.speed}×</span>
+            <small>{m.speed}</small>
+          </button>
+        </div>
       </footer>
     </main>
   );
