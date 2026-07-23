@@ -8,6 +8,7 @@ import {
   loanAutomationCapacity,
   marketReducer,
   summarize,
+  upcomingRepayment,
   type MarketAction,
   type MarketWorld,
 } from "./market-world.ts";
@@ -82,6 +83,58 @@ describe("lending", () => {
     });
     expect(after.cash).toBe(world.cash);
     expect(after.loanCount).toBe(world.loanCount);
+  });
+});
+
+describe("upcoming repayment", () => {
+  it("returns null when there are no scheduled obligations", () => {
+    expect(upcomingRepayment(createWorld(1))).toBeNull();
+  });
+
+  it("returns the nearest accepted customer repayment", () => {
+    const world = run(createWorld(1), { type: "begin" });
+
+    expect(upcomingRepayment(world)).toEqual({
+      dueDay: FIRST_CUSTOMER.dueDay,
+      incomingAmount: FIRST_CUSTOMER.amount * (1 + FIRST_CUSTOMER.rate / 100),
+      outgoingAmount: 0,
+    });
+  });
+
+  it("returns the nearest scheduled funding repayment", () => {
+    const base = createWorld(1, "credit-under-pressure");
+    const lender = base.funding[0]!;
+    const world = {
+      ...base,
+      funding: [{ ...lender, accepted: true, dueDay: 8 }],
+    };
+
+    expect(upcomingRepayment(world)).toEqual({
+      dueDay: 8,
+      incomingAmount: 0,
+      outgoingAmount: lender.amount * (1 + lender.rate / 100),
+    });
+  });
+
+  it("groups incoming and outgoing amounts when they share the nearest due day", () => {
+    const base = run(createWorld(1), { type: "begin" });
+    const lender = base.funding[0]!;
+    const world = {
+      ...base,
+      funding: [
+        {
+          ...lender,
+          accepted: true,
+          dueDay: FIRST_CUSTOMER.dueDay,
+        },
+      ],
+    };
+
+    expect(upcomingRepayment(world)).toEqual({
+      dueDay: FIRST_CUSTOMER.dueDay,
+      incomingAmount: FIRST_CUSTOMER.amount * (1 + FIRST_CUSTOMER.rate / 100),
+      outgoingAmount: lender.amount * (1 + lender.rate / 100),
+    });
   });
 });
 
@@ -226,6 +279,7 @@ describe("level two credit risk", () => {
           name: "Income Guard",
           x: 50,
           y: 26,
+          active: true,
           rules: {
             minimumIncome: 1_500,
             occupation: "employed",
@@ -270,6 +324,7 @@ describe("level two credit risk", () => {
       name: "Wide Net",
       x: 50,
       y: 26,
+      active: true,
       rules: {
         minimumIncome: 1_500,
         occupation: "employed" as const,
@@ -297,6 +352,64 @@ describe("level two credit risk", () => {
     expect(
       wary.customers.filter((customer) => customer.status === "accepted"),
     ).toHaveLength(1);
+  });
+
+  it("pauses new automated lending without changing existing contracts", () => {
+    const start = createWorld(1, "credit-under-pressure");
+    const eligible = {
+      ...start.customers[0]!,
+      id: "eligible",
+      income: 2_500,
+      occupation: "employed" as const,
+      amount: 500,
+      term: 8,
+      status: "waiting" as const,
+    };
+    const product = {
+      id: "pauseable",
+      kind: "loan" as const,
+      name: "Pauseable",
+      x: 50,
+      y: 26,
+      active: true,
+      rules: {
+        minimumIncome: 1_500,
+        occupation: "employed" as const,
+        minimumAmount: 100,
+        maximumAmount: 1_000,
+        minimumTerm: 6,
+        maximumTerm: 12,
+      },
+    };
+    const active = marketReducer(
+      { ...start, customers: [eligible] },
+      { type: "create-product", product },
+    );
+    const laterRequest = { ...eligible, id: "later", amount: 100 };
+    const paused = marketReducer(
+      {
+        ...active,
+        customers: [...active.customers, laterRequest],
+      },
+      { type: "set-product-active", productId: product.id, active: false },
+    );
+
+    expect(paused.products[0]).toMatchObject({ active: false });
+    expect(
+      paused.customers.find((customer) => customer.id === "eligible")?.status,
+    ).toBe("accepted");
+    expect(
+      paused.customers.find((customer) => customer.id === "later")?.status,
+    ).toBe("waiting");
+
+    const resumed = marketReducer(paused, {
+      type: "set-product-active",
+      productId: product.id,
+      active: true,
+    });
+    expect(
+      resumed.customers.find((customer) => customer.id === "later")?.status,
+    ).toBe("accepted");
   });
 
   it("writes off a defaulted challenge loan deterministically", () => {

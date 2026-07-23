@@ -169,6 +169,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
 }
 
+function migrateProducts(value: unknown): MarketWorld["products"] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((product) => {
+    if (product.kind === "loan") {
+      return { ...product, active: product.active !== false };
+    }
+    return product;
+  }) as MarketWorld["products"];
+}
+
 function emptyConsultation(): ConsultationProgress {
   return { asked: [], lastQuestion: null, expression: "requesting" };
 }
@@ -241,9 +251,7 @@ export function migrateMarketSession(
       level: config.level,
       config,
       funding: rawWorld.funding as MarketWorld["funding"],
-      products: Array.isArray(rawWorld.products)
-        ? (rawWorld.products as MarketWorld["products"])
-        : [],
+      products: migrateProducts(rawWorld.products),
       events: [],
     },
     consultation: { asked, lastQuestion, expression },

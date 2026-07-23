@@ -35,6 +35,7 @@ export type LoanProduct = {
   name: string;
   x: number;
   y: number;
+  active: boolean;
   rules: LoanProductRules;
 };
 /** Reserved variants make the product platform additive rather than loan-only. */
@@ -146,7 +147,8 @@ export type MarketAction =
   | { type: "approve"; customerId: string }
   | { type: "reject"; customerId: string }
   | { type: "borrow"; lenderId: string }
-  | { type: "create-product"; product: LoanProduct };
+  | { type: "create-product"; product: LoanProduct }
+  | { type: "set-product-active"; productId: string; active: boolean };
 
 export const GOALS: MarketGoals =
   marketStageByLevel("first-yield").config.goals;
@@ -334,6 +336,62 @@ export function summarize(world: MarketWorld) {
 
 export type MarketSummary = ReturnType<typeof summarize>;
 
+/** The nearest scheduled cash movement, expressed as contractual gross amounts. */
+export type UpcomingRepayment = {
+  dueDay: number;
+  incomingAmount: number;
+  outgoingAmount: number;
+};
+
+/**
+ * Finds the next scheduled customer and funding repayments. Defaulted funding
+ * is deliberately excluded: it is overdue debt, not a future due-date event.
+ */
+export function upcomingRepayment(
+  world: MarketWorld,
+): UpcomingRepayment | null {
+  const customerRepayments = world.customers
+    .filter(
+      (customer) =>
+        customer.status === "accepted" && customer.dueDay >= world.day,
+    )
+    .map((customer) => ({
+      dueDay: customer.dueDay,
+      incomingAmount: customer.amount * (1 + customer.rate / 100),
+      outgoingAmount: 0,
+    }));
+  const fundingRepayments = world.config.fundingRepaymentsEnabled
+    ? world.funding
+        .filter(
+          (lender) =>
+            lender.accepted && !lender.defaulted && lender.dueDay >= world.day,
+        )
+        .map((lender) => ({
+          dueDay: lender.dueDay,
+          incomingAmount: 0,
+          outgoingAmount: lender.amount * (1 + lender.rate / 100),
+        }))
+    : [];
+  const repayments = [...customerRepayments, ...fundingRepayments];
+  const dueDay = repayments.reduce<number | null>(
+    (nearest, repayment) =>
+      nearest === null ? repayment.dueDay : Math.min(nearest, repayment.dueDay),
+    null,
+  );
+  if (dueDay === null) return null;
+
+  return repayments
+    .filter((repayment) => repayment.dueDay === dueDay)
+    .reduce<UpcomingRepayment>(
+      (notice, repayment) => ({
+        ...notice,
+        incomingAmount: notice.incomingAmount + repayment.incomingAmount,
+        outgoingAmount: notice.outgoingAmount + repayment.outgoingAmount,
+      }),
+      { dueDay, incomingAmount: 0, outgoingAmount: 0 },
+    );
+}
+
 export function marketReducer(
   world: MarketWorld,
   action: MarketAction,
@@ -359,6 +417,10 @@ export function marketReducer(
       return withDerivedEvents(borrow(world, action.lenderId));
     case "create-product":
       return withDerivedEvents(createProduct(world, action.product));
+    case "set-product-active":
+      return withDerivedEvents(
+        setProductActive(world, action.productId, action.active),
+      );
   }
 }
 
@@ -688,6 +750,7 @@ function automateLoans(world: MarketWorld): MarketWorld {
 
   for (const product of world.products) {
     if (product.kind !== "loan") continue;
+    if (!product.active) continue;
 
     // Daily capacity limits how many customers this product can sign per day
     const capacity = loanAutomationCapacity(world.trust);
@@ -766,6 +829,24 @@ function createProduct(world: MarketWorld, product: LoanProduct): MarketWorld {
     products: [...world.products, product],
     events: [{ type: "product-created", product }],
   });
+}
+
+function setProductActive(
+  world: MarketWorld,
+  productId: string,
+  active: boolean,
+): MarketWorld {
+  const product = world.products.find(
+    (item): item is LoanProduct =>
+      item.kind === "loan" && item.id === productId,
+  );
+  if (!product || product.active === active) return { ...world, events: [] };
+
+  const products = world.products.map((item) =>
+    item.id === productId && item.kind === "loan" ? { ...item, active } : item,
+  );
+  const nextWorld = { ...world, products, events: [] };
+  return active ? automateLoans(nextWorld) : nextWorld;
 }
 
 function productForCustomer(

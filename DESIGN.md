@@ -1,5 +1,7 @@
 # Banker Simulation Design Guide
 
+For engineering/architecture conventions, see [CLAUDE.md](./CLAUDE.md).
+
 ## 1. Product Concept
 
 `Banker Simulation` is a game about listening to customers, evaluating loan requests, and managing the cash flow and credit risk of a small bank.

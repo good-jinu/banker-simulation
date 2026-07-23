@@ -11,6 +11,12 @@ export const ko: Messages = {
     language: "언어",
     play: "플레이",
     loading: "장부를 다시 준비하는 중…",
+    savedRunTitle: "저장된 게임이 있습니다",
+    savedRunDescription:
+      "저장된 은행을 이어서 플레이하거나, 이 스테이지를 새로 시작할 수 있습니다.",
+    continueRun: "이어하기",
+    newRun: "새로하기",
+    cancel: "취소",
   },
   market: {
     back: "뒤로",
@@ -95,14 +101,19 @@ export const ko: Messages = {
     mapMotifGrowth: "신뢰를 따라 현금이 흐릅니다",
     mapMotifRisk: "모든 약속에는 만기일이 있습니다",
     repaymentDue: (amount: string) => amount,
+    nextCashMovement: "다음",
+    repaymentDueIn: (days: number) => (days === 0 ? "오늘" : `${days}일`),
+    incomingRepayment: (amount: string) => `입금 ${amount}`,
+    outgoingRepayment: (amount: string) => `출금 ${amount}`,
     defaulted: "채무불이행",
     defaultedDebt: (amount: string) => amount,
-    details: "상세보기",
     newFunding: "새 자금",
     fundingHint: "현금 → 더 많은 대출",
     viewLoanProducts: "제안 보기",
     timePaused: "시간 멈춤",
     timeRunning: "시간 진행 중",
+    dayStatus: (day: number, paused: boolean) =>
+      `DAY ${day} · ${paused ? "일시정지" : "진행 중"}`,
     playTime: "시간 재생",
     pause: "일시정지",
     timeHint: "새 이벤트",
@@ -185,6 +196,15 @@ export const ko: Messages = {
     productPreview: "자동 심사 규칙",
     productRuleSummary: (income: string, minimum: string, maximum: string) =>
       `소득 ${income}+ · 대출 ${minimum}–${maximum}`,
+    productDetailsEyebrow: "대출 상품",
+    productActive: "활성",
+    productPaused: "일시정지",
+    productActiveCopy:
+      "이 상품은 조건에 맞는 신청을 받고 자동으로 대출을 실행합니다.",
+    productPausedCopy:
+      "이 상품은 일시정지되었습니다. 기존 계약은 계속 유지되지만 새 신청은 자동 실행되지 않습니다.",
+    pauseProduct: "상품 일시정지",
+    resumeProduct: "상품 재개",
     createLoanProduct: (cost: string) => `대출 상품 활성화 · ${cost}`,
     productAutoLending: "자동 대출",
     rangeMinimum: (label: string) => `${label} 최솟값`,
@@ -197,6 +217,5 @@ export const ko: Messages = {
     productInsufficientCash: (cost: string) =>
       `이 상품을 만들려면 현금 ${cost}가 필요합니다.`,
     productTutorialClick: "다음: 상품 추가 클릭 ↓",
-    reviewRequest: "신청 검토",
   },
 };

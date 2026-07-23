@@ -1,17 +1,24 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Check, Landmark, LockKeyhole, Play } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Landmark,
+  LockKeyhole,
+  Play,
+  RotateCcw,
+} from "lucide-react";
 import { MarketApp } from "../market/MarketApp.tsx";
 import { localize } from "../i18n/local-text.ts";
 import {
   marketCampaignStages,
   marketStageById,
-  type MarketCampaignStage,
 } from "../market/market-campaign.ts";
 import { detectLocale, type Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import {
   deleteMarketSession,
   emptySave,
+  loadMarketSession,
   loadGame,
   saveGame,
   type CampaignProgress,
@@ -20,19 +27,20 @@ import {
 import "./game.css";
 
 type Screen = "home" | "stages" | "campaign";
+type GameAppProps = {
+  /** A typed initial route supplied by an alternate bootstrap, if any. */
+  initialScreen?: Screen;
+  initialStageId?: string;
+};
 
-export function GameApp() {
-  const devQuery = new URLSearchParams(window.location.search);
-  const devMode = import.meta.env.DEV && devQuery.get("dev") === "market";
-  const devStage = marketStageById(
-    devQuery.get("stage") ?? marketCampaignStages[0]!.id,
-  );
-  const devPhase = devQuery.get("phase") === "map" ? "map" : "intro";
-  const devFresh = devQuery.get("fresh") === "1";
+export function GameApp({
+  initialScreen = "home",
+  initialStageId = marketCampaignStages[0]!.id,
+}: GameAppProps) {
   const [hydrated, setHydrated] = useState(false);
-  const [screen, setScreen] = useState<Screen>(devMode ? "campaign" : "home");
+  const [screen, setScreen] = useState<Screen>(initialScreen);
   const [selectedStageId, setSelectedStageId] = useState(
-    devMode ? devStage.id : marketCampaignStages[0]!.id,
+    () => marketStageById(initialStageId).id,
   );
   const [campaign, setCampaign] = useState<CampaignProgress>(
     () => emptySave().campaign,
@@ -40,6 +48,8 @@ export function GameApp() {
   const [settings, setSettings] = useState<PlayerSettings>(
     () => emptySave().settings,
   );
+  const [savedRunStageId, setSavedRunStageId] = useState<string | null>(null);
+  const [checkingStageId, setCheckingStageId] = useState<string | null>(null);
   const locale: Locale = settings.locale ?? detectLocale();
   const m = messagesFor(locale);
   const selectedStage = marketStageById(selectedStageId);
@@ -78,6 +88,37 @@ export function GameApp() {
     setSettings((current) => ({ ...current, locale: nextLocale }));
   }
 
+  function beginStage(stageId: string): void {
+    setSelectedStageId(stageId);
+    setScreen("campaign");
+  }
+
+  async function selectStage(stageId: string): Promise<void> {
+    const stage = marketStageById(stageId);
+    setCheckingStageId(stageId);
+    try {
+      const session = await loadMarketSession(stage.id, stage.config);
+      if (session) {
+        setSavedRunStageId(stage.id);
+        return;
+      }
+      beginStage(stage.id);
+    } catch {
+      beginStage(stage.id);
+    } finally {
+      setCheckingStageId(null);
+    }
+  }
+
+  async function startNewStage(stageId: string): Promise<void> {
+    try {
+      await deleteMarketSession(stageId);
+    } finally {
+      setSavedRunStageId(null);
+      beginStage(stageId);
+    }
+  }
+
   if (!hydrated) {
     return (
       <main className="loading-screen" aria-live="polite">
@@ -95,9 +136,6 @@ export function GameApp() {
       <MarketApp
         stage={selectedStage}
         locale={locale}
-        devMode={devMode}
-        devPhase={devPhase}
-        devFresh={devFresh}
         onBack={() => setScreen("stages")}
         onComplete={() => {
           void deleteMarketSession(selectedStage.id);
@@ -127,10 +165,17 @@ export function GameApp() {
         locale={locale}
         onBack={() => setScreen("home")}
         onChangeLocale={changeLocale}
-        onSelect={(stageId) => {
-          setSelectedStageId(stageId);
-          setScreen("campaign");
+        onSelect={selectStage}
+        checkingStageId={checkingStageId}
+        savedRunStageId={savedRunStageId}
+        onContinue={() => {
+          if (savedRunStageId) beginStage(savedRunStageId);
+          setSavedRunStageId(null);
         }}
+        onStartNew={() => {
+          if (savedRunStageId) void startNewStage(savedRunStageId);
+        }}
+        onCancelSavedRun={() => setSavedRunStageId(null)}
       />
     );
   }
@@ -165,12 +210,22 @@ function StageSelection({
   onBack,
   onChangeLocale,
   onSelect,
+  checkingStageId,
+  savedRunStageId,
+  onContinue,
+  onStartNew,
+  onCancelSavedRun,
 }: {
   campaign: CampaignProgress;
   locale: Locale;
   onBack: () => void;
   onChangeLocale: (locale: Locale) => void;
-  onSelect: (stageId: string) => void;
+  onSelect: (stageId: string) => Promise<void>;
+  checkingStageId: string | null;
+  savedRunStageId: string | null;
+  onContinue: () => void;
+  onStartNew: () => void;
+  onCancelSavedRun: () => void;
 }) {
   const m = messagesFor(locale);
   return (
@@ -202,8 +257,8 @@ function StageSelection({
               <button
                 key={stage.id}
                 className={`stage-card${unlocked ? " active" : " locked"}${complete ? " complete" : ""}`}
-                disabled={!unlocked}
-                onClick={() => onSelect(stage.id)}
+                disabled={!unlocked || checkingStageId !== null}
+                onClick={() => void onSelect(stage.id)}
               >
                 <span className="stage-card-image">
                   <img src={stage.image} alt="" />
@@ -229,6 +284,33 @@ function StageSelection({
           })}
         </div>
       </section>
+      {savedRunStageId && (
+        <div className="saved-run-backdrop" role="presentation">
+          <section
+            className="saved-run-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="saved-run-title"
+          >
+            <Landmark aria-hidden="true" />
+            <h2 id="saved-run-title">{m.gameApp.savedRunTitle}</h2>
+            <p>{m.gameApp.savedRunDescription}</p>
+            <div className="saved-run-actions">
+              <button className="saved-run-continue" onClick={onContinue}>
+                <Play aria-hidden="true" fill="currentColor" />
+                {m.gameApp.continueRun}
+              </button>
+              <button className="saved-run-new" onClick={onStartNew}>
+                <RotateCcw aria-hidden="true" />
+                {m.gameApp.newRun}
+              </button>
+              <button className="saved-run-cancel" onClick={onCancelSavedRun}>
+                {m.gameApp.cancel}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

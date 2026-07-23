@@ -427,6 +427,86 @@ strong {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.saved-run-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(17, 16, 13, 0.78);
+}
+
+.saved-run-dialog {
+  width: min(420px, 100%);
+  padding: 28px;
+  color: var(--ink);
+  border: 5px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 10px 10px 0 var(--ink);
+  text-align: center;
+}
+
+.saved-run-dialog > svg {
+  width: 42px;
+  height: 42px;
+  padding: 8px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.saved-run-dialog h2 {
+  margin: 18px 0 8px;
+  font-size: 1.2rem;
+}
+
+.saved-run-dialog p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.saved-run-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.saved-run-actions button {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.saved-run-actions svg {
+  width: 18px;
+}
+
+.saved-run-continue {
+  background: var(--green);
+}
+
+.saved-run-new {
+  background: var(--yellow);
+}
+
+.saved-run-cancel {
+  background: var(--paper);
+}
+
+.saved-run-actions button:hover {
+  color: var(--paper);
+  background: var(--red);
+}
 .stage-card-copy strong {
   font-size: clamp(0.76rem, 3.3vw, 0.92rem);
 }

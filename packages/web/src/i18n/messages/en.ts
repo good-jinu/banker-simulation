@@ -9,6 +9,12 @@ export const en = {
     language: "Language",
     play: "Play",
     loading: "Rebuilding your ledger…",
+    savedRunTitle: "Saved run found",
+    savedRunDescription:
+      "Choose whether to continue your saved bank or start this stage again.",
+    continueRun: "Continue",
+    newRun: "Start new",
+    cancel: "Cancel",
   },
   market: {
     back: "Back",
@@ -94,14 +100,19 @@ export const en = {
     mapMotifGrowth: "cash moves through trust",
     mapMotifRisk: "every promise has a due date",
     repaymentDue: (amount: string) => amount,
+    nextCashMovement: "NEXT",
+    repaymentDueIn: (days: number) => (days === 0 ? "TODAY" : `${days}D`),
+    incomingRepayment: (amount: string) => `IN ${amount}`,
+    outgoingRepayment: (amount: string) => `OUT ${amount}`,
     defaulted: "DEFAULTED",
     defaultedDebt: (amount: string) => amount,
-    details: "Details",
     newFunding: "NEW CASH",
     fundingHint: "Cash → more loans.",
     viewLoanProducts: "Offers",
     timePaused: "Time paused",
     timeRunning: "Time running",
+    dayStatus: (day: number, paused: boolean) =>
+      `DAY ${day} · ${paused ? "PAUSED" : "RUNNING"}`,
     playTime: "Play time",
     pause: "Pause",
     timeHint: "New events",
@@ -186,6 +197,15 @@ export const en = {
     productPreview: "AUTOMATIC RULE",
     productRuleSummary: (income: string, minimum: string, maximum: string) =>
       `Income ${income}+ · loans ${minimum}–${maximum}`,
+    productDetailsEyebrow: "LOAN PRODUCT",
+    productActive: "ACTIVE",
+    productPaused: "PAUSED",
+    productActiveCopy:
+      "This product is accepting matching requests and funding them automatically.",
+    productPausedCopy:
+      "This product is paused. Existing contracts continue, but new requests will not be funded automatically.",
+    pauseProduct: "Pause product",
+    resumeProduct: "Resume product",
     createLoanProduct: (cost: string) => `Activate loan product · ${cost}`,
     productAutoLending: "AUTO LOANS",
     rangeMinimum: (label: string) => `${label} minimum`,
@@ -198,7 +218,6 @@ export const en = {
     productInsufficientCash: (cost: string) =>
       `You need ${cost} cash to create this product.`,
     productTutorialClick: "NEXT: ADD A PRODUCT ↓",
-    reviewRequest: "Review request",
   },
 };
 
