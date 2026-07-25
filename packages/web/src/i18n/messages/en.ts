@@ -90,6 +90,7 @@ export const en = {
     trustAtRisk: "Lender confidence at risk",
     trustBlocked: "External lenders blocked",
     loanStatusMap: "Loan status map",
+    dragCityHint: "DRAG TO MOVE THE CITY",
     waiting: (days: number) => `D+${days} waiting`,
     repaymentIn: (days: number) => `D-${days}`,
     loanRequest: (rate: number) => `Loan request · ${rate}% interest`,

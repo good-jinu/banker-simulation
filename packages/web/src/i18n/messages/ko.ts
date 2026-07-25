@@ -91,6 +91,7 @@ export const ko: Messages = {
     trustAtRisk: "대주 신뢰도가 위험함",
     trustBlocked: "외부 대출 차단",
     loanStatusMap: "대출 상태 지도",
+    dragCityHint: "드래그해서 도시 이동",
     waiting: (days: number) => `D+${days} 대기`,
     repaymentIn: (days: number) => `D-${days}`,
     loanRequest: (rate: number) => `대출 요청 · 이자 ${rate}%`,

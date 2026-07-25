@@ -753,11 +753,11 @@ button {
   cursor: pointer;
 }
 .play-time {
-  min-width: 118px;
+  width: 42px;
+  min-width: 42px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
   color: #051713;
   border: 0;
   background: #65d5b3;

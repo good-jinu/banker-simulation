@@ -14,9 +14,12 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { useCallback, useRef } from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
+import { CityBackground } from "./city/CityBackground.tsx";
+import type { CityPan } from "./city/city-scene.ts";
 import type { ClockView } from "./hooks/useMarketModalClock.ts";
 import { money } from "./market-format.ts";
 import type { FlowAnimation } from "./market-flow.ts";
@@ -71,6 +74,11 @@ export function MarketGameView({
   onCycleSpeed,
 }: MarketGameViewProps) {
   const m = messagesFor(locale).market;
+  const mapWorldRef = useRef<HTMLDivElement>(null);
+  const moveMapWorld = useCallback(({ x, y }: CityPan) => {
+    if (!mapWorldRef.current) return;
+    mapWorldRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+  }, []);
   const { netWorth, fundingEligible, trustBand } = summarize(world);
   const nextRepayment = upcomingRepayment(world);
   const levelGoals = goalsFor(world);
@@ -217,6 +225,11 @@ export function MarketGameView({
       </header>
 
       <section className="state-map" aria-label={m.loanStatusMap}>
+        <CityBackground
+          customerCount={loanCount}
+          dragHint={m.dragCityHint}
+          onPanChange={moveMapWorld}
+        />
         <aside
           className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
           aria-label={`${m.trust} ${m.trustScore(trust)}`}
@@ -284,254 +297,261 @@ export function MarketGameView({
             </div>
           )}
         </div>
-        <svg
-          className="connection-layer"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <defs>
-            <marker
-              id="arrow-in"
-              viewBox="0 0 10 10"
-              refX="9"
-              refY="5"
-              markerWidth="5"
-              markerHeight="5"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 10 5 L 0 10 z" />
-            </marker>
-          </defs>
-          {visibleCustomers
-            .filter((customer) => customer.status === "accepted")
-            .map((customer) => (
+        <div className="map-world-layer" ref={mapWorldRef}>
+          <svg
+            className="connection-layer"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            <defs>
+              <marker
+                id="arrow-in"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="5"
+                markerHeight="5"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" />
+              </marker>
+            </defs>
+            {visibleCustomers
+              .filter((customer) => customer.status === "accepted")
+              .map((customer) => (
+                <line
+                  key={customer.id}
+                  className="future-edge customer-edge"
+                  x1={customer.x}
+                  y1={customer.y}
+                  x2="50"
+                  y2="49"
+                  markerEnd="url(#arrow-in)"
+                />
+              ))}
+            {products
+              .filter(
+                (product): product is LoanProduct => product.kind === "loan",
+              )
+              .flatMap((product) =>
+                visibleCustomers
+                  .filter(
+                    (customer) =>
+                      customer.status === "accepted" &&
+                      customer.productId === product.id,
+                  )
+                  .map((customer) => (
+                    <line
+                      key={`${product.id}-${customer.id}`}
+                      className="future-edge product-edge"
+                      x1={product.x}
+                      y1={product.y}
+                      x2={customer.x}
+                      y2={customer.y}
+                      markerEnd="url(#arrow-in)"
+                    />
+                  )),
+              )}
+            {funding
+              .filter((lender) => lender.accepted)
+              .map((lender) => (
+                <line
+                  key={lender.id}
+                  className="future-edge debt-edge"
+                  x1="50"
+                  y1="49"
+                  x2={lender.x}
+                  y2={lender.y}
+                  markerEnd="url(#arrow-in)"
+                />
+              ))}
+            {activeFlow && (
               <line
-                key={customer.id}
-                className="future-edge customer-edge"
-                x1={customer.x}
-                y1={customer.y}
-                x2="50"
-                y2="49"
-                markerEnd="url(#arrow-in)"
+                className={`event-edge event-edge-${activeFlow.kind}`}
+                x1={activeFlow.from.x}
+                y1={activeFlow.from.y}
+                x2={activeFlow.to.x}
+                y2={activeFlow.to.y}
               />
-            ))}
+            )}
+          </svg>
+          <div
+            className="banker-node map-node"
+            style={{ left: "50%", top: "49%" }}
+          >
+            <span className="node-orbit" />
+            <span className="bank-icon">
+              <img src="/assets/pop-art/atoms/bank-hub-marker.svg" alt="" />
+            </span>
+            <strong>{money(cash)}</strong>
+          </div>
           {products
             .filter(
               (product): product is LoanProduct => product.kind === "loan",
             )
-            .flatMap((product) =>
-              visibleCustomers
-                .filter(
-                  (customer) =>
-                    customer.status === "accepted" &&
-                    customer.productId === product.id,
-                )
-                .map((customer) => (
-                  <line
-                    key={`${product.id}-${customer.id}`}
-                    className="future-edge product-edge"
-                    x1={product.x}
-                    y1={product.y}
-                    x2={customer.x}
-                    y2={customer.y}
-                    markerEnd="url(#arrow-in)"
+            .map((product) => (
+              <div
+                key={product.id}
+                className={`product-node map-node${product.active ? "" : " paused"}`}
+                style={{ left: `${product.x}%`, top: `${product.y}%` }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
+                onClick={() => onSelectProduct(product)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelectProduct(product);
+                  }
+                }}
+              >
+                <span className="product-icon">
+                  <SlidersHorizontal aria-hidden="true" />
+                </span>
+              </div>
+            ))}
+          {visibleCustomers.map((customer) => {
+            const isWaiting = customer.status === "waiting";
+            return (
+              <div
+                key={customer.id}
+                className={`customer-node map-node ${customer.status}${isWaiting ? " interactive" : ""}${customer.id === world.config.introCustomerId && isWaiting ? " intro-customer" : ""}`}
+                style={{ left: `${customer.x}%`, top: `${customer.y}%` }}
+                role={isWaiting ? "button" : undefined}
+                tabIndex={isWaiting ? 0 : undefined}
+                aria-label={
+                  isWaiting
+                    ? m.noticeLoanRequest(
+                        localize(customer.name, locale),
+                        money(customer.amount),
+                      )
+                    : undefined
+                }
+                onClick={() => {
+                  if (isWaiting) onSelectCustomer(customer);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    isWaiting &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    onSelectCustomer(customer);
+                  }
+                }}
+              >
+                {isWaiting && loanRequestNotice?.id === customer.id && (
+                  <span className="node-event-popup" role="status">
+                    {m.noticeLoanRequest(
+                      localize(customer.name, locale),
+                      money(customer.amount),
+                    )}
+                  </span>
+                )}
+                <span className="portrait">
+                  <img
+                    src={avatarFor(
+                      customer,
+                      customer.status === "waiting" ? "requesting" : "relieved",
+                    )}
+                    alt={m.customerAlt(
+                      localize(customer.name, locale),
+                      m.mapMarker,
+                    )}
                   />
-                )),
-            )}
+                </span>
+                <img
+                  className="node-marker"
+                  src={`/assets/pop-art/atoms/${customer.status === "waiting" ? "customer-marker" : "repayment-marker"}.svg`}
+                  alt=""
+                />
+                <strong>
+                  {customer.status === "waiting"
+                    ? money(customer.amount)
+                    : m.repaymentIn(Math.max(customer.dueDay - day, 0))}
+                </strong>
+                <small>
+                  <span className="term-symbol" aria-hidden="true">
+                    {customer.status === "waiting" ? "%" : <Banknote />}
+                  </span>
+                  {customer.status === "waiting"
+                    ? `${customer.rate}%`
+                    : m.repaymentDue(
+                        money(customer.amount * (1 + customer.rate / 100)),
+                      )}
+                </small>
+              </div>
+            );
+          })}
           {funding
             .filter((lender) => lender.accepted)
             .map((lender) => (
-              <line
+              <div
                 key={lender.id}
-                className="future-edge debt-edge"
-                x1="50"
-                y1="49"
-                x2={lender.x}
-                y2={lender.y}
-                markerEnd="url(#arrow-in)"
-              />
+                className={`lender-node map-node${lender.defaulted ? " defaulted" : ""}`}
+                style={{ left: `${lender.x}%`, top: `${lender.y}%` }}
+                aria-label={
+                  lender.defaulted
+                    ? `${m.defaulted} ${money(lender.amount * (1 + lender.rate / 100))}`
+                    : undefined
+                }
+              >
+                <span className="bank-icon small">
+                  <img
+                    src={`/assets/pop-art/atoms/${lender.defaulted ? "rejection-stamp" : "funding-badge"}.svg`}
+                    alt=""
+                  />
+                </span>
+                <strong>
+                  {lender.defaulted
+                    ? m.defaulted
+                    : m.repaymentIn(Math.max(lender.dueDay - day, 0))}
+                </strong>
+                <small>
+                  <span className="term-symbol" aria-hidden="true">
+                    <Banknote />
+                  </span>
+                  {lender.defaulted
+                    ? m.defaultedDebt(
+                        money(lender.amount * (1 + lender.rate / 100)),
+                      )
+                    : m.repaymentDue(
+                        money(lender.amount * (1 + lender.rate / 100)),
+                      )}
+                </small>
+              </div>
             ))}
           {activeFlow && (
-            <line
-              className={`event-edge event-edge-${activeFlow.kind}`}
-              x1={activeFlow.from.x}
-              y1={activeFlow.from.y}
-              x2={activeFlow.to.x}
-              y2={activeFlow.to.y}
-            />
+            <div className="flow-layer" aria-hidden="true">
+              <div
+                key={activeFlow.id}
+                className={`flow-token flow-${activeFlow.kind}`}
+                style={flowStyle}
+              >
+                <img src="/assets/pop-art/atoms/cash-symbol.svg" alt="" />
+                <span>{money(activeFlow.amount)}</span>
+              </div>
+              <span
+                className={`flow-stamp flow-stamp-${activeFlow.kind}`}
+                style={flowStyle}
+              >
+                {activeFlow.label}
+              </span>
+            </div>
           )}
-        </svg>
-        <div
-          className="banker-node map-node"
-          style={{ left: "50%", top: "49%" }}
-        >
-          <span className="node-orbit" />
-          <span className="bank-icon">
-            <img src="/assets/pop-art/atoms/bank-hub-marker.svg" alt="" />
-          </span>
-          <strong>{money(cash)}</strong>
+          {showFundingHint && (
+            <button
+              className="funding-hint"
+              onClick={onOpenFunding}
+              aria-label={m.viewFunding}
+            >
+              <Landmark />
+              <Plus className="funding-plus" aria-hidden="true" />
+              <span className="sr-only">{m.newFunding}</span>
+            </button>
+          )}
         </div>
-        {products
-          .filter((product): product is LoanProduct => product.kind === "loan")
-          .map((product) => (
-            <div
-              key={product.id}
-              className={`product-node map-node${product.active ? "" : " paused"}`}
-              style={{ left: `${product.x}%`, top: `${product.y}%` }}
-              role="button"
-              tabIndex={0}
-              aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
-              onClick={() => onSelectProduct(product)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onSelectProduct(product);
-                }
-              }}
-            >
-              <span className="product-icon">
-                <SlidersHorizontal aria-hidden="true" />
-              </span>
-            </div>
-          ))}
-        {visibleCustomers.map((customer) => {
-          const isWaiting = customer.status === "waiting";
-          return (
-            <div
-              key={customer.id}
-              className={`customer-node map-node ${customer.status}${isWaiting ? " interactive" : ""}${customer.id === world.config.introCustomerId && isWaiting ? " intro-customer" : ""}`}
-              style={{ left: `${customer.x}%`, top: `${customer.y}%` }}
-              role={isWaiting ? "button" : undefined}
-              tabIndex={isWaiting ? 0 : undefined}
-              aria-label={
-                isWaiting
-                  ? m.noticeLoanRequest(
-                      localize(customer.name, locale),
-                      money(customer.amount),
-                    )
-                  : undefined
-              }
-              onClick={() => {
-                if (isWaiting) onSelectCustomer(customer);
-              }}
-              onKeyDown={(event) => {
-                if (isWaiting && (event.key === "Enter" || event.key === " ")) {
-                  event.preventDefault();
-                  onSelectCustomer(customer);
-                }
-              }}
-            >
-              {isWaiting && loanRequestNotice?.id === customer.id && (
-                <span className="node-event-popup" role="status">
-                  {m.noticeLoanRequest(
-                    localize(customer.name, locale),
-                    money(customer.amount),
-                  )}
-                </span>
-              )}
-              <span className="portrait">
-                <img
-                  src={avatarFor(
-                    customer,
-                    customer.status === "waiting" ? "requesting" : "relieved",
-                  )}
-                  alt={m.customerAlt(
-                    localize(customer.name, locale),
-                    m.mapMarker,
-                  )}
-                />
-              </span>
-              <img
-                className="node-marker"
-                src={`/assets/pop-art/atoms/${customer.status === "waiting" ? "customer-marker" : "repayment-marker"}.svg`}
-                alt=""
-              />
-              <strong>
-                {customer.status === "waiting"
-                  ? money(customer.amount)
-                  : m.repaymentIn(Math.max(customer.dueDay - day, 0))}
-              </strong>
-              <small>
-                <span className="term-symbol" aria-hidden="true">
-                  {customer.status === "waiting" ? "%" : <Banknote />}
-                </span>
-                {customer.status === "waiting"
-                  ? `${customer.rate}%`
-                  : m.repaymentDue(
-                      money(customer.amount * (1 + customer.rate / 100)),
-                    )}
-              </small>
-            </div>
-          );
-        })}
-        {funding
-          .filter((lender) => lender.accepted)
-          .map((lender) => (
-            <div
-              key={lender.id}
-              className={`lender-node map-node${lender.defaulted ? " defaulted" : ""}`}
-              style={{ left: `${lender.x}%`, top: `${lender.y}%` }}
-              aria-label={
-                lender.defaulted
-                  ? `${m.defaulted} ${money(lender.amount * (1 + lender.rate / 100))}`
-                  : undefined
-              }
-            >
-              <span className="bank-icon small">
-                <img
-                  src={`/assets/pop-art/atoms/${lender.defaulted ? "rejection-stamp" : "funding-badge"}.svg`}
-                  alt=""
-                />
-              </span>
-              <strong>
-                {lender.defaulted
-                  ? m.defaulted
-                  : m.repaymentIn(Math.max(lender.dueDay - day, 0))}
-              </strong>
-              <small>
-                <span className="term-symbol" aria-hidden="true">
-                  <Banknote />
-                </span>
-                {lender.defaulted
-                  ? m.defaultedDebt(
-                      money(lender.amount * (1 + lender.rate / 100)),
-                    )
-                  : m.repaymentDue(
-                      money(lender.amount * (1 + lender.rate / 100)),
-                    )}
-              </small>
-            </div>
-          ))}
-        {activeFlow && (
-          <div className="flow-layer" aria-hidden="true">
-            <div
-              key={activeFlow.id}
-              className={`flow-token flow-${activeFlow.kind}`}
-              style={flowStyle}
-            >
-              <img src="/assets/pop-art/atoms/cash-symbol.svg" alt="" />
-              <span>{money(activeFlow.amount)}</span>
-            </div>
-            <span
-              className={`flow-stamp flow-stamp-${activeFlow.kind}`}
-              style={flowStyle}
-            >
-              {activeFlow.label}
-            </span>
-          </div>
-        )}
-        {showFundingHint && (
-          <button
-            className="funding-hint"
-            onClick={onOpenFunding}
-            aria-label={m.viewFunding}
-          >
-            <Landmark />
-            <Plus className="funding-plus" aria-hidden="true" />
-            <span className="sr-only">{m.newFunding}</span>
-          </button>
-        )}
       </section>
       <footer className="time-controller">
         <div className="time-status">
@@ -547,11 +567,10 @@ export function MarketGameView({
             aria-label={clockView.paused ? m.playTime : m.pause}
           >
             {clockView.paused ? (
-              <Play fill="currentColor" />
+              <Play fill="currentColor" aria-hidden="true" />
             ) : (
-              <Pause fill="currentColor" />
+              <Pause fill="currentColor" aria-hidden="true" />
             )}
-            <span>{clockView.paused ? m.playTime : m.pause}</span>
           </button>
           <button className="speed-time" onClick={onCycleSpeed}>
             <span>{clockView.speed}×</span>

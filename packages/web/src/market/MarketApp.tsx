@@ -33,6 +33,7 @@ import {
 } from "./market-world.ts";
 import { type GameClock } from "../lib/game-clock.ts";
 import "./market.css";
+import "./city/city.css";
 
 const MarketDevTools = import.meta.env.DEV
   ? lazy(async () => {
