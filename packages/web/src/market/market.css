@@ -1429,6 +1429,19 @@ button {
   background: #ee321d;
 }
 
+.play-time.play-time-prompt {
+  animation: play-time-prompt 1.1s ease-in-out infinite;
+}
+
+@keyframes play-time-prompt {
+  50% {
+    transform: translate(-2px, -2px) scale(1.1);
+    box-shadow:
+      0 0 0 5px rgba(255, 211, 40, 0.62),
+      6px 6px 0 #11100d;
+  }
+}
+
 .time-controller {
   border-width: 4px 0 0;
   box-shadow: none;
@@ -2557,7 +2570,8 @@ button {
   .flow-stamp,
   .trust-pulse-up,
   .trust-pulse-down,
-  .lender-node.defaulted {
+  .lender-node.defaulted,
+  .play-time.play-time-prompt {
     animation: none;
   }
 }
@@ -2587,22 +2601,23 @@ button {
   gap: 4px;
 }
 
-.term-symbol {
-  display: inline-grid;
-  width: 15px;
-  height: 15px;
-  place-items: center;
-  border: 2px solid currentColor;
-  border-radius: 50%;
-  font-size: 9px;
-  font-weight: 950;
-  line-height: 1;
+.customer-node .node-label,
+.lender-node .node-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 6px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--ink);
+  text-shadow: none;
 }
 
-.term-symbol svg {
-  width: 11px;
-  height: 11px;
+.node-label strong {
+  margin-top: 0;
 }
+
 .asset-summary {
   display: flex;
   align-items: flex-end;
@@ -2924,52 +2939,17 @@ button {
 }
 
 .question-group > button:disabled {
+  color: var(--ink);
+  background: #b9b4a6;
   cursor: default;
   opacity: 1;
 }
 
-.underwriting-callout img,
 .evidence-grid img,
-.risk-row img,
-.node-marker {
+.risk-row img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.underwriting-callout small {
-  color: #6b4a18;
-  font-size: 9px;
-  font-weight: 950;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.underwriting-callout {
-  display: grid;
-  grid-template-columns: 42px 1fr;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
-  padding: 10px;
-  border: 3px solid var(--ink);
-  background: var(--paper);
-  box-shadow: 3px 3px 0 var(--ink);
-}
-
-.underwriting-callout > img {
-  width: 40px;
-  height: 40px;
-}
-
-.underwriting-callout span {
-  display: grid;
-  gap: 4px;
-}
-
-.underwriting-callout strong {
-  font-size: 13px;
-  line-height: 1.25;
 }
 
 .consultation-modal {
@@ -3001,8 +2981,62 @@ button {
   padding: 22px;
 }
 
-.request-conversation .approve-reveal {
+.request-conversation .decision-actions {
   margin-top: 18px;
+  padding-top: 18px;
+  border-top: 4px solid var(--ink);
+}
+
+.loan-request-amount {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.loan-request-amount small {
+  color: #6b4a18;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.loan-request-amount strong {
+  color: var(--ink);
+  font-size: 22px;
+}
+
+.request-conversation .decision-row {
+  gap: 10px;
+}
+
+.request-conversation .reject-button,
+.request-conversation .accept-button {
+  color: var(--paper);
+  border: 3px solid var(--ink);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.request-conversation .reject-button {
+  background: var(--red);
+}
+
+.request-conversation .accept-button {
+  color: var(--ink);
+  background: var(--yellow);
+}
+
+.request-conversation .accept-button:disabled {
+  color: #7d6c54;
+  background: #c4b28b;
+  cursor: not-allowed;
 }
 
 .map-caption {
@@ -3039,15 +3073,6 @@ button {
   width: 78%;
   height: 78%;
   object-fit: contain;
-}
-
-.node-marker {
-  position: absolute;
-  width: 23px;
-  height: 23px;
-  top: 41px;
-  right: -18px;
-  z-index: -1;
 }
 
 .lender-node .bank-icon img {
@@ -3175,13 +3200,6 @@ button {
   .goal-overlay {
     max-height: 46%;
     overflow: auto;
-  }
-
-  .node-marker {
-    top: 30px;
-    right: -14px;
-    width: 18px;
-    height: 18px;
   }
 
   .consultation-modal {
@@ -3608,69 +3626,6 @@ button {
   font-weight: 850;
 }
 
-.funding-lesson {
-  margin: 0 0 20px;
-  padding: 12px;
-  border: 3px solid var(--ink);
-  background: #fff1c8;
-  box-shadow: 4px 4px 0 var(--ink);
-}
-
-.funding-lesson-flow {
-  display: grid;
-  grid-template-columns: minmax(90px, 0.8fr) 26px minmax(130px, 1.2fr);
-  align-items: center;
-  gap: 9px;
-}
-
-.funding-lesson-flow > span {
-  display: grid;
-  grid-template-columns: 22px 1fr;
-  align-items: center;
-  gap: 4px 7px;
-}
-
-.funding-lesson-flow svg {
-  grid-row: 1 / span 2;
-  width: 22px;
-  color: var(--red);
-}
-
-.funding-lesson-flow > svg {
-  width: 24px;
-  color: var(--ink);
-}
-
-.funding-lesson-flow strong {
-  font-size: 15px;
-}
-
-.funding-lesson-flow small {
-  grid-column: 2;
-  color: #6b4a18;
-  font-size: 9px;
-  font-weight: 850;
-  line-height: 1.25;
-}
-
-.funding-lesson-warning {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 12px 0 0;
-  padding-top: 9px;
-  color: #9c2b1c;
-  border-top: 2px dashed var(--ink);
-  font-size: 10px;
-  font-weight: 850;
-  line-height: 1.3;
-}
-
-.funding-lesson-warning svg {
-  width: 16px;
-  flex-shrink: 0;
-}
-
 .funding-conversation-options {
   display: grid;
   gap: 10px;
@@ -3793,22 +3748,35 @@ button {
     padding: 22px 14px 18px;
   }
 
-  .funding-lesson-flow {
-    grid-template-columns: minmax(80px, 1fr) 20px minmax(100px, 1.2fr);
-    gap: 6px;
-  }
-
   .funding-offer {
     grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 7px 10px;
+  }
+
+  .funding-offer-index {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+  }
+
+  .funding-offer-main {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .funding-offer-amount {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: left;
   }
 
   .funding-offer-terms {
     grid-column: 2;
+    grid-row: 3;
   }
 
   .funding-offer-select {
     grid-column: 3;
-    grid-row: 1 / span 2;
+    grid-row: 1 / span 3;
   }
 }
 

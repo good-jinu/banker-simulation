@@ -19,6 +19,10 @@ import {
   type MarketWorld,
 } from "../market/market-world.ts";
 import type { ClockView } from "../market/hooks/useMarketModalClock.ts";
+import {
+  initialMarketUiState,
+  type MarketUiState,
+} from "../market/market-ui-state.ts";
 
 type MarketDevToolsProps = {
   stage: MarketCampaignStage;
@@ -26,6 +30,8 @@ type MarketDevToolsProps = {
   dispatch: Dispatch<MarketAction>;
   clockView: ClockView;
   setClockView: Dispatch<SetStateAction<ClockView>>;
+  ui: MarketUiState;
+  setUi: Dispatch<SetStateAction<MarketUiState>>;
   clockRef: RefObject<GameClock | null>;
 };
 
@@ -36,6 +42,8 @@ export function MarketDevTools({
   dispatch,
   clockView,
   setClockView,
+  ui,
+  setUi,
   clockRef,
 }: MarketDevToolsProps) {
   const [status, setStatus] = useState<string | null>(null);
@@ -47,9 +55,10 @@ export function MarketDevTools({
       world: { ...world, events: [] },
       consultation: { asked: [], lastQuestion: null, expression: "requesting" },
       clock: clockView,
+      ui,
       savedAt: Date.now(),
     }),
-    [clockView, stage.id, world],
+    [clockView, stage.id, ui, world],
   );
   const save = useCallback(async () => {
     await saveMarketSession(createSnapshot());
@@ -63,11 +72,12 @@ export function MarketDevTools({
     }
     dispatch({ type: "restore", world: session.world });
     setClockView(session.clock);
+    setUi(session.ui);
     clockRef.current?.setSpeed(session.clock.speed);
     if (session.clock.paused) clockRef.current?.pause();
     else clockRef.current?.play();
     setStatus("Loaded");
-  }, [clockRef, dispatch, setClockView, stage.config, stage.id]);
+  }, [clockRef, dispatch, setClockView, setUi, stage.config, stage.id]);
   const reset = useCallback(async () => {
     await deleteMarketSession(stage.id);
     dispatch({
@@ -75,10 +85,11 @@ export function MarketDevTools({
       world: createWorld(Date.now() >>> 0, stage.config),
     });
     setClockView({ paused: true, speed: 1 });
+    setUi(initialMarketUiState());
     clockRef.current?.pause();
     clockRef.current?.setSpeed(1);
     setStatus("Reset");
-  }, [clockRef, dispatch, setClockView, stage.config, stage.id]);
+  }, [clockRef, dispatch, setClockView, setUi, stage.config, stage.id]);
   const exportSnapshot = useCallback(() => {
     const blob = new Blob([JSON.stringify(createSnapshot(), null, 2)], {
       type: "application/json",

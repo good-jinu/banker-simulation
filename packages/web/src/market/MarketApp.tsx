@@ -21,6 +21,7 @@ import {
 import { useMarketSession } from "./hooks/useMarketSession.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import { money } from "./market-format.ts";
+import { initialMarketUiState, type MarketUiState } from "./market-ui-state.ts";
 import { useMarketRunOptions } from "./market-run.tsx";
 import {
   createWorld,
@@ -76,6 +77,7 @@ export function MarketApp({
     paused: true,
     speed: 1,
   });
+  const [ui, setUi] = useState<MarketUiState>(initialMarketUiState);
   const clockRef = useRef<GameClock | null>(null);
   const session = useMarketSession({
     stage,
@@ -83,6 +85,8 @@ export function MarketApp({
     dispatch,
     clockView,
     setClockView,
+    ui,
+    setUi,
     devMode,
     devPhase,
     devFresh,
@@ -211,6 +215,8 @@ export function MarketApp({
         loanRequestNotice={loanRequestNotice}
         trustPulse={trustPulse}
         clockView={clockView}
+        modalOpen={modalOpen}
+        hasDraggedMap={ui.hasDraggedMap}
         goalsOpen={goalsOpen}
         onBack={onBack}
         onOpenAssets={() => setAssetsOpen(true)}
@@ -221,6 +227,13 @@ export function MarketApp({
         onOpenFunding={openFunding}
         onToggleClock={toggleClock}
         onCycleSpeed={cycleSpeed}
+        onFirstMapDrag={() =>
+          setUi((current) =>
+            current.hasDraggedMap
+              ? current
+              : { ...current, hasDraggedMap: true },
+          )
+        }
       />
       {notice && (
         <div className="game-notice" role="status" aria-live="polite">
@@ -236,6 +249,8 @@ export function MarketApp({
             dispatch={dispatch}
             clockView={clockView}
             setClockView={setClockView}
+            ui={ui}
+            setUi={setUi}
             clockRef={clockRef}
           />
         </Suspense>

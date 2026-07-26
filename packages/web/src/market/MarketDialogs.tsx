@@ -304,8 +304,6 @@ export function MarketDialogs({
             <InterbankConversation
               funding={funding}
               locale={locale}
-              showRiskWarning={world.config.randomizeDefaultRisk}
-              currentCash={cash}
               onBorrow={onBorrow}
             />
           </section>

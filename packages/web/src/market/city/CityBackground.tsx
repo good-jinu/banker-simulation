@@ -3,22 +3,36 @@ import type { CityPan, CityScene } from "./city-scene.ts";
 
 type CityBackgroundProps = {
   customerCount: number;
+  zoom: number;
   dragHint: string;
+  showDragHint: boolean;
   onPanChange: (pan: CityPan) => void;
+  onFirstDrag: () => void;
+  onZoomChange: (zoom: number) => void;
 };
 
 /** Hosts the lazily loaded Three.js city canvas and its drag hint. */
 export function CityBackground({
   customerCount,
+  zoom,
   dragHint,
+  showDragHint,
   onPanChange,
+  onFirstDrag,
+  onZoomChange,
 }: CityBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<CityScene | null>(null);
   const latestCustomerCount = useRef(customerCount);
+  const latestZoom = useRef(zoom);
   const onPanChangeRef = useRef(onPanChange);
+  const onFirstDragRef = useRef(onFirstDrag);
+  const onZoomChangeRef = useRef(onZoomChange);
   latestCustomerCount.current = customerCount;
+  latestZoom.current = zoom;
   onPanChangeRef.current = onPanChange;
+  onFirstDragRef.current = onFirstDrag;
+  onZoomChangeRef.current = onZoomChange;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -36,8 +50,11 @@ export function CityBackground({
           sceneCanvas,
           latestCustomerCount.current,
           (pan) => onPanChangeRef.current(pan),
+          () => onFirstDragRef.current(),
+          (nextZoom) => onZoomChangeRef.current(nextZoom),
         );
         sceneRef.current = cityScene;
+        cityScene.setZoom(latestZoom.current);
         observer = new ResizeObserver((entries) => {
           const size = entries[0]?.contentRect;
           if (size) cityScene?.resize(size.width, size.height);
@@ -62,10 +79,14 @@ export function CityBackground({
     sceneRef.current?.setCustomerCount(customerCount);
   }, [customerCount]);
 
+  useEffect(() => {
+    sceneRef.current?.setZoom(zoom);
+  }, [zoom]);
+
   return (
     <div className="city-background" aria-hidden="true">
       <canvas ref={canvasRef} />
-      <span className="city-drag-hint">{dragHint}</span>
+      {showDragHint && <span className="city-drag-hint">{dragHint}</span>}
     </div>
   );
 }

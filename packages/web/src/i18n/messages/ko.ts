@@ -92,6 +92,8 @@ export const ko: Messages = {
     trustBlocked: "외부 대출 차단",
     loanStatusMap: "대출 상태 지도",
     dragCityHint: "드래그해서 도시 이동",
+    zoomIn: "확대",
+    zoomOut: "축소",
     waiting: (days: number) => `D+${days} 대기`,
     repaymentIn: (days: number) => `D-${days}`,
     loanRequest: (rate: number) => `대출 요청 · 이자 ${rate}%`,

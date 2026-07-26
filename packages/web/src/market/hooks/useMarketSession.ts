@@ -17,6 +17,10 @@ import {
   type MarketWorld,
 } from "../market-world.ts";
 import type { ClockView } from "./useMarketModalClock.ts";
+import {
+  initialMarketUiState,
+  type MarketUiState,
+} from "../market-ui-state.ts";
 
 type UseMarketSessionOptions = {
   stage: MarketCampaignStage;
@@ -24,6 +28,8 @@ type UseMarketSessionOptions = {
   dispatch: Dispatch<MarketAction>;
   clockView: ClockView;
   setClockView: Dispatch<SetStateAction<ClockView>>;
+  ui: MarketUiState;
+  setUi: Dispatch<SetStateAction<MarketUiState>>;
   devMode: boolean;
   devPhase: "intro" | "map";
   devFresh: boolean;
@@ -35,6 +41,8 @@ export function useMarketSession({
   dispatch,
   clockView,
   setClockView,
+  ui,
+  setUi,
   devMode,
   devPhase,
   devFresh,
@@ -48,9 +56,10 @@ export function useMarketSession({
       world: { ...world, events: [] },
       consultation: { asked: [], lastQuestion: null, expression: "requesting" },
       clock: clockView,
+      ui,
       savedAt: Date.now(),
     }),
-    [clockView, stage.id, world],
+    [clockView, stage.id, ui, world],
   );
 
   useEffect(() => {
@@ -61,11 +70,13 @@ export function useMarketSession({
         if (session && !(devMode && devFresh)) {
           dispatch({ type: "restore", world: session.world });
           setClockView(session.clock);
+          setUi(session.ui);
         } else if (devMode && devPhase === "map") {
           dispatch({
             type: "restore",
             world: createWorld(Date.now() >>> 0, stage.config),
           });
+          setUi(initialMarketUiState());
         }
         setSessionReady(true);
       })
@@ -81,6 +92,7 @@ export function useMarketSession({
     devPhase,
     dispatch,
     setClockView,
+    setUi,
     stage.config,
     stage.id,
   ]);

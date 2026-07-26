@@ -65,6 +65,42 @@
   transform: translateX(-50%) rotate(-1deg);
 }
 
+.map-zoom-controls {
+  position: absolute;
+  z-index: 20;
+  left: 14px;
+  bottom: 14px;
+  display: grid;
+  gap: 7px;
+}
+
+.map-zoom-controls button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+}
+
+.map-zoom-controls button:hover:not(:disabled) {
+  background: var(--paper);
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.map-zoom-controls button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.map-zoom-controls svg {
+  width: 18px;
+}
+
 .connection-layer {
   pointer-events: none;
 }
@@ -74,5 +110,10 @@
     bottom: 8px;
     padding: 5px 7px;
     font-size: 7px;
+  }
+
+  .map-zoom-controls {
+    left: 8px;
+    bottom: 8px;
   }
 }

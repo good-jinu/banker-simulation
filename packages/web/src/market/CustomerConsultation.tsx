@@ -1,12 +1,12 @@
-import { Check, Info, Landmark } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
+import { ConsultationQuestions } from "./ConsultationQuestions.tsx";
+import { LoanDecisionActions } from "./LoanDecisionActions.tsx";
 import {
   avatarFor,
-  defaultRisk,
   type Customer,
   type CustomerExpression,
 } from "./market-world.ts";
@@ -38,8 +38,7 @@ export function CustomerConsultation({
 }: {
   customer: Customer;
   locale: Locale;
-  /** Show the computed default-risk % instead of a plain repayment amount —
-   * only meaningful on stages where defaults are actually randomized. */
+  /** Adjust the opening dialogue for stages with randomized defaults. */
   showRiskEstimate: boolean;
   learnCustomerHint: string;
   mode: ConversationMode;
@@ -71,9 +70,6 @@ export function CustomerConsultation({
     () => CONSULTATION_QUESTIONS.filter((question) => consultation[question]),
     [consultation],
   );
-  const enoughInformation = answered.length === CONSULTATION_QUESTIONS.length;
-  const risk = defaultRisk(customer);
-
   useEffect(() => {
     onProgressChange?.({
       asked: answered,
@@ -88,20 +84,10 @@ export function CustomerConsultation({
     setExpression("relieved");
   }
 
-  function label(question: ConsultationQuestionId): string {
-    return question === "purpose" ? m.askPurpose : m.askIncome;
-  }
-
   function evidence(question: ConsultationQuestionId): string {
     return question === "purpose"
       ? localize(customer.evidence.purpose, locale)
       : `${localize(customer.job, locale)} · ${money(customer.income)}`;
-  }
-
-  function riskLabel(value: number): string {
-    if (value < 20) return m.riskLow;
-    if (value < 40) return m.riskMedium;
-    return m.riskHigh;
   }
 
   const openingMessage =
@@ -131,68 +117,27 @@ export function CustomerConsultation({
         </div>
       </div>
       <div className="conversation-actions">
-        <p className="action-guide">{learnCustomerHint}</p>
-        <div className="question-list">
-          {CONSULTATION_QUESTIONS.map((question) => {
-            const asked = Boolean(consultation[question]);
-            return (
-              <div className="question-group" key={question}>
-                <button
-                  className={asked ? "asked" : ""}
-                  onClick={() => ask(question)}
-                  disabled={asked}
-                >
-                  {asked ? <Check /> : <Info />} {label(question)}
-                </button>
-              </div>
-            );
-          })}
+        <div className="loan-request-amount" aria-label={m.loanAmount}>
+          <small>{m.loanAmount}</small>
+          <strong>{money(customer.amount)}</strong>
         </div>
-        {enoughInformation && (
-          <div className="approve-reveal">
-            <div className="underwriting-callout">
-              <img
-                src={`/assets/pop-art/atoms/${showRiskEstimate && risk >= 40 ? "warning-burst" : "goal-badge"}.svg`}
-                alt=""
-              />
-              <span>
-                <small>{m.underwritingDecision}</small>
-                <strong>
-                  {showRiskEstimate
-                    ? `${m.estimatedRisk}: ${risk}% · ${riskLabel(risk)}`
-                    : m.informationChecked(
-                        money(customer.amount * (1 + customer.rate / 100)),
-                        customer.term,
-                      )}
-                </strong>
-              </span>
-            </div>
-            {mode === "intro" ? (
-              <button onClick={onProceed}>
-                <Landmark />
-                {showRiskEstimate ? m.openUnderwriting : m.approveRequest}
-              </button>
-            ) : (
-              <div className="decision-row">
-                <button className="reject-button" onClick={onReject}>
-                  {m.reject}
-                </button>
-                <button
-                  className="accept-button"
-                  onClick={onApprove}
-                  disabled={!canApprove}
-                >
-                  {m.lend(money(customer.amount))}
-                </button>
-              </div>
-            )}
-            {mode === "request" && !canApprove && onNeedFunding && (
-              <button className="need-funding" onClick={onNeedFunding}>
-                {m.fundingNeeded}
-              </button>
-            )}
-          </div>
-        )}
+        <p className="action-guide">{learnCustomerHint}</p>
+        <ConsultationQuestions
+          asked={consultation}
+          locale={locale}
+          onAsk={ask}
+        />
+        <LoanDecisionActions
+          amount={customer.amount}
+          canApprove={canApprove}
+          locale={locale}
+          mode={mode}
+          showRiskEstimate={showRiskEstimate}
+          onApprove={onApprove}
+          onNeedFunding={onNeedFunding}
+          onProceed={onProceed}
+          onReject={onReject}
+        />
       </div>
     </section>
   );

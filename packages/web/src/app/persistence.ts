@@ -2,6 +2,10 @@ import type { MarketStageConfig } from "../market/market-campaign.ts";
 import type { ConsultationProgress } from "../market/CustomerConsultation.tsx";
 import { CLOCK_SPEEDS, type ClockSpeed } from "../lib/game-clock.ts";
 import type { MarketWorld } from "../market/market-world.ts";
+import {
+  initialMarketUiState,
+  type MarketUiState,
+} from "../market/market-ui-state.ts";
 
 const DATABASE_NAME = "banker-simulation";
 const DATABASE_VERSION = 3;
@@ -35,6 +39,7 @@ export interface MarketSessionSave {
   world: MarketWorld;
   consultation: ConsultationProgress;
   clock: { paused: boolean; speed: ClockSpeed };
+  ui: MarketUiState;
   savedAt: number;
 }
 
@@ -256,6 +261,10 @@ export function migrateMarketSession(
     },
     consultation: { asked, lastQuestion, expression },
     clock: { paused: rawClock.paused !== false, speed },
+    ui: {
+      ...initialMarketUiState(),
+      hasDraggedMap: isRecord(value.ui) && value.ui.hasDraggedMap === true,
+    },
     savedAt: typeof value.savedAt === "number" ? value.savedAt : 0,
   };
 }

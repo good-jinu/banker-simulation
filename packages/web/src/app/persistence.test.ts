@@ -86,6 +86,27 @@ describe("save migration", () => {
       lastQuestion: "income",
       expression: "relieved",
     });
+    expect(migrated?.ui).toEqual({ hasDraggedMap: false });
+  });
+
+  it("restores persisted map tutorial progress", () => {
+    const config = marketCampaignStages[0]!.config;
+    const world = createWorld(7, config);
+    const migrated = migrateMarketSession(
+      {
+        schemaVersion: 2,
+        stageId: marketCampaignStages[0]!.id,
+        phase: "map",
+        world,
+        consultation: {},
+        clock: {},
+        ui: { hasDraggedMap: true },
+      },
+      marketCampaignStages[0]!.id,
+      config,
+    );
+
+    expect(migrated?.ui).toEqual({ hasDraggedMap: true });
   });
 
   it("rejects a session belonging to another stage", () => {

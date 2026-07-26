@@ -1,8 +1,5 @@
 import {
-  ArrowDownToLine,
   ArrowLeft,
-  ArrowUpFromLine,
-  Banknote,
   Check,
   Coins,
   Landmark,
@@ -14,21 +11,20 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
-import { CityBackground } from "./city/CityBackground.tsx";
 import type { CityPan } from "./city/city-scene.ts";
 import type { ClockView } from "./hooks/useMarketModalClock.ts";
 import { money } from "./market-format.ts";
 import type { FlowAnimation } from "./market-flow.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
+import { MapViewport } from "./map/MapViewport.tsx";
 import {
   avatarFor,
   goalsFor,
   summarize,
-  upcomingRepayment,
   type Customer,
   type LoanProduct,
   type MarketWorld,
@@ -42,6 +38,8 @@ type MarketGameViewProps = {
   loanRequestNotice: Customer | null;
   trustPulse: "up" | "down" | null;
   clockView: ClockView;
+  modalOpen: boolean;
+  hasDraggedMap: boolean;
   goalsOpen: boolean;
   onBack: () => void;
   onOpenAssets: () => void;
@@ -52,6 +50,7 @@ type MarketGameViewProps = {
   onOpenFunding: () => void;
   onToggleClock: () => void;
   onCycleSpeed: () => void;
+  onFirstMapDrag: () => void;
 };
 
 export function MarketGameView({
@@ -62,6 +61,8 @@ export function MarketGameView({
   loanRequestNotice,
   trustPulse,
   clockView,
+  modalOpen,
+  hasDraggedMap,
   goalsOpen,
   onBack,
   onOpenAssets,
@@ -72,15 +73,16 @@ export function MarketGameView({
   onOpenFunding,
   onToggleClock,
   onCycleSpeed,
+  onFirstMapDrag,
 }: MarketGameViewProps) {
   const m = messagesFor(locale).market;
+  const [showPlayPrompt, setShowPlayPrompt] = useState(false);
   const mapWorldRef = useRef<HTMLDivElement>(null);
   const moveMapWorld = useCallback(({ x, y }: CityPan) => {
     if (!mapWorldRef.current) return;
     mapWorldRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
   }, []);
   const { netWorth, fundingEligible, trustBand } = summarize(world);
-  const nextRepayment = upcomingRepayment(world);
   const levelGoals = goalsFor(world);
   const hasProductGoal = levelGoals.productCount > 0;
   const hasSurvivalGoal = levelGoals.survivalDay !== null;
@@ -105,6 +107,13 @@ export function MarketGameView({
     hasProductGoal && introCustomer?.status !== "waiting";
   const highlightProductButton = productLessonReady && products.length === 0;
   const showFundingHint = fundingEligible;
+
+  useEffect(() => {
+    setShowPlayPrompt(false);
+    if (!clockView.paused || modalOpen) return;
+    const timeout = window.setTimeout(() => setShowPlayPrompt(true), 3_000);
+    return () => window.clearTimeout(timeout);
+  }, [clockView.paused, modalOpen]);
   const goals = [
     ...(hasProductGoal
       ? [
@@ -177,37 +186,6 @@ export function MarketGameView({
               <strong>{money(cash)}</strong>
             </span>
           </button>
-          {nextRepayment && (
-            <aside
-              className="upcoming-repayment"
-              aria-live="polite"
-              aria-label={`${m.nextCashMovement}: ${m.repaymentDueIn(nextRepayment.dueDay - day)}`}
-            >
-              {nextRepayment.incomingAmount > 0 && (
-                <span
-                  className="incoming"
-                  aria-label={m.incomingRepayment(
-                    money(nextRepayment.incomingAmount),
-                  )}
-                >
-                  <ArrowDownToLine aria-hidden="true" />
-                  <strong>{money(nextRepayment.incomingAmount)}</strong>
-                </span>
-              )}
-              {nextRepayment.outgoingAmount > 0 && (
-                <span
-                  className="outgoing"
-                  aria-label={m.outgoingRepayment(
-                    money(nextRepayment.outgoingAmount),
-                  )}
-                >
-                  <ArrowUpFromLine aria-hidden="true" />
-                  <strong>{money(nextRepayment.outgoingAmount)}</strong>
-                </span>
-              )}
-              <small>{nextRepayment.dueDay - day}d</small>
-            </aside>
-          )}
         </div>
         {hasProductGoal && (
           <div className="product-launcher-wrap">
@@ -225,10 +203,14 @@ export function MarketGameView({
       </header>
 
       <section className="state-map" aria-label={m.loanStatusMap}>
-        <CityBackground
+        <MapViewport
           customerCount={loanCount}
           dragHint={m.dragCityHint}
+          hasDraggedMap={hasDraggedMap}
+          zoomInLabel={m.zoomIn}
+          zoomOutLabel={m.zoomOut}
           onPanChange={moveMapWorld}
+          onFirstDrag={onFirstMapDrag}
         />
         <aside
           className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
@@ -461,26 +443,20 @@ export function MarketGameView({
                     )}
                   />
                 </span>
-                <img
-                  className="node-marker"
-                  src={`/assets/pop-art/atoms/${customer.status === "waiting" ? "customer-marker" : "repayment-marker"}.svg`}
-                  alt=""
-                />
-                <strong>
-                  {customer.status === "waiting"
-                    ? money(customer.amount)
-                    : m.repaymentIn(Math.max(customer.dueDay - day, 0))}
-                </strong>
-                <small>
-                  <span className="term-symbol" aria-hidden="true">
-                    {customer.status === "waiting" ? "%" : <Banknote />}
-                  </span>
-                  {customer.status === "waiting"
-                    ? `${customer.rate}%`
-                    : m.repaymentDue(
-                        money(customer.amount * (1 + customer.rate / 100)),
-                      )}
-                </small>
+                <span className="node-label">
+                  <strong>
+                    {customer.status === "waiting"
+                      ? money(customer.amount)
+                      : m.repaymentIn(Math.max(customer.dueDay - day, 0))}
+                  </strong>
+                  <small>
+                    {customer.status === "waiting"
+                      ? `${customer.rate}%`
+                      : m.repaymentDue(
+                          money(customer.amount * (1 + customer.rate / 100)),
+                        )}
+                  </small>
+                </span>
               </div>
             );
           })}
@@ -503,23 +479,22 @@ export function MarketGameView({
                     alt=""
                   />
                 </span>
-                <strong>
-                  {lender.defaulted
-                    ? m.defaulted
-                    : m.repaymentIn(Math.max(lender.dueDay - day, 0))}
-                </strong>
-                <small>
-                  <span className="term-symbol" aria-hidden="true">
-                    <Banknote />
-                  </span>
-                  {lender.defaulted
-                    ? m.defaultedDebt(
-                        money(lender.amount * (1 + lender.rate / 100)),
-                      )
-                    : m.repaymentDue(
-                        money(lender.amount * (1 + lender.rate / 100)),
-                      )}
-                </small>
+                <span className="node-label">
+                  <strong>
+                    {lender.defaulted
+                      ? m.defaulted
+                      : m.repaymentIn(Math.max(lender.dueDay - day, 0))}
+                  </strong>
+                  <small>
+                    {lender.defaulted
+                      ? m.defaultedDebt(
+                          money(lender.amount * (1 + lender.rate / 100)),
+                        )
+                      : m.repaymentDue(
+                          money(lender.amount * (1 + lender.rate / 100)),
+                        )}
+                  </small>
+                </span>
               </div>
             ))}
           {activeFlow && (
@@ -562,7 +537,7 @@ export function MarketGameView({
         </div>
         <div className="time-actions">
           <button
-            className="play-time"
+            className={`play-time${showPlayPrompt ? " play-time-prompt" : ""}`}
             onClick={onToggleClock}
             aria-label={clockView.paused ? m.playTime : m.pause}
           >

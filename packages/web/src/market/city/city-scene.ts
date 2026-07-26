@@ -13,6 +13,7 @@ export type CityPan = {
 export type CityScene = {
   dispose: () => void;
   resize: (width: number, height: number) => void;
+  setZoom: (zoom: number) => void;
   setCustomerCount: (count: number) => void;
 };
 
@@ -21,6 +22,8 @@ export function createCityScene(
   canvas: HTMLCanvasElement,
   initialCustomerCount: number,
   onPanChange: (pan: CityPan) => void,
+  onFirstDrag: () => void,
+  onZoomChange: (zoom: number) => void,
 ): CityScene {
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -91,27 +94,78 @@ export function createCityScene(
   let displayedScreenY = 0;
   let panLimitX = 120;
   let panLimitY = 80;
+  let viewportWidth = 1;
+  let viewportHeight = 1;
+  let zoom = 1;
   let reportedScreenX = Number.NaN;
   let reportedScreenY = Number.NaN;
   let dragging = false;
   let pointerId = -1;
   let lastX = 0;
   let lastY = 0;
+  let hasDragged = false;
+  const pointers = new Map<number, { x: number; y: number }>();
+  let pinchStartDistance = 0;
+  let pinchStartZoom = 1;
+
+  function updateProjection(): void {
+    const aspect = viewportWidth / viewportHeight;
+    const visibleSize = VIEW_SIZE / zoom;
+    camera.left = (-visibleSize * aspect) / 2;
+    camera.right = (visibleSize * aspect) / 2;
+    camera.top = visibleSize / 2;
+    camera.bottom = -visibleSize / 2;
+    camera.updateProjectionMatrix();
+  }
+
+  function setZoom(nextZoom: number, reportChange = false): void {
+    const boundedZoom = THREE.MathUtils.clamp(nextZoom, 0.8, 1.4);
+    if (zoom === boundedZoom) return;
+    zoom = boundedZoom;
+    updateProjection();
+    if (reportChange) onZoomChange(zoom);
+  }
+
+  function distanceBetweenPointers(): number {
+    const activePointers = [...pointers.values()];
+    const first = activePointers[0];
+    const second = activePointers[1];
+    if (!first || !second) return 0;
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  }
 
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== 0) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     dragging = true;
     pointerId = event.pointerId;
     lastX = event.clientX;
     lastY = event.clientY;
     canvas.setPointerCapture(pointerId);
     canvas.classList.add("is-dragging");
+    if (pointers.size === 2) {
+      pinchStartDistance = distanceBetweenPointers();
+      pinchStartZoom = zoom;
+    }
   }
 
   function onPointerMove(event: PointerEvent): void {
+    if (!pointers.has(event.pointerId)) return;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size >= 2) {
+      const distance = distanceBetweenPointers();
+      if (pinchStartDistance > 0) {
+        setZoom(pinchStartZoom * (distance / pinchStartDistance), true);
+      }
+      return;
+    }
     if (!dragging || event.pointerId !== pointerId) return;
     const deltaX = event.clientX - lastX;
     const deltaY = event.clientY - lastY;
+    if (!hasDragged && Math.hypot(deltaX, deltaY) >= 4) {
+      hasDragged = true;
+      onFirstDrag();
+    }
     targetScreenX = THREE.MathUtils.clamp(
       targetScreenX + deltaX,
       -panLimitX,
@@ -127,16 +181,32 @@ export function createCityScene(
   }
 
   function endDrag(event: PointerEvent): void {
-    if (event.pointerId !== pointerId) return;
+    pointers.delete(event.pointerId);
+    pinchStartDistance = 0;
+    const remainingPointer = pointers.entries().next().value;
+    if (remainingPointer) {
+      const [nextPointerId, point] = remainingPointer;
+      dragging = true;
+      pointerId = nextPointerId;
+      lastX = point.x;
+      lastY = point.y;
+      return;
+    }
     dragging = false;
     pointerId = -1;
     canvas.classList.remove("is-dragging");
+  }
+
+  function onWheel(event: WheelEvent): void {
+    event.preventDefault();
+    setZoom(zoom * (event.deltaY < 0 ? 1.1 : 0.9), true);
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", endDrag);
   canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("wheel", onWheel, { passive: false });
 
   const reducedMotion = window.matchMedia(
     "(prefers-reduced-motion: reduce)",
@@ -203,11 +273,10 @@ export function createCityScene(
 
   return {
     resize(width, height) {
-      const safeWidth = Math.max(width, 1);
-      const safeHeight = Math.max(height, 1);
-      const aspect = safeWidth / safeHeight;
-      panLimitX = Math.min(safeWidth * 0.2, 140);
-      panLimitY = Math.min(safeHeight * 0.16, 100);
+      viewportWidth = Math.max(width, 1);
+      viewportHeight = Math.max(height, 1);
+      panLimitX = Math.min(viewportWidth * 0.2, 140);
+      panLimitY = Math.min(viewportHeight * 0.16, 100);
       targetScreenX = THREE.MathUtils.clamp(
         targetScreenX,
         -panLimitX,
@@ -218,12 +287,11 @@ export function createCityScene(
         -panLimitY,
         panLimitY,
       );
-      camera.left = (-VIEW_SIZE * aspect) / 2;
-      camera.right = (VIEW_SIZE * aspect) / 2;
-      camera.top = VIEW_SIZE / 2;
-      camera.bottom = -VIEW_SIZE / 2;
-      camera.updateProjectionMatrix();
-      renderer.setSize(safeWidth, safeHeight, false);
+      updateProjection();
+      renderer.setSize(viewportWidth, viewportHeight, false);
+    },
+    setZoom(nextZoom) {
+      setZoom(nextZoom);
     },
     setCustomerCount(count) {
       requestedCount = Math.min(Math.max(Math.floor(count), 0), units.length);
@@ -235,6 +303,7 @@ export function createCityScene(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", endDrag);
       canvas.removeEventListener("pointercancel", endDrag);
+      canvas.removeEventListener("wheel", onWheel);
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();

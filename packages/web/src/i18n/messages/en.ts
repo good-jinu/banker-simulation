@@ -91,6 +91,8 @@ export const en = {
     trustBlocked: "External lenders blocked",
     loanStatusMap: "Loan status map",
     dragCityHint: "DRAG TO MOVE THE CITY",
+    zoomIn: "Zoom in",
+    zoomOut: "Zoom out",
     waiting: (days: number) => `D+${days} waiting`,
     repaymentIn: (days: number) => `D-${days}`,
     loanRequest: (rate: number) => `Loan request · ${rate}% interest`,
