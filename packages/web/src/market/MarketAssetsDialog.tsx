@@ -67,7 +67,7 @@ export function MarketAssetsDialog({
         <div className={`trust-card trust-${trustBand}`}>
           <div>
             <span>{m.trust}</span>
-            <strong>{m.trustScore(trust)}</strong>
+            <strong>{m.trustScore(Math.floor(trust))}</strong>
           </div>
           <div className="trust-meter" aria-hidden="true">
             <span style={{ width: `${trust}%` }} />

@@ -78,7 +78,7 @@ export function MarketResultReport({
             </div>
             <div>
               <span>{m.trust}</span>
-              <strong>{m.trustScore(world.trust)}</strong>
+              <strong>{m.trustScore(Math.round(world.trust))}</strong>
             </div>
             <div>
               <span>{m.contractsCompleted}</span>

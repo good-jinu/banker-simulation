@@ -73,17 +73,6 @@ export const en = {
       `PAID ${name} ${amount}`,
     noticeFundingDefault: (name: string, amount: string) =>
       `MISSED ${name} ${amount}`,
-    // Qualitative only — the player is told what moved, never by how much.
-    trustContractsCompleting:
-      "Trust is rising — more customers are completing their contracts.",
-    trustEarningsSustainable:
-      "Trust is rising — the bank's earnings are becoming sustainable.",
-    trustDefaultsWeakened:
-      "Trust is under pressure — defaults weakened the loan book.",
-    trustObligationUnpaid:
-      "Trust cannot grow further while an obligation remains unpaid.",
-    trustBookThinning:
-      "Trust is slipping — the bank is serving fewer customers than it was.",
     opinionTitle: "Market Opinion",
     opinionReach: "Customer reach",
     opinionStrength: "Financial strength",
@@ -125,9 +114,7 @@ export const en = {
     currentDate: "CURRENT DATE",
     currentCash: "Cash",
     trust: "Bank trust",
-    onlyGoal: "ONLY GOAL",
     trustScore: (value: number) => `${value}/100`,
-    trustGoalCaption: "Keep good contracts. Reach 100.",
     trustStrong: "Strong lender confidence",
     trustSteady: "Steady lender confidence",
     trustAtRisk: "Lender confidence at risk",
@@ -279,12 +266,24 @@ export const en = {
     productRuleSummary: (income: string, minimum: string, maximum: string) =>
       `Income ${income}+ with loans from ${minimum} to ${maximum}`,
     productDetailsEyebrow: "LOAN PRODUCT",
+    depositProductDetailsEyebrow: "DEPOSIT PRODUCT",
     productActive: "ACTIVE",
     productPaused: "PAUSED",
     productActiveCopy:
       "This product is accepting matching requests and funding them automatically.",
     productPausedCopy:
       "This product is paused. Existing contracts continue, but new requests will not be funded automatically.",
+    depositActiveCopy:
+      "This product is accepting customer deposits automatically.",
+    depositPausedCopy:
+      "This product is paused. Existing deposits remain, but new deposits will not be accepted automatically.",
+    productCustomersCount: (count: number) => `Connected customers (${count})`,
+    productDepositorsCount: (count: number) =>
+      `Connected depositors (${count})`,
+    productCustomersEmpty:
+      "No customers yet — matching requests will appear here.",
+    productDepositorsEmpty:
+      "No depositors yet — matching deposits will appear here.",
     pauseProduct: "Pause product",
     resumeProduct: "Resume product",
     alertGuard: "Alert guard",
@@ -345,6 +344,8 @@ export const en = {
     productInsufficientCash: (cost: string) =>
       `You need ${cost} cash to create this product.`,
     productTutorialClick: "NEXT: ADD A PRODUCT ↓",
+    productPickerLoan: "Lend",
+    productPickerDeposit: "Deposit",
   },
 };
 

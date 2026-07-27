@@ -27,6 +27,7 @@ import {
   type LoanProduct,
   type MarketSegment,
   type MarketWorld,
+  type Product,
 } from "./market-world.ts";
 import {
   hasMarketAlertForSegment,
@@ -40,7 +41,6 @@ type MarketGameViewProps = {
   activeFlow: FlowAnimation | null;
   loanRequestNotice: Customer | null;
   trustPulse: "up" | "down" | null;
-  trustMessage: string | null;
   clockView: ClockView;
   modalOpen: boolean;
   hasDraggedMap: boolean;
@@ -50,8 +50,9 @@ type MarketGameViewProps = {
   onOpenNews: () => void;
   onOpenProductBuilder: () => void;
   onOpenDepositProductBuilder: () => void;
+  onProductPickerOpenChange: (open: boolean) => void;
   onSelectCustomer: (customer: Customer) => void;
-  onSelectProduct: (product: LoanProduct) => void;
+  onSelectProduct: (product: Product) => void;
   onOpenFunding: () => void;
   onToggleClock: () => void;
   onCycleSpeed: () => void;
@@ -65,7 +66,6 @@ export function MarketGameView({
   activeFlow,
   loanRequestNotice,
   trustPulse,
-  trustMessage,
   clockView,
   modalOpen,
   hasDraggedMap,
@@ -75,6 +75,7 @@ export function MarketGameView({
   onOpenNews,
   onOpenProductBuilder,
   onOpenDepositProductBuilder,
+  onProductPickerOpenChange,
   onSelectCustomer,
   onSelectProduct,
   onOpenFunding,
@@ -84,6 +85,10 @@ export function MarketGameView({
 }: MarketGameViewProps) {
   const m = messagesFor(locale).market;
   const [showPlayPrompt, setShowPlayPrompt] = useState(false);
+  const [showProductPicker, setShowProductPicker] = useState(false);
+  useEffect(() => {
+    onProductPickerOpenChange(showProductPicker);
+  }, [showProductPicker, onProductPickerOpenChange]);
   const mapWorldRef = useRef<HTMLDivElement>(null);
   const mapPanRef = useRef<CityPan>({ x: 0, y: 0 });
   const mapZoomRef = useRef(1);
@@ -111,7 +116,6 @@ export function MarketGameView({
     cash,
     day,
     customers,
-    depositors,
     funding,
     products,
     loanCount,
@@ -129,8 +133,10 @@ export function MarketGameView({
   } = capabilities;
   const showDepositProductLesson = onboarding === "deposits";
   // Trust walks toward its target in fractional steps; the rail shows whole
-  // points so a slow climb doesn't read as jitter.
-  const displayedTrust = Math.round(trust);
+  // points so a slow climb doesn't read as jitter. Floor, not round: the
+  // mission-clear check needs the raw value at 100, and rounding 99.5+ up
+  // to "100" would show the goal as met a step before it actually is.
+  const displayedTrust = Math.floor(trust);
   const visibleCustomers = customers.filter((customer) => {
     if (customer.appears > day) return false;
     if (openingLesson || awaitingFirstRepayment)
@@ -139,11 +145,8 @@ export function MarketGameView({
       return customer.id !== world.config.introCustomerId;
     return true;
   });
-  const visibleDepositors = depositors.filter(
-    (depositor) =>
-      showDeposits &&
-      depositor.appears <= day &&
-      depositor.status === "accepted",
+  const mapCustomers = visibleCustomers.filter(
+    (customer) => !customer.productId,
   );
   const introCustomer = customers.find(
     (customer) => customer.id === world.config.introCustomerId,
@@ -151,6 +154,14 @@ export function MarketGameView({
   const productLessonReady = introCustomer?.status !== "waiting";
   const hasLoanProduct = products.some((product) => product.kind === "loan");
   const highlightProductButton = productLessonReady && !hasLoanProduct;
+  const canAddProduct = showProducts || showDepositProductLesson;
+  const highlightAddProduct =
+    highlightProductButton || showDepositProductLesson;
+  const addProductCoachmark = showDepositProductLesson
+    ? "launch-deposit-product"
+    : highlightProductButton
+      ? "create-loan-product"
+      : null;
   const showFundingHint = fundingEligible;
   const unreadNews = unreadMarketNewsCount(world.news);
   const nextMovement = upcomingRepayment(world);
@@ -223,41 +234,6 @@ export function MarketGameView({
             {unreadNews > 0 && <b>{unreadNews}</b>}
           </button>
         )}
-        {showProducts && (
-          <div className="product-launcher-wrap">
-            {highlightProductButton && (
-              <span className="product-tutorial-callout" role="status">
-                {m.productTutorialClick}
-              </span>
-            )}
-            <button
-              className={`product-launcher${highlightProductButton ? " tutorial-highlight" : ""}`}
-              onClick={onOpenProductBuilder}
-              aria-label={m.openProducts}
-              disabled={!productLessonReady && !hasLoanProduct}
-              {...coachmarkTarget("create-loan-product")}
-            >
-              <Plus aria-hidden="true" />
-              <span className="sr-only">{m.addProduct}</span>
-            </button>
-          </div>
-        )}
-        {showDepositProductLesson && (
-          <div className="product-launcher-wrap">
-            <span className="product-tutorial-callout" role="status">
-              {m.onboardingDepositProduct}
-            </span>
-            <button
-              className="product-launcher tutorial-highlight"
-              onClick={onOpenDepositProductBuilder}
-              aria-label={m.depositProductTitle}
-              {...coachmarkTarget("launch-deposit-product")}
-            >
-              <Landmark aria-hidden="true" />
-              <span className="sr-only">{m.depositProductTitle}</span>
-            </button>
-          </div>
-        )}
       </header>
 
       <section
@@ -282,7 +258,6 @@ export function MarketGameView({
             aria-label={`${m.trust} ${m.trustScore(displayedTrust)}`}
           >
             <div className="trust-rail-header">
-              <small>{m.onlyGoal}</small>
               <span>{m.trust}</span>
               <strong>{m.trustScore(displayedTrust)}</strong>
             </div>
@@ -298,9 +273,6 @@ export function MarketGameView({
                 <small>0</small>
               </div>
             </div>
-            <span className="trust-rail-caption">
-              {trustMessage ?? m.trustGoalCaption}
-            </span>
           </aside>
         )}
         <div className="map-world-layer" ref={mapWorldRef}>
@@ -323,7 +295,23 @@ export function MarketGameView({
                 <path d="M 0 0 L 10 5 L 0 10 z" />
               </marker>
             </defs>
-            {visibleCustomers
+            {products
+              .filter(
+                (product) =>
+                  (product.kind === "loan" && showProducts) ||
+                  (product.kind === "deposit" && showDeposits),
+              )
+              .map((product) => (
+                <line
+                  key={product.id}
+                  className="future-edge product-edge"
+                  x1="50"
+                  y1="49"
+                  x2={product.x}
+                  y2={product.y}
+                />
+              ))}
+            {mapCustomers
               .filter((customer) => customer.status === "accepted")
               .map((customer) => (
                 <line
@@ -336,29 +324,6 @@ export function MarketGameView({
                   markerEnd="url(#arrow-in)"
                 />
               ))}
-            {products
-              .filter(
-                (product): product is LoanProduct => product.kind === "loan",
-              )
-              .flatMap((product) =>
-                visibleCustomers
-                  .filter(
-                    (customer) =>
-                      customer.status === "accepted" &&
-                      customer.productId === product.id,
-                  )
-                  .map((customer) => (
-                    <line
-                      key={`${product.id}-${customer.id}`}
-                      className="future-edge product-edge"
-                      x1={product.x}
-                      y1={product.y}
-                      x2={customer.x}
-                      y2={customer.y}
-                      markerEnd="url(#arrow-in)"
-                    />
-                  )),
-              )}
             {funding
               .filter((lender) => lender.accepted)
               .map((lender) => (
@@ -389,6 +354,76 @@ export function MarketGameView({
             <span className="node-orbit" />
             <span className="bank-icon">
               <img src="/assets/pop-art/atoms/bank-hub-marker.svg" alt="" />
+              {canAddProduct && (
+                <div className="product-add-wrap">
+                  {highlightAddProduct && (
+                    <span className="product-tutorial-callout" role="status">
+                      {showDepositProductLesson
+                        ? m.onboardingDepositProduct
+                        : m.productTutorialClick}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className={`product-add-button${highlightAddProduct ? " tutorial-highlight" : ""}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setShowProductPicker((open) => !open);
+                    }}
+                    aria-label={m.addProduct}
+                    aria-expanded={showProductPicker}
+                    disabled={
+                      !productLessonReady && !hasLoanProduct && !showDeposits
+                    }
+                    {...coachmarkTarget(addProductCoachmark)}
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
+                  {showProductPicker && (
+                    <>
+                      <div
+                        className="product-picker-backdrop"
+                        onMouseDown={() => setShowProductPicker(false)}
+                      />
+                      <div
+                        className="product-type-menu"
+                        role="menu"
+                        onMouseDown={(event) => event.stopPropagation()}
+                      >
+                        {showProducts && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="product-type-option"
+                            disabled={!productLessonReady && !hasLoanProduct}
+                            onClick={() => {
+                              setShowProductPicker(false);
+                              onOpenProductBuilder();
+                            }}
+                          >
+                            <SlidersHorizontal aria-hidden="true" />
+                            <span>{m.productPickerLoan}</span>
+                          </button>
+                        )}
+                        {showDeposits && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="product-type-option"
+                            onClick={() => {
+                              setShowProductPicker(false);
+                              onOpenDepositProductBuilder();
+                            }}
+                          >
+                            <Landmark aria-hidden="true" />
+                            <span>{m.productPickerDeposit}</span>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </span>
             <strong>{money(cash)}</strong>
           </div>
@@ -427,15 +462,24 @@ export function MarketGameView({
                   key={product.id}
                   className={`product-node deposit-product-node map-node${product.active ? "" : " paused"}`}
                   style={{ left: `${product.x}%`, top: `${product.y}%` }}
+                  role="button"
+                  tabIndex={0}
                   aria-label={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
                   title={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
+                  onClick={() => onSelectProduct(product)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectProduct(product);
+                    }
+                  }}
                 >
                   <span className="product-icon">
                     <Landmark aria-hidden="true" />
                   </span>
                 </div>
               ))}
-          {visibleCustomers.map((customer) => {
+          {mapCustomers.map((customer) => {
             const isWaiting = customer.status === "waiting";
             return (
               <div
@@ -501,29 +545,6 @@ export function MarketGameView({
                           money(customer.amount * (1 + customer.rate / 100)),
                         )}
                   </small>
-                </span>
-              </div>
-            );
-          })}
-          {visibleDepositors.map((depositor) => {
-            return (
-              <div
-                key={depositor.id}
-                className={`depositor-node map-node ${depositor.status}`}
-                style={{ left: `${depositor.x}%`, top: `${depositor.y}%` }}
-              >
-                <span className="portrait">
-                  <img
-                    src={depositor.avatar}
-                    alt={m.customerAlt(
-                      localize(depositor.name, locale),
-                      m.mapMarker,
-                    )}
-                  />
-                </span>
-                <span className="node-label">
-                  <strong>{m.depositBalance(money(depositor.balance))}</strong>
-                  <small>{m.depositRate(depositor.rate)}</small>
                 </span>
               </div>
             );

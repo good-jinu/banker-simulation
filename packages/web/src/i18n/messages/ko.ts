@@ -75,15 +75,6 @@ export const ko: Messages = {
       `${name} ${amount} 상환 완료`,
     noticeFundingDefault: (name: string, amount: string) =>
       `${name} ${amount} 연체`,
-    // 정성적 표현만 사용한다. 변동 폭은 플레이어에게 드러내지 않는다.
-    trustContractsCompleting:
-      "계약을 끝까지 마친 고객이 늘어 신뢰도가 상승하고 있다.",
-    trustEarningsSustainable:
-      "은행의 수익이 자리를 잡으며 신뢰도가 상승하고 있다.",
-    trustDefaultsWeakened: "채무불이행으로 대출 자산과 신뢰도가 약화됐다.",
-    trustObligationUnpaid:
-      "갚지 못한 채무가 남아 있는 동안에는 신뢰도가 오르지 않는다.",
-    trustBookThinning: "은행이 상대하는 고객이 줄어 신뢰도가 하락하고 있다.",
     opinionTitle: "시장 평판",
     opinionReach: "고객 기반",
     opinionStrength: "재무 건전성",
@@ -124,9 +115,7 @@ export const ko: Messages = {
     currentDate: "현재 날짜",
     currentCash: "현금",
     trust: "은행 신뢰도",
-    onlyGoal: "단 하나의 목표",
     trustScore: (value: number) => `${value}/100`,
-    trustGoalCaption: "좋은 계약을 지켜 100을 달성하세요.",
     trustStrong: "대주 신뢰도가 높음",
     trustSteady: "대주 신뢰도가 안정적",
     trustAtRisk: "대주 신뢰도가 위험함",
@@ -276,12 +265,22 @@ export const ko: Messages = {
     productRuleSummary: (income: string, minimum: string, maximum: string) =>
       `${income}+ 소득, ${minimum}–${maximum} 대출`,
     productDetailsEyebrow: "대출 상품",
+    depositProductDetailsEyebrow: "예금 상품",
     productActive: "활성",
     productPaused: "일시정지",
     productActiveCopy:
       "이 상품은 조건에 맞는 신청을 받고 자동으로 대출을 실행합니다.",
     productPausedCopy:
       "이 상품은 일시정지되었습니다. 기존 계약은 계속 유지되지만 새 신청은 자동 실행되지 않습니다.",
+    depositActiveCopy: "이 상품은 자동으로 고객 예금을 받고 있습니다.",
+    depositPausedCopy:
+      "이 상품은 일시정지되었습니다. 기존 예금은 유지되지만 새 예금은 자동으로 받지 않습니다.",
+    productCustomersCount: (count: number) => `연결된 고객 (${count})`,
+    productDepositorsCount: (count: number) => `연결된 예금자 (${count})`,
+    productCustomersEmpty:
+      "아직 고객이 없습니다 — 조건에 맞는 신청이 이곳에 표시됩니다.",
+    productDepositorsEmpty:
+      "아직 예금자가 없습니다 — 조건에 맞는 예금이 이곳에 표시됩니다.",
     pauseProduct: "상품 일시정지",
     resumeProduct: "상품 재개",
     alertGuard: "경보 안전장치",
@@ -341,5 +340,7 @@ export const ko: Messages = {
     productInsufficientCash: (cost: string) =>
       `이 상품을 만들려면 현금 ${cost}가 필요합니다.`,
     productTutorialClick: "다음: 상품 추가 클릭 ↓",
+    productPickerLoan: "대출",
+    productPickerDeposit: "예금",
   },
 };

@@ -9,24 +9,7 @@ import {
   type FlowAnimation,
   type FlowLabels,
 } from "../market-flow.ts";
-import type { Customer, MarketWorld, TrustReason } from "../market-world.ts";
-
-type MarketMessages = ReturnType<typeof messagesFor>["market"];
-
-function trustReasonMessage(reason: TrustReason, m: MarketMessages): string {
-  switch (reason) {
-    case "contracts-completing":
-      return m.trustContractsCompleting;
-    case "earnings-sustainable":
-      return m.trustEarningsSustainable;
-    case "defaults-weakened-book":
-      return m.trustDefaultsWeakened;
-    case "obligation-unpaid":
-      return m.trustObligationUnpaid;
-    case "book-thinning":
-      return m.trustBookThinning;
-  }
-}
+import type { Customer, MarketWorld } from "../market-world.ts";
 
 type UseMarketEffectsOptions = {
   world: MarketWorld;
@@ -49,9 +32,6 @@ export function useMarketEffects({
   const [flowQueue, setFlowQueue] = useState<FlowAnimation[]>([]);
   const [activeFlow, setActiveFlow] = useState<FlowAnimation | null>(null);
   const [trustPulse, setTrustPulse] = useState<"up" | "down" | null>(null);
-  /** The standing explanation under the trust rail. Unlike `notice` it does
-   * not time out — it stays until the bank's standing next moves. */
-  const [trustMessage, setTrustMessage] = useState<string | null>(null);
   const flowId = useRef(0);
 
   useEffect(() => {
@@ -128,11 +108,7 @@ export function useMarketEffects({
           onOpenFunding();
           setNotice(m.fundingArrived);
           break;
-        // Deliberately not routed through `notice`: the transient banner is
-        // where the concrete event ("DEFAULT Mina $100") belongs, and the
-        // trust reading would otherwise overwrite it on the very same tick.
         case "trust-shift":
-          setTrustMessage(trustReasonMessage(event.reason, m));
           setTrustPulse(event.direction);
           break;
         case "insolvent":
@@ -229,6 +205,5 @@ export function useMarketEffects({
     notice,
     setNotice,
     trustPulse,
-    trustMessage,
   };
 }
