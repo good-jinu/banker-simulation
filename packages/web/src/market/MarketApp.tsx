@@ -72,7 +72,6 @@ export function MarketApp({
   const [productBuilderOpen, setProductBuilderOpen] = useState(false);
   const [fundingOpen, setFundingOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
-  const [goalsOpen, setGoalsOpen] = useState(false);
   const [clockView, setClockView] = useState<ClockView>({
     paused: true,
     speed: 1,
@@ -94,14 +93,19 @@ export function MarketApp({
   useMarketClock(session.sessionReady, dispatch, clockRef);
   const openProductBuilder = useCallback(() => setProductBuilderOpen(true), []);
   const openFunding = useCallback(() => setFundingOpen(true), []);
-  const { activeFlow, loanRequestNotice, notice, setNotice, trustPulse } =
-    useMarketEffects({
-      world,
-      locale,
-      hasProductGoal: world.config.goals.productCount > 0,
-      onOpenProductBuilder: openProductBuilder,
-      onOpenFunding: openFunding,
-    });
+  const {
+    activeFlow,
+    loanRequestNotice,
+    notice,
+    setNotice,
+    trustPulse,
+    trustMessage,
+  } = useMarketEffects({
+    world,
+    locale,
+    onOpenProductBuilder: openProductBuilder,
+    onOpenFunding: openFunding,
+  });
   const modalOpen = Boolean(
     selected ||
     productBuilderOpen ||
@@ -114,8 +118,6 @@ export function MarketApp({
   useMarketModalClock(modalOpen, clockRef, setClockView);
 
   const { cash, fundingEligible } = { cash: world.cash, ...summarize(world) };
-  const hasProductGoal = world.config.goals.productCount > 0;
-
   const approve = useCallback(
     (customer: Customer) => {
       setSelected(null);
@@ -136,10 +138,9 @@ export function MarketApp({
     (customer: Customer) => {
       dispatch({ type: "reject", customerId: customer.id });
       setSelected(null);
-      if (hasProductGoal && world.products.length === 0)
-        setProductBuilderOpen(true);
+      if (world.products.length === 0) setProductBuilderOpen(true);
     },
-    [dispatch, hasProductGoal, world.products.length],
+    [dispatch, world.products.length],
   );
   const createLoanProduct = useCallback(
     (rules: LoanProductRules) => {
@@ -214,14 +215,13 @@ export function MarketApp({
         activeFlow={activeFlow}
         loanRequestNotice={loanRequestNotice}
         trustPulse={trustPulse}
+        trustMessage={trustMessage}
         clockView={clockView}
         modalOpen={modalOpen}
         hasDraggedMap={ui.hasDraggedMap}
-        goalsOpen={goalsOpen}
         onBack={onBack}
         onOpenAssets={() => setAssetsOpen(true)}
         onOpenProductBuilder={openProductBuilder}
-        onToggleGoals={() => setGoalsOpen((value) => !value)}
         onSelectCustomer={setSelected}
         onSelectProduct={(product) => setSelectedProductId(product.id)}
         onOpenFunding={openFunding}

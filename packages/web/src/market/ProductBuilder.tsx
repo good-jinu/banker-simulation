@@ -22,6 +22,7 @@ export function ProductBuilder({
   const [rules, setRules] = useState<LoanProductRules>({
     minimumIncome: 1_500,
     occupation: "employed",
+    interestRate: 10,
     minimumAmount: 300,
     maximumAmount: 1_000,
     minimumTerm: 6,
@@ -103,6 +104,17 @@ export function ProductBuilder({
               {m.productOccupationSelfEmployed}
             </option>
           </select>
+        </label>
+        <label>
+          <span>{m.productInterestRate}</span>
+          <input
+            type="number"
+            min="1"
+            max="30"
+            step="1"
+            value={rules.interestRate}
+            onChange={setNumber("interestRate")}
+          />
         </label>
         <label>
           <span>{m.productLoanRange}</span>

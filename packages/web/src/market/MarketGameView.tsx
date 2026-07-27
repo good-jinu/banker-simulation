@@ -1,15 +1,10 @@
 import {
   ArrowLeft,
-  Check,
-  Coins,
   Landmark,
   Pause,
   Play,
   Plus,
-  ShieldCheck,
   SlidersHorizontal,
-  Users,
-  Wallet,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
@@ -23,7 +18,6 @@ import type { MarketCampaignStage } from "./market-campaign.ts";
 import { MapViewport } from "./map/MapViewport.tsx";
 import {
   avatarFor,
-  goalsFor,
   summarize,
   type Customer,
   type LoanProduct,
@@ -37,14 +31,13 @@ type MarketGameViewProps = {
   activeFlow: FlowAnimation | null;
   loanRequestNotice: Customer | null;
   trustPulse: "up" | "down" | null;
+  trustMessage: string | null;
   clockView: ClockView;
   modalOpen: boolean;
   hasDraggedMap: boolean;
-  goalsOpen: boolean;
   onBack: () => void;
   onOpenAssets: () => void;
   onOpenProductBuilder: () => void;
-  onToggleGoals: () => void;
   onSelectCustomer: (customer: Customer) => void;
   onSelectProduct: (product: LoanProduct) => void;
   onOpenFunding: () => void;
@@ -60,14 +53,13 @@ export function MarketGameView({
   activeFlow,
   loanRequestNotice,
   trustPulse,
+  trustMessage,
   clockView,
   modalOpen,
   hasDraggedMap,
-  goalsOpen,
   onBack,
   onOpenAssets,
   onOpenProductBuilder,
-  onToggleGoals,
   onSelectCustomer,
   onSelectProduct,
   onOpenFunding,
@@ -82,29 +74,18 @@ export function MarketGameView({
     if (!mapWorldRef.current) return;
     mapWorldRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
   }, []);
-  const { netWorth, fundingEligible, trustBand } = summarize(world);
-  const levelGoals = goalsFor(world);
-  const hasProductGoal = levelGoals.productCount > 0;
-  const hasSurvivalGoal = levelGoals.survivalDay !== null;
-  const survivalDay = levelGoals.survivalDay ?? 0;
-  const {
-    cash,
-    day,
-    customers,
-    funding,
-    products,
-    loanCount,
-    cumulativeLent,
-    trust,
-  } = world;
+  const { fundingEligible, trustBand } = summarize(world);
+  const { cash, day, customers, funding, products, loanCount, trust } = world;
+  // Trust walks toward its target in fractional steps; the rail shows whole
+  // points so a slow climb doesn't read as jitter.
+  const displayedTrust = Math.round(trust);
   const visibleCustomers = customers.filter(
     (customer) => customer.appears <= day,
   );
   const introCustomer = customers.find(
     (customer) => customer.id === world.config.introCustomerId,
   );
-  const productLessonReady =
-    hasProductGoal && introCustomer?.status !== "waiting";
+  const productLessonReady = introCustomer?.status !== "waiting";
   const highlightProductButton = productLessonReady && products.length === 0;
   const showFundingHint = fundingEligible;
 
@@ -114,47 +95,6 @@ export function MarketGameView({
     const timeout = window.setTimeout(() => setShowPlayPrompt(true), 3_000);
     return () => window.clearTimeout(timeout);
   }, [clockView.paused, modalOpen]);
-  const goals = [
-    ...(hasProductGoal
-      ? [
-          {
-            icon: SlidersHorizontal,
-            label: localize(stage.config.copy.goalProductLabel, locale),
-            progress: `${Math.min(products.length, levelGoals.productCount)} / ${levelGoals.productCount}`,
-            completed: products.length >= levelGoals.productCount,
-          },
-        ]
-      : []),
-    {
-      icon: Users,
-      label: localize(stage.config.copy.goalLoansLabel, locale),
-      progress: `${m.loanProgress(Math.min(loanCount, levelGoals.loanCount))} / ${m.loanProgress(levelGoals.loanCount)}`,
-      completed: loanCount >= levelGoals.loanCount,
-    },
-    {
-      icon: Coins,
-      label: localize(stage.config.copy.goalCumulativeLentLabel, locale),
-      progress: `${money(Math.min(cumulativeLent, levelGoals.cumulativeLent))} / ${money(levelGoals.cumulativeLent)}`,
-      completed: cumulativeLent >= levelGoals.cumulativeLent,
-    },
-    {
-      icon: Wallet,
-      label: localize(stage.config.copy.goalNetWorthLabel, locale),
-      progress: `${money(netWorth)} / ${money(levelGoals.netWorth)}`,
-      completed: netWorth >= levelGoals.netWorth,
-    },
-    ...(hasSurvivalGoal
-      ? [
-          {
-            icon: ShieldCheck,
-            label: m.goalSurvive(survivalDay),
-            progress: `${m.dayProgress(Math.min(day + 1, survivalDay))} / ${m.dayProgress(survivalDay)}`,
-            completed: day + 1 >= survivalDay,
-          },
-        ]
-      : []),
-  ];
-  const activeGoalIndex = goals.findIndex((goal) => !goal.completed);
   const flowStyle = activeFlow
     ? ({
         "--from-x": `${activeFlow.from.x}%`,
@@ -187,19 +127,22 @@ export function MarketGameView({
             </span>
           </button>
         </div>
-        {hasProductGoal && (
-          <div className="product-launcher-wrap">
-            <button
-              className={`product-launcher${highlightProductButton ? " tutorial-highlight" : ""}`}
-              onClick={onOpenProductBuilder}
-              aria-label={m.openProducts}
-              disabled={!productLessonReady && products.length === 0}
-            >
-              <Plus aria-hidden="true" />
-              <span className="sr-only">{m.addProduct}</span>
-            </button>
-          </div>
-        )}
+        <div className="product-launcher-wrap">
+          {highlightProductButton && (
+            <span className="product-tutorial-callout" role="status">
+              {m.productTutorialClick}
+            </span>
+          )}
+          <button
+            className={`product-launcher${highlightProductButton ? " tutorial-highlight" : ""}`}
+            onClick={onOpenProductBuilder}
+            aria-label={m.openProducts}
+            disabled={!productLessonReady && products.length === 0}
+          >
+            <Plus aria-hidden="true" />
+            <span className="sr-only">{m.addProduct}</span>
+          </button>
+        </div>
       </header>
 
       <section className="state-map" aria-label={m.loanStatusMap}>
@@ -214,11 +157,12 @@ export function MarketGameView({
         />
         <aside
           className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
-          aria-label={`${m.trust} ${m.trustScore(trust)}`}
+          aria-label={`${m.trust} ${m.trustScore(displayedTrust)}`}
         >
           <div className="trust-rail-header">
+            <small>{m.onlyGoal}</small>
             <span>{m.trust}</span>
-            <strong>{m.trustScore(trust)}</strong>
+            <strong>{m.trustScore(displayedTrust)}</strong>
           </div>
           <div className="trust-rail-gauge">
             <div className="trust-rail-meter" aria-hidden="true">
@@ -232,53 +176,10 @@ export function MarketGameView({
               <small>0</small>
             </div>
           </div>
+          <span className="trust-rail-caption">
+            {trustMessage ?? m.trustGoalCaption}
+          </span>
         </aside>
-        <div
-          className={`goal-overlay ${activeGoalIndex >= 0 ? "has-active" : "all-complete"}${goalsOpen ? " open" : ""}`}
-        >
-          <button
-            className="goal-toggle"
-            onClick={onToggleGoals}
-            aria-expanded={goalsOpen}
-          >
-            <span>
-              {activeGoalIndex >= 0
-                ? m.goalsPanelTitle(String(stage.number).padStart(2, "0"))
-                : m.allGoalsComplete}
-            </span>
-            <strong>
-              {goals.filter((goal) => goal.completed).length} / {goals.length}
-            </strong>
-            <b>{goalsOpen ? "−" : "+"}</b>
-          </button>
-          {goalsOpen && (
-            <div className="goal-list">
-              {goals.map((goal, index) => {
-                const GoalIcon = goal.icon;
-                return (
-                  <div
-                    key={goal.label}
-                    className={
-                      goal.completed
-                        ? "completed"
-                        : index === activeGoalIndex
-                          ? "active"
-                          : "locked"
-                    }
-                  >
-                    <span className="goal-check">
-                      {goal.completed ? <Check /> : <GoalIcon />}
-                    </span>
-                    <p>
-                      <strong>{goal.label}</strong>
-                      <small>{goal.progress}</small>
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
         <div className="map-world-layer" ref={mapWorldRef}>
           <svg
             className="connection-layer"

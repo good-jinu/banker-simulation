@@ -2,9 +2,22 @@ import type { LocalText } from "../i18n/local-text.ts";
 import {
   marketStageByLevel,
   marketStageById,
-  type MarketGoals,
   type MarketStageConfig,
 } from "./market-campaign.ts";
+import {
+  approachTrust,
+  assessTrust,
+  decayReputation,
+  emptyReputation,
+  marketOpinion,
+  openingTrust,
+  rateFairness,
+  TRUST_COLLAPSE,
+  type MarketOpinion,
+  type Reputation,
+  type TrustAssessment,
+  type TrustContext,
+} from "./market-trust.ts";
 
 /**
  * Pure simulation core for the open-market level. The world is plain data,
@@ -24,6 +37,7 @@ export type OccupationRule = "any" | "employed" | "self-employed";
 export type LoanProductRules = {
   minimumIncome: number;
   occupation: OccupationRule;
+  interestRate: number;
   minimumAmount: number;
   maximumAmount: number;
   minimumTerm: number;
@@ -87,10 +101,30 @@ export type Funding = {
   defaulted: boolean;
 };
 
+/**
+ * Why the bank's standing moved today. Derived from the day's events rather
+ * than from a stored diff, so the message always names a cause the player just
+ * watched happen. Deliberately qualitative: no point values are ever surfaced.
+ */
+export type TrustReason =
+  | "contracts-completing"
+  | "earnings-sustainable"
+  | "defaults-weakened-book"
+  | "obligation-unpaid"
+  | "book-thinning";
+
 export type MarketEvent =
   | { type: "repayment"; amount: number }
-  | { type: "customer-repayment"; customer: Customer; amount: number }
-  | { type: "default"; customer: Customer; risk: number }
+  | {
+      type: "customer-repayment";
+      customer: Customer;
+      amount: number;
+    }
+  | {
+      type: "default";
+      customer: Customer;
+      risk: number;
+    }
   | { type: "loan-request"; customer: Customer }
   | { type: "transfer"; from: string; to: string; amount: number }
   | { type: "product-created"; product: Product }
@@ -106,16 +140,15 @@ export type MarketEvent =
       type: "funding-repayment";
       lender: Funding;
       amount: number;
-      trustDelta: 2;
     }
   | {
       type: "funding-default";
       lender: Funding;
       amount: number;
-      trustDelta: -20;
     }
   | { type: "funding-settlement"; lender: Funding; amount: number }
   | { type: "funding-unlocked" }
+  | { type: "trust-shift"; direction: "up" | "down"; reason: TrustReason }
   | { type: "insolvent" }
   | { type: "mission-clear" };
 
@@ -134,7 +167,11 @@ export type MarketWorld = {
   missionCleared: boolean;
   insolvent: boolean;
   failureReason: FailureReason;
+  /** The displayed score. Never added to directly — it walks toward the
+   * composite computed from `reputation` once per day. */
   trust: number;
+  /** Decayed evidence the composite is recomputed from. */
+  reputation: Reputation;
   fundingAnnounced: boolean;
   /** Events produced by the most recent action only. */
   events: MarketEvent[];
@@ -149,12 +186,6 @@ export type MarketAction =
   | { type: "borrow"; lenderId: string }
   | { type: "create-product"; product: LoanProduct }
   | { type: "set-product-active"; productId: string; active: boolean };
-
-export const GOALS: MarketGoals =
-  marketStageByLevel("first-yield").config.goals;
-export const CHALLENGE_GOALS: MarketGoals = marketStageByLevel(
-  "credit-under-pressure",
-).config.goals;
 
 export const FIRST_CUSTOMER: Customer =
   marketStageByLevel("first-yield").config.customerSeeds[0]!;
@@ -262,7 +293,10 @@ export function createWorld(
     missionCleared: false,
     insolvent: false,
     failureReason: null,
-    trust: 80,
+    // An unknown bank opens at the same standing its empty record implies:
+    // no reach, no earnings, and a neutral prior on reliability.
+    trust: openingTrust(config.startingCash),
+    reputation: emptyReputation(),
     fundingAnnounced: false,
     events: [],
   };
@@ -282,15 +316,26 @@ export function defaultRisk(customer: Customer): number {
   return Math.min(55, Math.max(5, Math.round(62 - incomeToLoan * 18)));
 }
 
-/**
- * How many customers a loan product can sign in a single day. A trusted bank
- * draws a bigger queue than one the market is wary of, so this scales with
- * the same trust bands the trust rail shows the player.
- */
-export function loanAutomationCapacity(trust: number): number {
-  if (trust >= 80) return 3;
-  if (trust >= 60) return 2;
-  return 1;
+/** The world-derived half of the trust inputs. Net assets, not gross, so
+ * borrowed cash cannot inflate the score. */
+export function trustContext(world: MarketWorld): TrustContext {
+  const { netWorth } = summarize(world);
+  return {
+    netWorth,
+    startingCash: world.config.startingCash,
+    hasUnpaidObligation: world.funding.some(
+      (lender) => lender.accepted && lender.defaulted,
+    ),
+  };
+}
+
+export function assessWorldTrust(world: MarketWorld): TrustAssessment {
+  return assessTrust(world.reputation, trustContext(world));
+}
+
+/** The three broad bands shown to the player, and nothing more. */
+export function worldOpinion(world: MarketWorld): MarketOpinion {
+  return marketOpinion(assessWorldTrust(world));
 }
 
 export function avatarFor(
@@ -330,7 +375,10 @@ export function summarize(world: MarketWorld) {
       world.thirdLoanDay !== null &&
       world.day >= world.thirdLoanDay + world.config.fundingUnlockDelayDays &&
       !hasFunding &&
-      world.trust >= 30,
+      // Lenders deal with a bank that has not gone backwards. Expressed
+      // against the opening standing rather than a fixed 30, so the gate keeps
+      // its meaning if the composite is ever retuned.
+      world.trust >= openingTrust(world.config.startingCash),
   };
 }
 
@@ -424,22 +472,12 @@ export function marketReducer(
   }
 }
 
-/** Latch one-shot milestones (mission clear, funding unlock) after any action. */
+/** Latch one-shot milestones (full trust, funding unlock) after any action. */
 function withDerivedEvents(world: MarketWorld): MarketWorld {
   const summary = summarize(world);
   const goals = goalsFor(world);
   let { missionCleared, fundingAnnounced, events } = world;
-  if (
-    !world.insolvent &&
-    !missionCleared &&
-    world.loanCount >= goals.loanCount &&
-    world.cumulativeLent >= goals.cumulativeLent &&
-    world.products.length >= goals.productCount &&
-    summary.netWorth >= goals.netWorth &&
-    // world.day is 0-indexed; the UI's "DAY N" header shows world.day + 1,
-    // so the goal must clear against that same displayed day number.
-    (goals.survivalDay === null || world.day + 1 >= goals.survivalDay)
-  ) {
+  if (!world.insolvent && !missionCleared && world.trust >= goals.trustTarget) {
     missionCleared = true;
     events = [...events, { type: "mission-clear" }];
   }
@@ -455,7 +493,9 @@ function advanceDay(world: MarketWorld): MarketWorld {
   const events: MarketEvent[] = [];
   let repayment = 0;
   const repaidCustomers: Customer[] = [];
-  let trust = world.trust;
+  // A day of forgetting happens before the day's events are recorded, so
+  // today's outcomes are weighed at full value against a fading history.
+  const reputation = decayReputation(world.reputation);
   let seed = world.seed;
   let customers = world.customers.filter((customer) => {
     if (customer.status === "accepted" && customer.dueDay === day) {
@@ -467,6 +507,12 @@ function advanceDay(world: MarketWorld): MarketWorld {
         roll = random * 100;
       }
       if (roll < risk) {
+        // Severity, not a flat penalty: the write-off hits realized profit and
+        // open losses in proportion to the principal actually lost.
+        reputation.defaulted += 1;
+        reputation.openLoss += customer.amount;
+        reputation.realizedProfit -= customer.amount;
+        if (customer.productId) reputation.productDefaulted += 1;
         events.push({ type: "default", customer, risk });
       } else {
         const amount = customer.amount * (1 + customer.rate / 100);
@@ -487,6 +533,12 @@ function advanceDay(world: MarketWorld): MarketWorld {
         customer,
         amount: customer.amount * (1 + customer.rate / 100),
       });
+      // A customer counts as served only here, at repayment — never at
+      // approval — and the loan's size buys no extra credit.
+      reputation.repaid += 1;
+      reputation.realizedProfit += customer.amount * (customer.rate / 100);
+      reputation.fairness += rateFairness(customer.rate);
+      if (customer.productId) reputation.productRepaid += 1;
       const product = productForCustomer(world.products, customer);
       if (product) {
         events.push({
@@ -510,22 +562,23 @@ function advanceDay(world: MarketWorld): MarketWorld {
     const amount = lender.amount * (1 + lender.rate / 100);
     if (cash >= amount) {
       cash -= amount;
-      trust = Math.min(100, trust + 2);
+      reputation.fundingHonored += 1;
+      reputation.realizedProfit -= lender.amount * (lender.rate / 100);
       events.push({
         type: "funding-repayment",
         lender,
         amount,
-        trustDelta: 2,
       });
       return false;
     }
 
-    trust = Math.max(0, trust - 20);
+    // The bank breaking its own promise is the strongest negative signal it
+    // can send: it hits the funding record and caps trust outright.
+    reputation.fundingMissed += 1;
     events.push({
       type: "funding-default",
       lender,
       amount,
-      trustDelta: -20,
     });
     return true;
   });
@@ -552,9 +605,38 @@ function advanceDay(world: MarketWorld): MarketWorld {
         ? { ...lender, defaulted: true }
         : lender,
     );
-  const insolvent = cash < 0 || trust <= 0;
+  // Net assets, computed the same way summarize() does. Automated lending runs
+  // after this point but only swaps cash for receivables, so it cannot move
+  // net worth — and therefore cannot move trust on the day it fires.
+  const receivables = customers
+    .filter((customer) => customer.status === "accepted")
+    .reduce((total, customer) => total + customer.amount, 0);
+  const liabilities = normalizedFunding
+    .filter((lender) => lender.accepted)
+    .reduce((total, lender) => total + lender.amount, 0);
+  const assessment = assessTrust(reputation, {
+    netWorth: cash + receivables - liabilities,
+    startingCash: world.config.startingCash,
+    hasUnpaidObligation: normalizedFunding.some(
+      (lender) => lender.accepted && lender.defaulted,
+    ),
+  });
+  const trust = approachTrust(world.trust, assessment.target);
+  if (Math.abs(trust - world.trust) >= 0.5) {
+    events.push({
+      type: "trust-shift",
+      direction: trust > world.trust ? "up" : "down",
+      reason: trustReasonFor(
+        events,
+        trust > world.trust ? "up" : "down",
+        assessment,
+      ),
+    });
+  }
+
+  const insolvent = cash < 0 || trust <= TRUST_COLLAPSE;
   const failureReason: FailureReason =
-    trust <= 0 ? "trust" : cash < 0 ? "cash" : null;
+    trust <= TRUST_COLLAPSE ? "trust" : cash < 0 ? "cash" : null;
   if (insolvent) events.push({ type: "insolvent" });
   if (
     day % world.config.spawnEveryDays === 0 &&
@@ -590,11 +672,37 @@ function advanceDay(world: MarketWorld): MarketWorld {
     insolvent,
     failureReason,
     trust,
+    reputation,
     events,
   });
   return {
     ...automated,
   };
+}
+
+/**
+ * Names the cause the player just watched happen, in priority order: a broken
+ * promise outranks a customer default, which outranks ordinary drift. An
+ * active ceiling is reported as the cause even on a day with no bad news,
+ * because "why won't this go up" is the question it exists to answer.
+ */
+function trustReasonFor(
+  events: MarketEvent[],
+  direction: "up" | "down",
+  assessment: TrustAssessment,
+): TrustReason {
+  const binding = assessment.composite > assessment.ceiling;
+  if (
+    events.some((event) => event.type === "funding-default") ||
+    (binding && assessment.ceilingCause === "unpaid-obligation")
+  )
+    return "obligation-unpaid";
+  if (events.some((event) => event.type === "default") || binding)
+    return "defaults-weakened-book";
+  if (direction === "down") return "book-thinning";
+  return events.some((event) => event.type === "customer-repayment")
+    ? "contracts-completing"
+    : "earnings-sustainable";
 }
 
 function randomCustomer(
@@ -686,7 +794,9 @@ function lend(
     ...customer,
     status: "accepted" as const,
     dueDay: world.day + customer.term,
-    ...(product ? { productId: product.id } : {}),
+    ...(product
+      ? { productId: product.id, rate: product.rules.interestRate }
+      : {}),
   };
   const events: MarketEvent[] = [
     {
@@ -752,13 +862,7 @@ function automateLoans(world: MarketWorld): MarketWorld {
     if (product.kind !== "loan") continue;
     if (!product.active) continue;
 
-    // Daily capacity limits how many customers this product can sign per day
-    const capacity = loanAutomationCapacity(world.trust);
-    let signed = 0;
-
     for (let i = 0; i < nextCustomers.length; i++) {
-      if (signed >= capacity) break;
-
       const customer = nextCustomers[i]!;
       if (!customerMatchesLoanProduct(customer, product)) continue;
       if (currentCash < customer.amount) continue;
@@ -777,10 +881,10 @@ function automateLoans(world: MarketWorld): MarketWorld {
         status: "accepted",
         dueDay: world.day + customer.term,
         productId: product.id,
+        rate: product.rules.interestRate,
       };
 
       nextCustomers[i] = acceptedCustomer;
-      signed += 1;
 
       // Push events directly to the local array
       newEvents.push(

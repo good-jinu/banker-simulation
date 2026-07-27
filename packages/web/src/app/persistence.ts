@@ -2,6 +2,7 @@ import type { MarketStageConfig } from "../market/market-campaign.ts";
 import type { ConsultationProgress } from "../market/CustomerConsultation.tsx";
 import { CLOCK_SPEEDS, type ClockSpeed } from "../lib/game-clock.ts";
 import type { MarketWorld } from "../market/market-world.ts";
+import { isReputation } from "../market/market-trust.ts";
 import {
   initialMarketUiState,
   type MarketUiState,
@@ -178,7 +179,16 @@ function migrateProducts(value: unknown): MarketWorld["products"] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((product) => {
     if (product.kind === "loan") {
-      return { ...product, active: product.active !== false };
+      const rules = isRecord(product.rules)
+        ? {
+            ...product.rules,
+            interestRate:
+              typeof product.rules.interestRate === "number"
+                ? product.rules.interestRate
+                : 10,
+          }
+        : product.rules;
+      return { ...product, active: product.active !== false, rules };
     }
     return product;
   }) as MarketWorld["products"];
@@ -210,6 +220,9 @@ export function migrateMarketSession(
     !Number.isFinite(rawWorld.trust) ||
     rawWorld.trust < 0 ||
     rawWorld.trust > 100 ||
+    // Trust is derived from the reputation record, so a save without one
+    // cannot be replayed. Reject rather than invent a plausible history.
+    !isReputation(rawWorld.reputation) ||
     (rawWorld.failureReason !== null &&
       rawWorld.failureReason !== "cash" &&
       rawWorld.failureReason !== "trust") ||

@@ -1580,7 +1580,7 @@ button {
   }
 
   .product-tutorial-callout {
-    right: 0;
+    right: calc(100% + 10px);
     width: 126px;
     padding: 6px;
     font-size: 8px;
@@ -1890,8 +1890,8 @@ button {
 .product-tutorial-callout {
   position: absolute;
   z-index: 4;
-  right: -5px;
-  bottom: calc(100% + 10px);
+  top: 50%;
+  right: calc(100% + 12px);
   width: 150px;
   padding: 7px 8px;
   color: var(--paper);
@@ -1902,20 +1902,20 @@ button {
   font-weight: 950;
   line-height: 1.15;
   text-align: center;
-  transform: rotate(-3deg);
+  transform: translateY(-50%) rotate(-3deg);
 }
 
 .product-tutorial-callout::after {
   content: "";
   position: absolute;
-  right: 20px;
-  bottom: -10px;
+  top: 50%;
+  right: -10px;
   width: 14px;
   height: 14px;
+  border-top: 3px solid var(--ink);
   border-right: 3px solid var(--ink);
-  border-bottom: 3px solid var(--ink);
   background: var(--red);
-  transform: rotate(45deg);
+  transform: translateY(-50%) rotate(45deg);
 }
 
 @keyframes product-tutorial-pulse {
@@ -3346,7 +3346,7 @@ button {
 .trust-rail {
   position: absolute;
   z-index: 16;
-  top: 122px;
+  top: 18px;
   right: 18px;
   width: 108px;
   padding: 10px 9px 9px;
@@ -3373,6 +3373,17 @@ button {
   gap: 2px;
   margin-bottom: 8px;
   text-align: center;
+}
+
+.trust-rail-header small {
+  display: inline-block;
+  justify-self: center;
+  padding: 2px 5px;
+  background: var(--ink);
+  color: var(--yellow);
+  font-size: 7px;
+  font-weight: 950;
+  letter-spacing: 0.1em;
 }
 
 .trust-rail-header span {
@@ -3554,7 +3565,7 @@ button {
 
 @media (max-width: 620px) {
   .trust-rail {
-    top: 112px;
+    top: 12px;
     right: 9px;
     width: 70px;
     padding: 8px 6px 7px;
@@ -3823,7 +3834,7 @@ button {
     width: 13px;
   }
   .product-tutorial-callout {
-    right: 0;
+    right: calc(100% + 10px);
     width: 126px;
     padding: 6px;
     font-size: 8px;

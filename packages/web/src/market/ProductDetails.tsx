@@ -59,6 +59,10 @@ export function ProductDetails({
           <dd>{occupationLabel}</dd>
         </div>
         <div>
+          <dt>{m.productInterestRate}</dt>
+          <dd>{m.annualRate(product.rules.interestRate)}</dd>
+        </div>
+        <div>
           <dt>{m.productLoanRange}</dt>
           <dd>
             {money(product.rules.minimumAmount)} –{" "}

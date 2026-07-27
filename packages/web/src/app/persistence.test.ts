@@ -79,7 +79,7 @@ describe("save migration", () => {
     expect(migrated).not.toBeNull();
     expect(migrated?.world.cash).toBe(123);
     expect(migrated?.world.events).toEqual([]);
-    expect(migrated?.world.trust).toBe(80);
+    expect(migrated?.world.trust).toBe(world.trust);
     expect(migrated?.world.funding[0]?.defaulted).toBe(false);
     expect(migrated?.consultation).toEqual({
       asked: ["purpose", "income"],

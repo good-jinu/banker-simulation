@@ -1,17 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { marketCampaignStages } from "./market-campaign.ts";
 import {
+  assessWorldTrust,
   createWorld,
   FIRST_CUSTOMER,
-  GOALS,
   defaultRisk,
-  loanAutomationCapacity,
   marketReducer,
   summarize,
   upcomingRepayment,
+  worldOpinion,
   type MarketAction,
   type MarketWorld,
 } from "./market-world.ts";
+import {
+  approachTrust,
+  emptyReputation,
+  rateFairness,
+  TRUST_COLLAPSE,
+  type Reputation,
+} from "./market-trust.ts";
 
 function run(world: MarketWorld, ...actions: MarketAction[]): MarketWorld {
   return actions.reduce(marketReducer, world);
@@ -196,7 +203,7 @@ describe("funding", () => {
     });
   });
 
-  it("blocks new funding when trust falls below 30", () => {
+  it("blocks new funding when trust has slipped below its opening standing", () => {
     const world = run(worldWithThreeLoans(), ...days(3));
     expect(summarize(world).fundingEligible).toBe(true);
     expect(summarize({ ...world, trust: 20 }).fundingEligible).toBe(false);
@@ -231,10 +238,11 @@ describe("funding", () => {
 
     expect(world.cash).toBe(before - lender.amount * (1 + lender.rate / 100));
     expect(world.funding.find((item) => item.id === lender.id)).toBeUndefined();
-    expect(world.trust).toBe(82);
+    expect(world.reputation.fundingHonored).toBe(1);
+    expect(world.reputation.fundingMissed).toBe(0);
     expect(world.insolvent).toBe(false);
     expect(world.events).toContainEqual(
-      expect.objectContaining({ type: "funding-repayment", trustDelta: 2 }),
+      expect.objectContaining({ type: "funding-repayment" }),
     );
   });
 });
@@ -283,6 +291,7 @@ describe("level two credit risk", () => {
           rules: {
             minimumIncome: 1_500,
             occupation: "employed",
+            interestRate: 9,
             minimumAmount: 300,
             maximumAmount: 1_000,
             minimumTerm: 6,
@@ -307,7 +316,7 @@ describe("level two credit risk", () => {
     expect(world.cash).toBe(300); // $900 start − $100 setup − $500 loan
   });
 
-  it("signs more same-day customers when trust is higher", () => {
+  it("contracts every matching same-day customer when cash is available", () => {
     const start = createWorld(1, "credit-under-pressure");
     const applicants = ["a", "b", "c"].map((id) => ({
       ...start.customers[0]!,
@@ -328,6 +337,7 @@ describe("level two credit risk", () => {
       rules: {
         minimumIncome: 1_500,
         occupation: "employed" as const,
+        interestRate: 9,
         minimumAmount: 100,
         maximumAmount: 1_000,
         minimumTerm: 6,
@@ -335,23 +345,18 @@ describe("level two credit risk", () => {
       },
     };
 
-    const trusted = marketReducer(
-      { ...start, trust: 80, customers: applicants },
+    const contracted = marketReducer(
+      { ...start, customers: applicants },
       { type: "create-product", product },
     );
-    expect(loanAutomationCapacity(80)).toBe(3);
     expect(
-      trusted.customers.filter((customer) => customer.status === "accepted"),
+      contracted.customers.filter((customer) => customer.status === "accepted"),
     ).toHaveLength(3);
-
-    const wary = marketReducer(
-      { ...start, trust: 50, customers: applicants },
-      { type: "create-product", product },
-    );
-    expect(loanAutomationCapacity(50)).toBe(1);
     expect(
-      wary.customers.filter((customer) => customer.status === "accepted"),
-    ).toHaveLength(1);
+      contracted.customers
+        .filter((customer) => customer.status === "accepted")
+        .every((customer) => customer.rate === 9),
+    ).toBe(true);
   });
 
   it("pauses new automated lending without changing existing contracts", () => {
@@ -375,6 +380,7 @@ describe("level two credit risk", () => {
       rules: {
         minimumIncome: 1_500,
         occupation: "employed" as const,
+        interestRate: 10,
         minimumAmount: 100,
         maximumAmount: 1_000,
         minimumTerm: 6,
@@ -453,7 +459,7 @@ describe("level two credit risk", () => {
     expect(
       world.funding.find((lender) => lender.id === civic.id)?.defaulted,
     ).toBe(true);
-    expect(world.trust).toBe(60);
+    expect(world.reputation.fundingMissed).toBe(1);
     expect(world.insolvent).toBe(false);
     expect(world.events.some((event) => event.type === "funding-default")).toBe(
       true,
@@ -478,45 +484,333 @@ describe("level two credit risk", () => {
     expect(
       world.funding.find((lender) => lender.id === "civic"),
     ).toBeUndefined();
-    expect(world.trust).toBe(80);
     expect(world.events).toContainEqual(
       expect.objectContaining({ type: "funding-settlement", amount: 636 }),
     );
   });
 
-  it("fails the game when trust reaches zero", () => {
+  it("survives a single missed funding payment instead of ending the game", () => {
+    const base = createWorld(1, "credit-under-pressure");
     let world: MarketWorld = {
-      ...createWorld(1, "credit-under-pressure"),
+      ...base,
       day: 3,
       thirdLoanDay: 0,
-      trust: 20,
-      funding: createWorld(1, "credit-under-pressure").funding.map((lender) =>
+      cash: 100,
+      trust: 60,
+      funding: base.funding.map((lender) =>
         lender.id === "civic"
           ? { ...lender, accepted: true, dueDay: 4 }
           : lender,
       ),
     };
-    world = {
-      ...world,
-      cash: 100,
-    };
     world = marketReducer(world, { type: "advance-day" });
 
-    expect(world.trust).toBe(0);
+    // A broken promise is the strongest negative signal, but it is a ceiling
+    // and a reliability hit — not an instant loss.
+    expect(world.reputation.fundingMissed).toBe(1);
+    expect(world.insolvent).toBe(false);
+    expect(assessWorldTrust(world).ceilingCause).toBe("unpaid-obligation");
+  });
+
+  it("fails the game only when the bank's standing genuinely collapses", () => {
+    const base = createWorld(1, "credit-under-pressure");
+    let world: MarketWorld = {
+      ...base,
+      day: 3,
+      thirdLoanDay: 0,
+      cash: 0,
+      customers: [],
+      trust: 20,
+      reputation: {
+        ...emptyReputation(),
+        defaulted: 12,
+        realizedProfit: -5_000,
+        openLoss: 5_000,
+        fundingMissed: 4,
+      },
+      funding: base.funding.map((lender) =>
+        lender.id === "civic"
+          ? { ...lender, accepted: true, defaulted: true, dueDay: 99 }
+          : lender,
+      ),
+    };
+    world = run(world, ...days(6));
+
+    expect(world.trust).toBeLessThanOrEqual(TRUST_COLLAPSE);
     expect(world.insolvent).toBe(true);
     expect(world.failureReason).toBe("trust");
   });
 });
 
-describe("mission clear", () => {
-  it("latches once when all goals are met", () => {
-    let world = run(createWorld(1), { type: "begin" });
-    world = {
-      ...world,
-      cash: GOALS.netWorth + 500,
-      cumulativeLent: GOALS.cumulativeLent,
+describe("bank trust", () => {
+  /** A bank that has done everything right: a broad book of repaid, fairly
+   * priced contracts, healthy earnings, and no outstanding obligation. */
+  function masteryReputation(): Reputation {
+    return {
+      ...emptyReputation(),
+      repaid: 20,
+      defaulted: 0,
+      realizedProfit: 400,
+      openLoss: 0,
+      fairness: 20,
+      productRepaid: 8,
+      productDefaulted: 0,
+      // Comfortably above the confidence sample so a day of decay cannot pull
+      // the funding record back under full marks.
+      fundingHonored: 8,
+      fundingMissed: 0,
+    };
+  }
+
+  it("opens every stage at the standing its empty record justifies", () => {
+    // Not a hardcoded 30: no reach, half-strength assets and a neutral
+    // reliability prior compute to it. Both stages open identically because
+    // the thresholds scale with the stage's starting cash.
+    const opening = createWorld(1).trust;
+    expect(opening).toBeGreaterThan(25);
+    expect(opening).toBeLessThan(35);
+    expect(createWorld(1, "credit-under-pressure").trust).toBeCloseTo(opening);
+  });
+
+  it("does not drift on day one, having opened at its own target", () => {
+    const start = createWorld(1);
+    const next = marketReducer(start, { type: "advance-day" });
+    expect(next.trust).toBeCloseTo(start.trust);
+    expect(next.events).not.toContainEqual(
+      expect.objectContaining({ type: "trust-shift" }),
+    );
+  });
+
+  it("grants nothing for approving a loan, only for repayment", () => {
+    const start = createWorld(1);
+    const approved = marketReducer(start, { type: "begin" });
+    expect(assessWorldTrust(approved).target).toBeLessThanOrEqual(
+      assessWorldTrust(start).target,
+    );
+    expect(approved.reputation.repaid).toBe(0);
+  });
+
+  it("does not let a larger loan buy more trust than a small one", () => {
+    const small = { ...FIRST_CUSTOMER, amount: 100 };
+    const large = { ...FIRST_CUSTOMER, amount: 500 };
+    const book = (customer: typeof FIRST_CUSTOMER): Reputation => ({
+      ...emptyReputation(),
+      repaid: 1,
+      fairness: rateFairness(customer.rate),
+    });
+    expect(book(large).repaid).toBe(book(small).repaid);
+  });
+
+  it("saturates reach so repeating the same cheap loan stops paying", () => {
+    const context = {
+      netWorth: 700,
+      startingCash: 700,
+      hasUnpaidObligation: false,
+    };
+    const at = (repaid: number) =>
+      assessWorldTrust({
+        ...createWorld(1),
+        reputation: { ...emptyReputation(), repaid, fairness: repaid },
+        cash: context.netWorth,
+      }).pillars.reach;
+    expect(at(8)).toBe(1);
+    expect(at(40)).toBe(1);
+  });
+
+  it("ignores borrowed cash by scoring net assets, not gross", () => {
+    const base = createWorld(1);
+    const borrowed: MarketWorld = {
+      ...base,
+      cash: base.cash + 1_000,
+      funding: base.funding.map((lender, index) =>
+        index === 0 ? { ...lender, accepted: true, amount: 1_000 } : lender,
+      ),
+    };
+    expect(assessWorldTrust(borrowed).pillars.strength).toBeCloseTo(
+      assessWorldTrust(base).pillars.strength,
+    );
+  });
+
+  it("caps trust while the bank's own obligation is unpaid", () => {
+    const base = createWorld(1);
+    const world: MarketWorld = {
+      ...base,
+      reputation: masteryReputation(),
+      funding: base.funding.map((lender, index) =>
+        index === 0
+          ? { ...lender, accepted: true, defaulted: true, amount: 1 }
+          : lender,
+      ),
+    };
+    const assessment = assessWorldTrust(world);
+    expect(assessment.ceiling).toBe(90);
+    expect(assessment.ceilingCause).toBe("unpaid-obligation");
+    expect(assessment.target).toBeLessThanOrEqual(90);
+  });
+
+  it("caps trust at 80 while a recent loss is still open", () => {
+    const world: MarketWorld = {
+      ...createWorld(1),
+      reputation: { ...masteryReputation(), openLoss: 200 },
+    };
+    const assessment = assessWorldTrust(world);
+    expect(assessment.ceilingCause).toBe("open-losses");
+    expect(assessment.target).toBeLessThanOrEqual(80);
+  });
+
+  it("caps trust at 60 when reliability is weak, however profitable", () => {
+    const world: MarketWorld = {
+      ...createWorld(1),
+      cash: 100_000,
+      reputation: {
+        ...emptyReputation(),
+        repaid: 30,
+        defaulted: 30,
+        realizedProfit: 100_000,
+        fairness: 30,
+      },
+    };
+    const assessment = assessWorldTrust(world);
+    // A weighted mean alone would let this book average its way up.
+    expect(assessment.composite).toBeGreaterThan(60);
+    expect(assessment.ceilingCause).toBe("weak-reliability");
+    expect(assessment.target).toBe(60);
+  });
+
+  it("reaches 100 only with reach, profit, assets and no open obligation", () => {
+    const base = createWorld(1);
+    const mastered: MarketWorld = {
+      ...base,
+      cash: base.config.startingCash * 2,
+      reputation: masteryReputation(),
+    };
+    expect(assessWorldTrust(mastered).target).toBe(100);
+
+    // Removing any single ingredient must drop it back below full marks.
+    expect(assessWorldTrust({ ...mastered, cash: 0 }).target).toBeLessThan(100);
+    expect(
+      assessWorldTrust({
+        ...mastered,
+        reputation: { ...masteryReputation(), repaid: 2, fairness: 2 },
+      }).target,
+    ).toBeLessThan(100);
+    expect(
+      assessWorldTrust({
+        ...mastered,
+        reputation: { ...masteryReputation(), realizedProfit: 0 },
+      }).target,
+    ).toBeLessThan(100);
+  });
+
+  it("prices predatory lending as unfair and market rates as fair", () => {
+    expect(rateFairness(10)).toBe(1);
+    expect(rateFairness(21)).toBe(1);
+    expect(rateFairness(31)).toBeLessThan(1);
+    expect(rateFairness(40)).toBe(0);
+  });
+
+  it("climbs slowly and falls fast", () => {
+    const climbed = approachTrust(50, 100) - 50;
+    const dropped = 50 - approachTrust(50, 0);
+    expect(climbed).toBeGreaterThan(0);
+    expect(dropped).toBeGreaterThan(climbed * 3);
+  });
+
+  it("lets a damaged bank recover as its losses age out", () => {
+    let world: MarketWorld = {
+      ...createWorld(1),
+      reputation: { ...masteryReputation(), openLoss: 400 },
+    };
+    const damaged = assessWorldTrust(world).target;
+    world = run(world, ...days(60));
+    expect(assessWorldTrust(world).target).toBeGreaterThan(damaged);
+  });
+
+  it("reports opinion as bands rather than numbers", () => {
+    const opinion = worldOpinion({
+      ...createWorld(1),
+      cash: 1_400,
+      reputation: masteryReputation(),
+    });
+    expect(opinion).toMatchObject({
+      reach: "high",
+      strength: "high",
+      reliability: "high",
+      ceilingCause: null,
+    });
+  });
+
+  it("explains a downward move without naming a number", () => {
+    const base = createWorld(1);
+    const world = marketReducer(
+      {
+        ...base,
+        trust: 90,
+        reputation: { ...emptyReputation(), openLoss: 300 },
+      },
+      { type: "advance-day" },
+    );
+    expect(world.trust).toBeLessThan(90);
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ type: "trust-shift", direction: "down" }),
+    );
+    for (const event of world.events) {
+      expect(event).not.toHaveProperty("trustDelta");
+    }
+  });
+
+  it("can actually be won by underwriting carefully", () => {
+    // Guards the property that is easy to lose when retuning weights: a
+    // composite whose pillars crest at different moments can sit at 97 forever
+    // and quietly make the stage unwinnable.
+    let world = marketReducer(createWorld(1), { type: "begin" });
+    for (let day = 0; day < 200 && !world.missionCleared; day++) {
+      for (const customer of world.customers) {
+        if (customer.status !== "waiting") continue;
+        if (defaultRisk(customer) > 22) continue;
+        if (world.cash < customer.amount * 1.5) continue;
+        world = marketReducer(world, {
+          type: "approve",
+          customerId: customer.id,
+        });
+      }
+      world = marketReducer(world, { type: "advance-day" });
+    }
+    expect(world.insolvent).toBe(false);
+    expect(world.missionCleared).toBe(true);
+    expect(world.trust).toBe(100);
+  });
+
+  it("no longer lets a handful of cheap repeat loans win the stage", () => {
+    // Under the old accumulator this exact loop was worth +12 a contract:
+    // six of them took a bank from 30 to 100.
+    let world = createWorld(1);
+    const mina = world.customers[0]!;
+    for (let round = 0; round < 8; round++) {
+      world = {
+        ...world,
+        customers: [{ ...mina, id: `mina-${round}`, status: "waiting" }],
+      };
+      world = marketReducer(world, {
+        type: "approve",
+        customerId: `mina-${round}`,
+      });
+      world = run(world, ...days(13));
+    }
+    expect(world.missionCleared).toBe(false);
+    expect(world.trust).toBeLessThan(70);
+  });
+
+  it("latches completion once when trust reaches 100", () => {
+    const base = createWorld(1);
+    let world: MarketWorld = {
+      ...base,
+      cash: base.config.startingCash * 2,
+      trust: 99,
+      reputation: masteryReputation(),
     };
     world = marketReducer(world, { type: "advance-day" });
+    expect(world.trust).toBe(100);
     expect(world.missionCleared).toBe(true);
     expect(world.events).toContainEqual({ type: "mission-clear" });
     const later = marketReducer(world, { type: "advance-day" });

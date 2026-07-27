@@ -52,13 +52,36 @@ export const en = {
     noticeRepayment: (amount: string) => `REPAID · ${amount}`,
     noticeDefault: (name: string, amount: string) =>
       `DEFAULT · ${name} · ${amount}`,
-    noticeFundingRepayment: (
-      name: string,
-      amount: string,
-      trustDelta: number,
-    ) => `PAID · ${name} · ${amount} · TRUST +${trustDelta}`,
+    noticeCustomerRepayment: (name: string, amount: string) =>
+      `REPAID · ${name} · ${amount}`,
+    noticeFundingRepayment: (name: string, amount: string) =>
+      `PAID · ${name} · ${amount}`,
     noticeFundingDefault: (name: string, amount: string) =>
-      `DEFAULT · ${name} · ${amount} · TRUST -20`,
+      `MISSED · ${name} · ${amount}`,
+    // Qualitative only — the player is told what moved, never by how much.
+    trustContractsCompleting:
+      "Trust is rising — more customers are completing their contracts.",
+    trustEarningsSustainable:
+      "Trust is rising — the bank's earnings are becoming sustainable.",
+    trustDefaultsWeakened:
+      "Trust is under pressure — defaults weakened the loan book.",
+    trustObligationUnpaid:
+      "Trust cannot grow further while an obligation remains unpaid.",
+    trustBookThinning:
+      "Trust is slipping — the bank is serving fewer customers than it was.",
+    opinionTitle: "Market Opinion",
+    opinionReach: "Customer reach",
+    opinionStrength: "Financial strength",
+    opinionReliability: "Reliability",
+    opinionReachLow: "Limited",
+    opinionReachMid: "Growing",
+    opinionReachHigh: "Established",
+    opinionStrengthLow: "Fragile",
+    opinionStrengthMid: "Stable",
+    opinionStrengthHigh: "Strong",
+    opinionReliabilityLow: "Questioned",
+    opinionReliabilityMid: "Proven",
+    opinionReliabilityHigh: "Exceptional",
     noticeFundingSettlement: (name: string, amount: string) =>
       `SETTLED · ${name} · ${amount}`,
     flowFunded: "FUNDED",
@@ -79,12 +102,12 @@ export const en = {
       "External funding arrives three days after your third loan.",
     borrowed: (name: string, amount: string) =>
       `Borrowed ${amount} from ${name}.`,
-    goalsPanelTitle: (number: string) => `LEVEL ${number} GOALS`,
-    allGoalsComplete: "All goals complete",
     currentDate: "CURRENT DATE",
     currentCash: "Cash",
     trust: "Bank trust",
+    onlyGoal: "ONLY GOAL",
     trustScore: (value: number) => `${value}/100`,
+    trustGoalCaption: "Keep good contracts. Reach 100.",
     trustStrong: "Strong lender confidence",
     trustSteady: "Steady lender confidence",
     trustAtRisk: "Lender confidence at risk",
@@ -167,8 +190,6 @@ export const en = {
     annualRate: (rate: number) => `${rate}% annual`,
     select: "Select",
     close: "Close",
-    goalSurvive: (day: number) => `Survive day ${day}`,
-    dayProgress: (day: number) => `Day ${day}`,
     loanProgress: (count: number) => `${count} loan${count === 1 ? "" : "s"}`,
     loanTerms: (days: number, rate: number) =>
       `${days} days · ${rate}% interest`,
@@ -189,9 +210,10 @@ export const en = {
     productLessonEyebrow: "AUTOMATE THE SAFE DECISION",
     productBuilderTitle: "Create a Loan Product",
     productBuilderCopy:
-      "A Product checks every new request for you. Only customers inside these rules receive cash automatically.",
+      "A Product is a standing contract. Every matching customer receives cash automatically while the bank can fund them.",
     productMinimumIncome: "Minimum monthly income",
     productOccupation: "Allowed occupation",
+    productInterestRate: "Contract interest rate",
     productOccupationAny: "Any occupation",
     productOccupationEmployed: "Employed",
     productOccupationSelfEmployed: "Self-employed",

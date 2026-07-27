@@ -89,7 +89,6 @@ export function MarketDialogs({
         : trustBand === "at-risk"
           ? m.trustAtRisk
           : m.trustBlocked;
-  const hasSurvivalGoal = world.config.goals.survivalDay !== null;
   const selectedProduct =
     selectedProductId === null
       ? null
@@ -137,12 +136,10 @@ export function MarketDialogs({
                 <span>{m.elapsedTime}</span>
                 <strong>DAY {day + 1}</strong>
               </div>
-              {hasSurvivalGoal && (
-                <div>
-                  <span>{m.defaults}</span>
-                  <strong>{m.survived}</strong>
-                </div>
-              )}
+              <div>
+                <span>{m.trust}</span>
+                <strong>{m.trustScore(trust)}</strong>
+              </div>
               <div>
                 <span>{m.loansIssued}</span>
                 <strong>{m.loanProgress(world.loanCount)}</strong>

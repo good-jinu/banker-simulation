@@ -53,14 +53,35 @@ export const ko: Messages = {
     openUnderwriting: "여신 심사 데스크 열기",
     noticeRepayment: (amount: string) => `상환 완료 · ${amount}`,
     noticeDefault: (name: string, amount: string) =>
-      `연체 · ${name} · ${amount}`,
-    noticeFundingRepayment: (
-      name: string,
-      amount: string,
-      trustDelta: number,
-    ) => `상환 완료 · ${name} · ${amount} · 신뢰도 +${trustDelta}`,
+      `채무불이행 · ${name} · ${amount}`,
+    noticeCustomerRepayment: (name: string, amount: string) =>
+      `상환 완료 · ${name} · ${amount}`,
+    noticeFundingRepayment: (name: string, amount: string) =>
+      `상환 완료 · ${name} · ${amount}`,
     noticeFundingDefault: (name: string, amount: string) =>
-      `연체 · ${name} · ${amount} · 신뢰도 -20`,
+      `연체 · ${name} · ${amount}`,
+    // 정성적 표현만 사용한다. 변동 폭은 플레이어에게 드러내지 않는다.
+    trustContractsCompleting:
+      "신뢰도 상승 · 계약을 끝까지 마친 고객이 늘고 있다.",
+    trustEarningsSustainable:
+      "신뢰도 상승 · 은행의 수익이 자리를 잡아가고 있다.",
+    trustDefaultsWeakened: "신뢰도 압박 · 채무불이행이 대출 자산을 약화시켰다.",
+    trustObligationUnpaid:
+      "갚지 못한 채무가 남아 있는 동안에는 신뢰도가 오르지 않는다.",
+    trustBookThinning: "신뢰도 하락 · 은행이 상대하는 고객이 줄고 있다.",
+    opinionTitle: "시장 평판",
+    opinionReach: "고객 기반",
+    opinionStrength: "재무 건전성",
+    opinionReliability: "신뢰성",
+    opinionReachLow: "제한적",
+    opinionReachMid: "성장 중",
+    opinionReachHigh: "확립됨",
+    opinionStrengthLow: "취약",
+    opinionStrengthMid: "안정",
+    opinionStrengthHigh: "견고",
+    opinionReliabilityLow: "의심받음",
+    opinionReliabilityMid: "검증됨",
+    opinionReliabilityHigh: "탁월함",
     noticeFundingSettlement: (name: string, amount: string) =>
       `연체 청산 · ${name} · ${amount}`,
     flowFunded: "대출 실행",
@@ -80,12 +101,12 @@ export const ko: Messages = {
     fundingUnavailable: "외부 자금 제안은 세 번째 대출 후 3일 뒤 도착합니다.",
     borrowed: (name: string, amount: string) =>
       `${name}에서 ${amount}를 빌렸습니다.`,
-    goalsPanelTitle: (number: string) => `LEVEL ${number} 목표`,
-    allGoalsComplete: "모든 목표 완료",
     currentDate: "현재 날짜",
     currentCash: "현금",
     trust: "은행 신뢰도",
+    onlyGoal: "단 하나의 목표",
     trustScore: (value: number) => `${value}/100`,
+    trustGoalCaption: "좋은 계약을 지켜 100을 달성하세요.",
     trustStrong: "대주 신뢰도가 높음",
     trustSteady: "대주 신뢰도가 안정적",
     trustAtRisk: "대주 신뢰도가 위험함",
@@ -167,8 +188,6 @@ export const ko: Messages = {
     annualRate: (rate: number) => `연 ${rate}%`,
     select: "선택",
     close: "닫기",
-    goalSurvive: (day: number) => `${day}일까지 생존`,
-    dayProgress: (day: number) => `${day}일차`,
     loanProgress: (count: number) => `${count}건`,
     loanTerms: (days: number, rate: number) => `${days}일 · 이자 ${rate}%`,
     defaultRisk: "연체 위험",
@@ -188,9 +207,10 @@ export const ko: Messages = {
     productLessonEyebrow: "안전한 판단 자동화",
     productBuilderTitle: "대출 상품 만들기",
     productBuilderCopy:
-      "상품은 새 신청을 대신 심사합니다. 아래 조건을 통과한 고객에게만 현금이 자동으로 지급됩니다.",
+      "상품은 상시 계약 규칙입니다. 은행에 현금이 있는 동안 조건에 맞는 모든 고객과 자동으로 계약합니다.",
     productMinimumIncome: "최소 월 소득",
     productOccupation: "허용 직업",
+    productInterestRate: "계약 금리",
     productOccupationAny: "모든 직업",
     productOccupationEmployed: "직장인",
     productOccupationSelfEmployed: "자영업자",
