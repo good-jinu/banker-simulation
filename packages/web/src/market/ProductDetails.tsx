@@ -1,12 +1,21 @@
-import { SlidersHorizontal, X } from "lucide-react";
+import { Landmark, SlidersHorizontal, X } from "lucide-react";
+import { localize } from "../i18n/local-text.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { money } from "./market-format.ts";
-import type { LoanProduct } from "./market-world.ts";
+import {
+  avatarFor,
+  type Customer,
+  type Depositor,
+  type Product,
+} from "./market-world.ts";
 
 type ProductDetailsProps = {
   locale: Locale;
-  product: LoanProduct;
+  product: Product;
+  day: number;
+  customers: Customer[];
+  depositors: Depositor[];
   onClose: () => void;
   onToggleActive: (productId: string, active: boolean) => void;
   onToggleAlertGuard: (productId: string, enabled: boolean) => void;
@@ -15,13 +24,18 @@ type ProductDetailsProps = {
 export function ProductDetails({
   locale,
   product,
+  day,
+  customers,
+  depositors,
   onClose,
   onToggleActive,
   onToggleAlertGuard,
 }: ProductDetailsProps) {
   const m = messagesFor(locale).market;
-  const occupationLabel =
-    product.rules.occupation === "any"
+  const isLoan = product.kind === "loan";
+  const occupationLabel = !isLoan
+    ? null
+    : product.rules.occupation === "any"
       ? m.productOccupationAny
       : product.rules.occupation === "employed"
         ? m.productOccupationEmployed
@@ -39,9 +53,11 @@ export function ProductDetails({
         <X />
       </button>
       <span className="product-details-icon" aria-hidden="true">
-        <SlidersHorizontal />
+        {isLoan ? <SlidersHorizontal /> : <Landmark />}
       </span>
-      <small>{m.productDetailsEyebrow}</small>
+      <small>
+        {isLoan ? m.productDetailsEyebrow : m.depositProductDetailsEyebrow}
+      </small>
       <h2 id="product-details-title">{product.name}</h2>
       <span
         className={`product-details-status${product.active ? " active" : " paused"}`}
@@ -49,54 +65,129 @@ export function ProductDetails({
         {product.active ? m.productActive : m.productPaused}
       </span>
       <p className="request-copy">
-        {product.active ? m.productActiveCopy : m.productPausedCopy}
+        {isLoan
+          ? product.active
+            ? m.productActiveCopy
+            : m.productPausedCopy
+          : product.active
+            ? m.depositActiveCopy
+            : m.depositPausedCopy}
       </p>
-      <dl className="product-detail-grid">
-        <div>
-          <dt>{m.productMinimumIncome}</dt>
-          <dd>{money(product.rules.minimumIncome)}</dd>
-        </div>
-        <div>
-          <dt>{m.productOccupation}</dt>
-          <dd>{occupationLabel}</dd>
-        </div>
-        <div>
-          <dt>{m.productInterestRate}</dt>
-          <dd>{m.annualRate(product.rules.interestRate)}</dd>
-        </div>
-        <div>
-          <dt>{m.productLoanRange}</dt>
-          <dd>
-            {money(product.rules.minimumAmount)} –{" "}
-            {money(product.rules.maximumAmount)}
-          </dd>
-        </div>
-        <div>
-          <dt>{m.productDueRange}</dt>
-          <dd>
-            {m.rangeDays(product.rules.minimumTerm)} –{" "}
-            {m.rangeDays(product.rules.maximumTerm)}
-          </dd>
-        </div>
-      </dl>
+      {isLoan ? (
+        <dl className="product-detail-grid">
+          <div>
+            <dt>{m.productMinimumIncome}</dt>
+            <dd>{money(product.rules.minimumIncome)}</dd>
+          </div>
+          <div>
+            <dt>{m.productOccupation}</dt>
+            <dd>{occupationLabel}</dd>
+          </div>
+          <div>
+            <dt>{m.productInterestRate}</dt>
+            <dd>{m.annualRate(product.rules.interestRate)}</dd>
+          </div>
+          <div>
+            <dt>{m.productLoanRange}</dt>
+            <dd>
+              {money(product.rules.minimumAmount)} –{" "}
+              {money(product.rules.maximumAmount)}
+            </dd>
+          </div>
+          <div>
+            <dt>{m.productDueRange}</dt>
+            <dd>
+              {m.rangeDays(product.rules.minimumTerm)} –{" "}
+              {m.rangeDays(product.rules.maximumTerm)}
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <dl className="product-detail-grid">
+          <div>
+            <dt>{m.productInterestRate}</dt>
+            <dd>{m.annualRate(product.interestRate)}</dd>
+          </div>
+        </dl>
+      )}
       <button
         className="product-toggle-button"
         onClick={() => onToggleActive(product.id, !product.active)}
       >
         {product.active ? m.pauseProduct : m.resumeProduct}
       </button>
-      <div className="product-alert-guard">
-        <strong>{m.alertGuard}</strong>
-        <p>{m.alertGuardCopy}</p>
-        <button
-          onClick={() =>
-            onToggleAlertGuard(product.id, !product.pauseOnMarketAlert)
-          }
-        >
-          {product.pauseOnMarketAlert
-            ? m.disconnectAlertGuard
-            : m.connectAlertGuard}
-        </button>
+      {isLoan && (
+        <div className="product-alert-guard">
+          <strong>{m.alertGuard}</strong>
+          <p>{m.alertGuardCopy}</p>
+          <button
+            onClick={() =>
+              onToggleAlertGuard(product.id, !product.pauseOnMarketAlert)
+            }
+          >
+            {product.pauseOnMarketAlert
+              ? m.disconnectAlertGuard
+              : m.connectAlertGuard}
+          </button>
+        </div>
+      )}
+      <div className="product-connections">
+        <strong>
+          {isLoan
+            ? m.productCustomersCount(customers.length)
+            : m.productDepositorsCount(depositors.length)}
+        </strong>
+        {isLoan ? (
+          customers.length === 0 ? (
+            <p className="product-connections-empty">
+              {m.productCustomersEmpty}
+            </p>
+          ) : (
+            <ul className="product-connections-list">
+              {customers.map((customer) => (
+                <li key={customer.id} className="product-connection-row">
+                  <span className="portrait">
+                    <img
+                      src={avatarFor(customer, "relieved")}
+                      alt=""
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span className="product-connection-info">
+                    <strong>{localize(customer.name, locale)}</strong>
+                    <small>
+                      {m.repaymentDue(
+                        money(customer.amount * (1 + customer.rate / 100)),
+                      )}{" "}
+                      · {m.repaymentIn(Math.max(customer.dueDay - day, 0))}
+                    </small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : depositors.length === 0 ? (
+          <p className="product-connections-empty">
+            {m.productDepositorsEmpty}
+          </p>
+        ) : (
+          <ul className="product-connections-list">
+            {depositors.map((depositor) => (
+              <li key={depositor.id} className="product-connection-row">
+                <span className="portrait">
+                  <img src={depositor.avatar} alt="" aria-hidden="true" />
+                </span>
+                <span className="product-connection-info">
+                  <strong>{localize(depositor.name, locale)}</strong>
+                  <small>
+                    {m.depositBalance(money(depositor.balance))} ·{" "}
+                    {m.depositRate(depositor.rate)}
+                  </small>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   );

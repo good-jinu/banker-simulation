@@ -19,7 +19,6 @@ import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
   type Customer,
   type Funding,
-  type LoanProduct,
   type LoanProductRules,
   type MarketSegment,
   type MarketWorld,
@@ -79,10 +78,20 @@ export function MarketDialogs({
   const selectedProduct =
     overlay?.kind !== "product"
       ? null
-      : (world.products.find(
-          (product): product is LoanProduct =>
-            product.kind === "loan" && product.id === overlay.productId,
-        ) ?? null);
+      : (world.products.find((product) => product.id === overlay.productId) ??
+        null);
+  const selectedProductCustomers =
+    selectedProduct?.kind === "loan"
+      ? world.customers.filter(
+          (customer) => customer.productId === selectedProduct.id,
+        )
+      : [];
+  const selectedProductDepositors =
+    selectedProduct?.kind === "deposit"
+      ? world.depositors.filter(
+          (depositor) => depositor.productId === selectedProduct.id,
+        )
+      : [];
 
   return (
     <>
@@ -173,6 +182,9 @@ export function MarketDialogs({
           <ProductDetails
             locale={locale}
             product={selectedProduct}
+            day={world.day}
+            customers={selectedProductCustomers}
+            depositors={selectedProductDepositors}
             onClose={onCloseOverlay}
             onToggleActive={onToggleProduct}
             onToggleAlertGuard={onToggleProductAlertGuard}

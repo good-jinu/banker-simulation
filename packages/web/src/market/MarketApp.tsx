@@ -85,6 +85,7 @@ export function MarketApp({
     createWorld(Date.now() >>> 0, stage.config),
   );
   const [overlay, setOverlay] = useState<MarketOverlay | null>(null);
+  const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [highlightedSegment, setHighlightedSegment] =
     useState<MarketSegment | null>(null);
   useEffect(() => {
@@ -149,19 +150,13 @@ export function MarketApp({
     [],
   );
   const openFunding = useCallback(() => setOverlay({ kind: "funding" }), []);
-  const {
-    activeFlow,
-    loanRequestNotice,
-    notice,
-    setNotice,
-    trustPulse,
-    trustMessage,
-  } = useMarketEffects({
-    world,
-    locale,
-    onOpenProductBuilder: openProductBuilder,
-    onOpenFunding: openFunding,
-  });
+  const { activeFlow, loanRequestNotice, notice, setNotice, trustPulse } =
+    useMarketEffects({
+      world,
+      locale,
+      onOpenProductBuilder: openProductBuilder,
+      onOpenFunding: openFunding,
+    });
   const modalOpen = Boolean(overlay || world.missionCleared || world.insolvent);
   const markCoachmarkIntroduced = useCallback((id: CoachmarkId) => {
     setUi((current) => introduceCoachmark(current, id));
@@ -175,6 +170,7 @@ export function MarketApp({
       : null;
   const activeCoachmark =
     overlay?.kind !== "product-builder" &&
+    !productPickerOpen &&
     !world.missionCleared &&
     !world.insolvent
       ? pendingCoachmark
@@ -290,7 +286,6 @@ export function MarketApp({
         activeFlow={activeFlow}
         loanRequestNotice={loanRequestNotice}
         trustPulse={trustPulse}
-        trustMessage={trustMessage}
         clockView={clockView}
         modalOpen={modalOpen}
         hasDraggedMap={ui.hasDraggedMap}
@@ -303,6 +298,7 @@ export function MarketApp({
         }}
         onOpenProductBuilder={openProductBuilder}
         onOpenDepositProductBuilder={openDepositProductBuilder}
+        onProductPickerOpenChange={setProductPickerOpen}
         onSelectCustomer={(customer) => {
           if (world.onboarding === "second-decision")
             markCoachmarkCompleted("second-customer");

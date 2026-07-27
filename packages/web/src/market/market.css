@@ -500,6 +500,7 @@ button {
   z-index: 7;
 }
 .bank-icon {
+  position: relative;
   width: 68px;
   height: 68px;
   display: grid;
@@ -1567,17 +1568,6 @@ button {
 
   .upcoming-repayment > span {
     gap: 3px;
-  }
-
-  .product-launcher {
-    min-height: 38px;
-    padding: 6px 7px;
-    gap: 4px;
-    font-size: 8px;
-  }
-
-  .product-launcher svg {
-    width: 13px;
   }
 
   .product-tutorial-callout {
@@ -3115,21 +3105,6 @@ button {
   cursor: pointer;
 }
 
-.depositor-node .portrait {
-  border-color: #2d7c39;
-  background: #dff1c8;
-}
-
-.depositor-node.waiting .portrait {
-  animation: depositor-arrival 1.8s ease-in-out infinite;
-}
-
-@keyframes depositor-arrival {
-  50% {
-    box-shadow: 0 0 0 6px rgba(104, 177, 73, 0.35);
-  }
-}
-
 .deposit-request {
   display: grid;
   grid-template-columns: 1fr 0.88fr;
@@ -3401,17 +3376,6 @@ button {
   text-align: center;
 }
 
-.trust-rail-header small {
-  display: inline-block;
-  justify-self: center;
-  padding: 2px 5px;
-  background: var(--ink);
-  color: var(--yellow);
-  font-size: 7px;
-  font-weight: 950;
-  letter-spacing: 0.1em;
-}
-
 .trust-rail-header span {
   color: var(--red);
   font-size: 9px;
@@ -3477,16 +3441,6 @@ button {
   color: #6b4a18;
   font-size: 8px;
   font-weight: 950;
-}
-
-.trust-rail-caption {
-  display: block;
-  margin-top: 7px;
-  color: #6b4a18;
-  font-size: 8px;
-  font-weight: 850;
-  line-height: 1.25;
-  text-align: center;
 }
 
 .trust-rail.trust-steady .trust-rail-meter > span {
@@ -3611,10 +3565,6 @@ button {
 
   .trust-rail-meter {
     width: 23px;
-  }
-
-  .trust-rail-caption {
-    font-size: 7px;
   }
 }
 
@@ -3849,15 +3799,6 @@ button {
   }
   .day-display {
     display: none;
-  }
-  .product-launcher {
-    min-height: 38px;
-    padding: 6px 7px;
-    gap: 4px;
-    font-size: 8px;
-  }
-  .product-launcher svg {
-    width: 13px;
   }
   .product-tutorial-callout {
     right: calc(100% + 10px);

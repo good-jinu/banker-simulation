@@ -5,36 +5,88 @@
   stroke-width: 3;
 }
 
-.product-launcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+.product-add-wrap {
+  position: absolute;
+  right: -12px;
+  bottom: -10px;
+  z-index: 9;
+  pointer-events: auto;
+}
+
+.product-add-button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
   color: var(--ink);
   border: 3px solid var(--ink);
+  border-radius: 50%;
   background: var(--yellow);
   box-shadow: 3px 3px 0 var(--ink);
-  font-size: 10px;
-  font-weight: 950;
   cursor: pointer;
 }
 
-.product-launcher svg {
-  width: 15px;
+.product-add-button svg {
+  width: 16px;
 }
 
-.product-launcher:disabled {
+.product-add-button:disabled {
   opacity: 0.48;
   cursor: not-allowed;
 }
 
-.product-launcher-wrap {
-  position: relative;
+.product-add-button.tutorial-highlight {
+  animation: product-tutorial-pulse 1.15s ease-in-out infinite;
 }
 
-.product-launcher.tutorial-highlight {
-  position: relative;
-  animation: product-tutorial-pulse 1.15s ease-in-out infinite;
+.product-picker-backdrop {
+  position: fixed;
+  z-index: 10;
+  inset: 0;
+}
+
+.product-type-menu {
+  position: absolute;
+  z-index: 11;
+  bottom: calc(100% + 12px);
+  left: 50%;
+  width: max-content;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+  transform: translateX(-50%);
+}
+
+.product-type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.product-type-option:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+}
+
+.product-type-option:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.product-type-option:nth-child(2) {
+  background: var(--green);
 }
 
 .product-tutorial-callout {
@@ -248,6 +300,68 @@
 .product-toggle-button:hover {
   color: var(--paper);
   background: var(--red);
+}
+
+.product-connections {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 2px solid var(--ink);
+}
+
+.product-connections > strong {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.product-connections-empty {
+  margin: 0;
+  padding: 12px;
+  border: 2px dashed var(--ink);
+  color: #6b4a18;
+  font-size: 11px;
+}
+
+.product-connections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.product-connection-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+
+.product-connection-row .portrait {
+  width: 38px;
+  height: 38px;
+  padding: 2px;
+}
+
+.product-connection-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.product-connection-info strong {
+  font-size: 12px;
+}
+
+.product-connection-info small {
+  color: #6b4a18;
+  font-size: 10px;
 }
 
 .product-builder {
@@ -557,14 +671,12 @@
 
 /* These portrait rules intentionally remain last in the product layer. */
 @media (max-width: 420px) {
-  .product-launcher {
-    min-height: 38px;
-    padding: 6px 7px;
-    gap: 4px;
-    font-size: 8px;
+  .product-add-button {
+    width: 28px;
+    height: 28px;
   }
 
-  .product-launcher svg {
+  .product-add-button svg {
     width: 13px;
   }
 
