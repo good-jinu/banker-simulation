@@ -3,12 +3,11 @@ import { useState } from "react";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
-import type { LoanProductRules, OccupationRule } from "./market-world.ts";
+import type { LoanProductRules } from "./market-world.ts";
 
 type ProductBuilderProps = {
   locale: Locale;
   creationCost: number;
-  guided?: boolean;
   onCreate: (rules: LoanProductRules) => void;
   onClose: () => void;
 };
@@ -16,7 +15,6 @@ type ProductBuilderProps = {
 export function ProductBuilder({
   locale,
   creationCost,
-  guided = false,
   onCreate,
   onClose,
 }: ProductBuilderProps) {
@@ -30,219 +28,52 @@ export function ProductBuilder({
     minimumTerm: 6,
     maximumTerm: 12,
   });
-  const setNumber =
-    (key: Exclude<keyof LoanProductRules, "occupation">) =>
-    (event: React.ChangeEvent<HTMLInputElement>) =>
-      setRules((current) => ({
-        ...current,
-        [key]: Number(event.target.value),
-      }));
-  const setRange =
-    (range: "amount" | "term", boundary: "minimum" | "maximum") =>
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      const value = Number(event.target.value);
-      setRules((current) => {
-        const minimumKey = range === "amount" ? "minimumAmount" : "minimumTerm";
-        const maximumKey = range === "amount" ? "maximumAmount" : "maximumTerm";
-        return {
-          ...current,
-          [minimumKey]:
-            boundary === "minimum"
-              ? Math.min(value, current[maximumKey])
-              : current[minimumKey],
-          [maximumKey]:
-            boundary === "maximum"
-              ? Math.max(value, current[minimumKey])
-              : current[maximumKey],
-        };
-      });
-    };
-  const rangeStyle = (minimum: number, maximum: number, ceiling: number) =>
-    ({
-      "--range-start": `${(minimum / ceiling) * 100}%`,
-      "--range-end": `${(maximum / ceiling) * 100}%`,
-    }) as React.CSSProperties;
-
   return (
     <section
-      className={`product-builder${guided ? " guided-product-builder" : ""}`}
+      className="product-builder guided-product-builder"
       role="dialog"
       aria-modal="true"
-      aria-labelledby={guided ? "guided-product-title" : undefined}
-      aria-describedby={guided ? "guided-product-copy" : undefined}
+      aria-labelledby="guided-product-title"
+      aria-describedby="guided-product-copy"
     >
       <button className="modal-close" onClick={onClose} aria-label={m.close}>
         <X />
       </button>
-      {guided ? (
-        <header className="product-launch-header">
-          <span className="product-builder-icon">
-            <SlidersHorizontal aria-hidden="true" />
-          </span>
-          <div>
-            <h2 id="guided-product-title">{m.guidedProductTitle}</h2>
-            <p id="guided-product-copy">{m.guidedProductCopy}</p>
-          </div>
-        </header>
-      ) : (
-        <>
-          <span className="product-builder-icon">
-            <SlidersHorizontal aria-hidden="true" />
-          </span>
-          <small>{m.productLessonEyebrow}</small>
-          <h2>{m.productBuilderTitle}</h2>
-          <p>{m.productBuilderCopy}</p>
-          <div className="product-cost">
-            <Coins aria-hidden="true" />
-            <span>{m.productSetupCost(money(creationCost))}</span>
-          </div>
-        </>
-      )}
-      {!guided && (
-        <div className="product-rule-grid">
-          <label>
-            <span>{m.productMinimumIncome}</span>
-            <input
-              type="number"
-              min="0"
-              step="100"
-              value={rules.minimumIncome}
-              onChange={setNumber("minimumIncome")}
-            />
-          </label>
-          <label>
-            <span>{m.productOccupation}</span>
-            <select
-              value={rules.occupation}
-              onChange={(event) =>
-                setRules((current) => ({
-                  ...current,
-                  occupation: event.target.value as OccupationRule,
-                }))
-              }
-            >
-              <option value="any">{m.productOccupationAny}</option>
-              <option value="employed">{m.productOccupationEmployed}</option>
-              <option value="self-employed">
-                {m.productOccupationSelfEmployed}
-              </option>
-            </select>
-          </label>
-          <label>
-            <span>{m.productInterestRate}</span>
-            <input
-              type="number"
-              min="1"
-              max="30"
-              step="1"
-              value={rules.interestRate}
-              onChange={setNumber("interestRate")}
-            />
-          </label>
-          <label>
-            <span>{m.productLoanRange}</span>
-            <div
-              className="product-range-slider"
-              style={rangeStyle(
-                rules.minimumAmount,
-                rules.maximumAmount,
-                2_500,
-              )}
-            >
-              <input
-                className="range-thumb range-minimum"
-                type="range"
-                min="0"
-                max="2500"
-                step="100"
-                value={rules.minimumAmount}
-                onChange={setRange("amount", "minimum")}
-                aria-label={m.rangeMinimum(m.productLoanRange)}
-              />
-              <input
-                className="range-thumb range-maximum"
-                type="range"
-                min="0"
-                max="2500"
-                step="100"
-                value={rules.maximumAmount}
-                onChange={setRange("amount", "maximum")}
-                aria-label={m.rangeMaximum(m.productLoanRange)}
-              />
-              <output>
-                {money(rules.minimumAmount)} – {money(rules.maximumAmount)}
-              </output>
-            </div>
-          </label>
-          <label>
-            <span>{m.productDueRange}</span>
-            <div
-              className="product-range-slider"
-              style={rangeStyle(rules.minimumTerm, rules.maximumTerm, 20)}
-            >
-              <input
-                className="range-thumb range-minimum"
-                type="range"
-                min="1"
-                max="20"
-                value={rules.minimumTerm}
-                onChange={setRange("term", "minimum")}
-                aria-label={m.rangeMinimum(m.productDueRange)}
-              />
-              <input
-                className="range-thumb range-maximum"
-                type="range"
-                min="1"
-                max="20"
-                value={rules.maximumTerm}
-                onChange={setRange("term", "maximum")}
-                aria-label={m.rangeMaximum(m.productDueRange)}
-              />
-              <output>
-                {m.rangeDays(rules.minimumTerm)} –{" "}
-                {m.rangeDays(rules.maximumTerm)}
-              </output>
-            </div>
-          </label>
+      <header className="product-launch-header">
+        <span className="product-builder-icon">
+          <SlidersHorizontal aria-hidden="true" />
+        </span>
+        <div>
+          <h2 id="guided-product-title">{m.guidedProductTitle}</h2>
+          <p id="guided-product-copy">{m.guidedProductCopy}</p>
         </div>
-      )}
-      {guided ? (
-        <dl className="guided-product-summary">
-          <div>
-            <dt>{m.guidedProductEligibility}</dt>
-            <dd>
-              {m.guidedProductEligibilityValue(money(rules.minimumIncome))}
-            </dd>
-          </div>
-          <div>
-            <dt>{m.productCostLabel}</dt>
-            <dd>{money(creationCost)}</dd>
-          </div>
-          <div className="guided-product-terms">
-            <dt>{m.guidedProductTerms}</dt>
-            <dd>
-              {m.guidedProductTermsValue(
-                money(rules.minimumAmount),
-                money(rules.maximumAmount),
-                rules.interestRate,
-                rules.minimumTerm,
-                rules.maximumTerm,
-              )}
-            </dd>
-          </div>
-        </dl>
-      ) : (
-        <div className="product-preview">
-          <strong>{m.productPreview}</strong>
-          <span>
-            {m.productRuleSummary(
-              money(rules.minimumIncome),
+      </header>
+      <div className="product-cost">
+        <Coins aria-hidden="true" />
+        <span>{m.productSetupCost(money(creationCost))}</span>
+      </div>
+      <dl className="guided-product-summary">
+        <div>
+          <dt>{m.guidedProductEligibility}</dt>
+          <dd>{m.guidedProductEligibilityValue(money(rules.minimumIncome))}</dd>
+        </div>
+        <div>
+          <dt>{m.productCostLabel}</dt>
+          <dd>{money(creationCost)}</dd>
+        </div>
+        <div className="guided-product-terms">
+          <dt>{m.guidedProductTerms}</dt>
+          <dd>
+            {m.guidedProductTermsValue(
               money(rules.minimumAmount),
               money(rules.maximumAmount),
+              rules.interestRate,
+              rules.minimumTerm,
+              rules.maximumTerm,
             )}
-          </span>
+          </dd>
         </div>
-      )}
+      </dl>
       <button className="create-product-button" onClick={() => onCreate(rules)}>
         <SlidersHorizontal /> {m.createLoanProduct(money(creationCost))}
       </button>
