@@ -23,7 +23,9 @@ export function ProductBuilder({
     minimumIncome: 1_500,
     occupation: "employed",
     interestRate: 10,
-    minimumAmount: 300,
+    // Reaches the first stage's small requests, which start at $80. A $300 floor
+    // matched only 14% of the applicants the generator actually produces.
+    minimumAmount: 100,
     maximumAmount: 1_000,
     minimumTerm: 6,
     maximumTerm: 12,
