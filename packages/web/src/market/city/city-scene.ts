@@ -230,7 +230,8 @@ export function createCityScene(
       targetScreenY,
       panEase,
     );
-    const worldUnitsPerPixel = VIEW_SIZE / Math.max(canvas.clientHeight, 1);
+    const worldUnitsPerPixel =
+      VIEW_SIZE / (zoom * Math.max(canvas.clientHeight, 1));
     city.position
       .set(0, 0, 0)
       .addScaledVector(screenRight, displayedScreenX * worldUnitsPerPixel)

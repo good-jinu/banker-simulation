@@ -53,6 +53,10 @@ export function GameApp({
   const locale: Locale = settings.locale ?? detectLocale();
   const m = messagesFor(locale);
   const selectedStage = marketStageById(selectedStageId);
+  const selectedStageIndex = marketCampaignStages.findIndex(
+    (stage) => stage.id === selectedStage.id,
+  );
+  const nextStage = marketCampaignStages[selectedStageIndex + 1] ?? null;
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -134,6 +138,7 @@ export function GameApp({
   if (screen === "campaign") {
     return (
       <MarketApp
+        key={selectedStage.id}
         stage={selectedStage}
         locale={locale}
         onBack={() => setScreen("stages")}
@@ -152,7 +157,8 @@ export function GameApp({
               mostRecentStageId: stage.id,
             };
           });
-          setScreen("stages");
+          if (nextStage) setSelectedStageId(nextStage.id);
+          else setScreen("stages");
         }}
       />
     );

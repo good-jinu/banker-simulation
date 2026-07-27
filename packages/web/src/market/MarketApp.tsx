@@ -60,6 +60,8 @@ const MarketDevTools = import.meta.env.DEV
     })
   : null;
 
+const MARKET_HIGHLIGHT_DURATION_MS = 2_400;
+
 type MarketAppProps = {
   locale: Locale;
   onBack: () => void;
@@ -85,6 +87,14 @@ export function MarketApp({
   const [overlay, setOverlay] = useState<MarketOverlay | null>(null);
   const [highlightedSegment, setHighlightedSegment] =
     useState<MarketSegment | null>(null);
+  useEffect(() => {
+    if (!highlightedSegment) return;
+    const timeout = window.setTimeout(
+      () => setHighlightedSegment(null),
+      MARKET_HIGHLIGHT_DURATION_MS,
+    );
+    return () => window.clearTimeout(timeout);
+  }, [highlightedSegment]);
   const [clockView, setClockView] = useState<ClockView>({
     paused: true,
     speed: 1,

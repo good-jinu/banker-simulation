@@ -1,4 +1,4 @@
-import { Landmark, Percent, X } from "lucide-react";
+import { Landmark, X } from "lucide-react";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
@@ -18,24 +18,35 @@ export function DepositProductBuilder({
 }) {
   const m = messagesFor(locale).market;
   return (
-    <section className="product-builder" role="dialog" aria-modal="true">
+    <section
+      className="product-builder deposit-product-builder"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="deposit-product-title"
+      aria-describedby="deposit-product-copy"
+    >
       <button className="modal-close" onClick={onClose} aria-label={m.close}>
         <X />
       </button>
-      <span className="product-builder-icon">
-        <Landmark aria-hidden="true" />
-      </span>
-      <small>{m.depositProductEyebrow}</small>
-      <h2>{m.depositProductTitle}</h2>
-      <p>{m.depositProductCopy}</p>
-      <div className="product-preview">
-        <Percent aria-hidden="true" />
-        <strong>{m.depositProductRate(interestRate)}</strong>
-      </div>
-      <div className="product-cost">
-        <Landmark aria-hidden="true" />
-        <span>{m.productSetupCost(money(creationCost))}</span>
-      </div>
+      <header className="product-launch-header">
+        <span className="product-builder-icon">
+          <Landmark aria-hidden="true" />
+        </span>
+        <div>
+          <h2 id="deposit-product-title">{m.depositProductTitle}</h2>
+          <p id="deposit-product-copy">{m.depositProductCopy}</p>
+        </div>
+      </header>
+      <dl className="deposit-product-summary">
+        <div>
+          <dt>{m.depositProductRateLabel}</dt>
+          <dd>{m.depositProductRate(interestRate)}</dd>
+        </div>
+        <div>
+          <dt>{m.productCostLabel}</dt>
+          <dd>{money(creationCost)}</dd>
+        </div>
+      </dl>
       <button className="create-product-button" onClick={onCreate}>
         <Landmark aria-hidden="true" />
         {m.createDepositProduct(money(creationCost))}

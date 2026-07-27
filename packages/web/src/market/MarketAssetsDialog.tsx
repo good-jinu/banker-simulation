@@ -152,7 +152,7 @@ function PortfolioDetails({
               <strong>{localize(customer.name, locale)}</strong>
               <span>{money(customer.amount)}</span>
               <small>
-                {m.dueInDays(Math.max(customer.dueDay - day, 0))} ·{" "}
+                {m.dueInDays(Math.max(customer.dueDay - day, 0))},{" "}
                 {m.repaymentDue(
                   money(customer.amount * (1 + customer.rate / 100)),
                 )}
@@ -189,7 +189,7 @@ function PortfolioDetails({
                   ? m.defaultedDebt(
                       money(lender.amount * (1 + lender.rate / 100)),
                     )
-                  : `${m.dueInDays(Math.max(lender.dueDay - day, 0))} · ${m.repaymentDue(money(lender.amount * (1 + lender.rate / 100)))}`}
+                  : `${m.dueInDays(Math.max(lender.dueDay - day, 0))}, ${m.repaymentDue(money(lender.amount * (1 + lender.rate / 100)))}`}
               </small>
             </article>
           ))}

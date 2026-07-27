@@ -92,7 +92,7 @@ export function CustomerConsultation({
   function evidence(question: ConsultationQuestionId): string {
     return question === "purpose"
       ? localize(customer.evidence.purpose, locale)
-      : `${localize(customer.job, locale)} · ${money(customer.income)}`;
+      : `${localize(customer.job, locale)}, ${money(customer.income)}`;
   }
 
   const openingMessage =

@@ -3260,6 +3260,45 @@ button {
   line-height: 1.45;
 }
 
+.result-statistics {
+  margin-top: 18px;
+}
+
+.mission-clear-card > p {
+  margin-bottom: 0;
+}
+
+.result-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.result-actions button {
+  min-width: 0;
+  padding: 13px 10px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  border-radius: 0;
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-weight: 950;
+  cursor: pointer;
+}
+
+.result-actions button:last-child {
+  background: var(--green);
+}
+
+.loss-card .result-actions button:last-child {
+  background: #ef918a;
+}
+
+.result-actions button:hover {
+  transform: translate(-1px, -1px);
+}
+
 @media (max-width: 620px) {
   .market-news-button span {
     display: none;

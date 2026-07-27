@@ -50,29 +50,29 @@ export const en = {
     firstLoanApprovalCoachmark:
       "Lend to Mina and watch how the contract is repaid.",
     incomeAnswer: "My monthly income is about $2,400.",
-    informationComplete: "Information checked · $110 due in 12 days",
+    informationComplete: "Information checked. $110 due in 12 days",
     informationChecked: (amount: string, days: number) =>
-      `Information checked · ${amount} due in ${days} days`,
+      `Information checked. ${amount} due in ${days} days`,
     evidenceCollected: "Collected customer evidence",
     underwritingDecision: "UNDERWRITING SNAPSHOT",
     estimatedRisk: "Estimated default risk",
     riskLow: "low pressure",
     riskMedium: "watch closely",
     riskHigh: "high pressure",
-    approveRequest: "Approve request · enter market",
+    approveRequest: "Approve request and enter market",
     challengeInformationComplete: (risk: number) =>
-      `Information checked · estimated default risk: ${risk}%`,
+      `Information checked. Estimated default risk: ${risk}%`,
     lendAtRate: "Lend $100 at 10% interest",
     openUnderwriting: "Open the underwriting desk",
-    noticeRepayment: (amount: string) => `REPAID · ${amount}`,
+    noticeRepayment: (amount: string) => `REPAID ${amount}`,
     noticeDefault: (name: string, amount: string) =>
-      `DEFAULT · ${name} · ${amount}`,
+      `DEFAULT ${name} ${amount}`,
     noticeCustomerRepayment: (name: string, amount: string) =>
-      `REPAID · ${name} · ${amount}`,
+      `REPAID ${name} ${amount}`,
     noticeFundingRepayment: (name: string, amount: string) =>
-      `PAID · ${name} · ${amount}`,
+      `PAID ${name} ${amount}`,
     noticeFundingDefault: (name: string, amount: string) =>
-      `MISSED · ${name} · ${amount}`,
+      `MISSED ${name} ${amount}`,
     // Qualitative only — the player is told what moved, never by how much.
     trustContractsCompleting:
       "Trust is rising — more customers are completing their contracts.",
@@ -98,7 +98,7 @@ export const en = {
     opinionReliabilityMid: "Proven",
     opinionReliabilityHigh: "Exceptional",
     noticeFundingSettlement: (name: string, amount: string) =>
-      `SETTLED · ${name} · ${amount}`,
+      `SETTLED ${name} ${amount}`,
     flowFunded: "FUNDED",
     flowCashIn: "CASH IN",
     flowRepaid: "REPAID",
@@ -113,9 +113,8 @@ export const en = {
     noticeDepositRequest: (name: string, amount: string) =>
       `${name} would like to deposit ${amount}.`,
     noticeDepositAccepted: (name: string, amount: string) =>
-      `DEPOSIT RECEIVED · ${name} · ${amount}`,
-    noticeDepositWithdrawal: (amount: string) =>
-      `SAVINGS WITHDRAWN · ${amount}`,
+      `DEPOSIT RECEIVED ${name} ${amount}`,
+    noticeDepositWithdrawal: (amount: string) => `SAVINGS WITHDRAWN ${amount}`,
     fundingArrived: "Funding offers from other banks have arrived.",
     insufficientCash: "Insufficient cash.",
     viewFunding: "Check other banks' offers.",
@@ -139,7 +138,7 @@ export const en = {
     zoomOut: "Zoom out",
     waiting: (days: number) => `D+${days} waiting`,
     repaymentIn: (days: number) => `D-${days}`,
-    loanRequest: (rate: number) => `Loan request · ${rate}% interest`,
+    loanRequest: (rate: number) => `${rate}% interest loan request`,
     loanPurpose: "Loan purpose",
     existingDebt: "Existing debt",
     collateral: "Collateral / guarantee",
@@ -158,8 +157,7 @@ export const en = {
     viewLoanProducts: "Offers",
     timePaused: "Time paused",
     timeRunning: "Time running",
-    dayStatus: (day: number, paused: boolean) =>
-      `DAY ${day} · ${paused ? "PAUSED" : "RUNNING"}`,
+    dayStatus: (day: number) => `DAY ${day}`,
     playTime: "Play time",
     pause: "Pause",
     speed: "Speed",
@@ -169,7 +167,7 @@ export const en = {
     loanReceivables: "Loan receivables",
     depositLiabilities: "Customer deposits owed",
     finalNetWorth: "Final net worth",
-    checkResult: "Review results · Complete level",
+    checkResult: "Review results and complete level",
     balanceSheet: "MY BANK BALANCE SHEET",
     bankAssets: "Bank assets",
     netWorth: "Net worth",
@@ -192,8 +190,8 @@ export const en = {
     depositRequestWarning:
       "Deposits add working cash today, but remain money the bank must return when customers withdraw it.",
     depositRate: (rate: number) => `${rate}% savings rate`,
-    acceptDeposit: (amount: string) => `Accept deposit · ${amount}`,
-    depositBalance: (amount: string) => `Held · ${amount}`,
+    acceptDeposit: (amount: string) => `Accept ${amount} deposit`,
+    depositBalance: (amount: string) => `Held ${amount}`,
     requestCopy: (amount: string) =>
       `I would like to borrow ${amount} for my business and living expenses.`,
     job: "Job",
@@ -201,12 +199,12 @@ export const en = {
     loanAmount: "Loan amount",
     repaymentTerms: "Repayment terms",
     reject: "Reject",
-    lend: (amount: string) => `Lend · ${amount}`,
-    fundingNeeded: "Insufficient cash · Borrow funds",
+    lend: (amount: string) => `Lend ${amount}`,
+    fundingNeeded: "Insufficient cash. Borrow funds",
     interbankFunding: "INTERBANK FUNDING",
     borrowFromBank: "Borrow from another bank",
     fundingConversationScene: "A CALL FROM ANOTHER BANK",
-    fundingManagerName: "Mara · Interbank manager",
+    fundingManagerName: "Mara, Interbank manager",
     fundingManagerAlt: "Interbank manager offering funding",
     fundingConversationGreeting:
       "Your bank has people waiting for loans. I can add cash today, so you can lend more out—but remember, this money comes due later.",
@@ -224,11 +222,15 @@ export const en = {
     close: "Close",
     loanProgress: (count: number) => `${count} loan${count === 1 ? "" : "s"}`,
     loanTerms: (days: number, rate: number) =>
-      `${days} days · ${rate}% interest`,
+      `${days} days at ${rate}% interest`,
     defaultRisk: "Default risk",
     defaultRiskValue: (risk: number) => `${risk}% estimated`,
     defaults: "Credit outcome",
     survived: "Bank solvent",
+    viewStatistics: "View statistics",
+    hideStatistics: "Hide statistics",
+    nextLevel: "Next level",
+    finishCampaign: "Finish campaign",
     insolventTitle: "BANK INSOLVENT",
     insolventDescription:
       "A funding repayment came due when the bank did not have enough cash. Review loan risk and debt maturities, then try again.",
@@ -238,20 +240,33 @@ export const en = {
     returnToStages: "Return to stages",
     loanProductName: "Income Guard Loan",
     depositProductName: "Neighborhood Savings",
-    depositProductEyebrow: "OFFER SAVINGS FIRST",
-    depositProductTitle: "Launch a Savings Product",
+    depositProductTitle: "Launch Savings",
     depositProductCopy:
-      "Customers can deposit only after your bank publishes terms. Their money becomes working cash, but the bank must return it with interest.",
-    depositProductRate: (rate: number) => `${rate}% savings interest`,
-    createDepositProduct: (cost: string) => `Launch savings product · ${cost}`,
+      "Deposits become usable cash. Repay them with interest.",
+    depositProductRateLabel: "Savings rate",
+    depositProductRate: (rate: number) => `${rate}%`,
+    createDepositProduct: (_cost: string) => "Launch product",
     depositProductActivated:
-      "Savings product active · customer deposits are now entering the bank.",
+      "Savings product active. Customer deposits are now entering the bank.",
     productActivated:
-      "Loan Product active · qualifying requests will be funded automatically.",
+      "Loan product active. Qualifying requests will be funded automatically.",
     productLessonEyebrow: "AUTOMATE THE SAFE DECISION",
     productBuilderTitle: "Create a Loan Product",
     productBuilderCopy:
       "A Product is a standing contract. Every matching customer receives cash automatically while the bank can fund them.",
+    guidedProductTitle: "Launch Loans",
+    guidedProductCopy:
+      "Matching customers receive loans automatically while cash is available.",
+    guidedProductEligibility: "Eligibility",
+    guidedProductEligibilityValue: (income: string) => `Employed, ${income}+`,
+    guidedProductTerms: "Loan terms",
+    guidedProductTermsValue: (
+      minimum: string,
+      maximum: string,
+      rate: number,
+      minimumTerm: number,
+      maximumTerm: number,
+    ) => `${minimum}–${maximum}, ${rate}%, ${minimumTerm}–${maximumTerm} days`,
     productMinimumIncome: "Minimum monthly income",
     productOccupation: "Allowed occupation",
     productInterestRate: "Contract interest rate",
@@ -262,7 +277,7 @@ export const en = {
     productDueRange: "Due-date range (days)",
     productPreview: "AUTOMATIC RULE",
     productRuleSummary: (income: string, minimum: string, maximum: string) =>
-      `Income ${income}+ · loans ${minimum}–${maximum}`,
+      `Income ${income}+ with loans from ${minimum} to ${maximum}`,
     productDetailsEyebrow: "LOAN PRODUCT",
     productActive: "ACTIVE",
     productPaused: "PAUSED",
@@ -317,7 +332,7 @@ export const en = {
       "Too few contracts resolved to establish a reliable market record. Build carefully and let loans complete.",
     diagnosisResilient:
       "The bank kept its promises under pressure. Its network is ready for a more demanding market.",
-    createLoanProduct: (cost: string) => `Activate loan product · ${cost}`,
+    createLoanProduct: (_cost: string) => "Launch product",
     productAutoLending: "AUTO LOANS",
     rangeMinimum: (label: string) => `${label} minimum`,
     rangeMaximum: (label: string) => `${label} maximum`,
@@ -325,7 +340,8 @@ export const en = {
     products: "Products",
     openProducts: "Open products",
     addProduct: "Add product",
-    productSetupCost: (cost: string) => `SETUP COST · ${cost}`,
+    productCostLabel: "Setup cost",
+    productSetupCost: (cost: string) => `SETUP COST ${cost}`,
     productInsufficientCash: (cost: string) =>
       `You need ${cost} cash to create this product.`,
     productTutorialClick: "NEXT: ADD A PRODUCT ↓",

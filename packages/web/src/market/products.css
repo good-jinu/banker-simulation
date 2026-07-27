@@ -106,11 +106,13 @@
 
 .product-node {
   z-index: 8;
-  min-width: 126px;
-  padding: 7px 9px 8px;
-  border: 3px solid var(--ink);
-  background: var(--paper);
-  box-shadow: 5px 5px 0 var(--ink);
+  width: 44px;
+  height: 44px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .product-icon,
@@ -124,9 +126,13 @@
 }
 
 .product-icon {
-  width: 35px;
-  height: 31px;
-  margin-top: -22px;
+  width: 42px;
+  height: 42px;
+  margin: 0;
+}
+
+.deposit-product-node .product-icon {
+  background: var(--green);
 }
 
 .product-icon svg,
@@ -285,6 +291,90 @@
   font-size: 13px;
   font-weight: 700;
   line-height: 1.45;
+}
+
+.deposit-product-builder {
+  width: min(500px, 100%);
+}
+
+.product-launch-header {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 16px;
+  padding-right: 42px;
+}
+
+.product-launch-header .product-builder-icon {
+  margin: 0;
+}
+
+.product-launch-header h2 {
+  margin: 0 0 7px;
+}
+
+.product-launch-header p {
+  max-width: 350px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+
+.deposit-product-summary,
+.guided-product-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 22px 0 0;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.deposit-product-summary div,
+.guided-product-summary div {
+  min-width: 0;
+  padding: 13px 15px;
+}
+
+.deposit-product-summary div:first-child {
+  border-right: 3px solid var(--ink);
+  background: var(--green);
+}
+
+.deposit-product-summary dt,
+.guided-product-summary dt {
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.deposit-product-summary dd,
+.guided-product-summary dd {
+  margin: 3px 0 0;
+  font-size: 22px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.guided-product-builder {
+  width: min(500px, 100%);
+}
+
+.guided-product-summary div:first-child {
+  border-right: 3px solid var(--ink);
+  background: var(--green);
+}
+
+.guided-product-summary .guided-product-terms {
+  grid-column: 1 / -1;
+  border-top: 3px solid var(--ink);
+}
+
+.guided-product-summary .guided-product-terms dd {
+  font-size: 15px;
+  line-height: 1.2;
 }
 
 .product-cost {
