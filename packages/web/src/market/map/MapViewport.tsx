@@ -1,5 +1,5 @@
 import { ZoomIn, ZoomOut } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CityBackground } from "../city/CityBackground.tsx";
 import type { CityPan } from "../city/city-scene.ts";
 
@@ -15,6 +15,7 @@ export function MapViewport({
   zoomOutLabel,
   onFirstDrag,
   onPanChange,
+  onZoomChange,
   showNavigation = true,
 }: {
   customerCount: number;
@@ -24,9 +25,14 @@ export function MapViewport({
   zoomOutLabel: string;
   onFirstDrag: () => void;
   onPanChange: (pan: CityPan) => void;
+  onZoomChange: (zoom: number) => void;
   showNavigation?: boolean;
 }) {
   const [zoom, setZoom] = useState(1);
+
+  useEffect(() => {
+    onZoomChange(zoom);
+  }, [onZoomChange, zoom]);
 
   return (
     <>

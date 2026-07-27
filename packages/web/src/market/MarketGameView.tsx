@@ -85,10 +85,27 @@ export function MarketGameView({
   const m = messagesFor(locale).market;
   const [showPlayPrompt, setShowPlayPrompt] = useState(false);
   const mapWorldRef = useRef<HTMLDivElement>(null);
-  const moveMapWorld = useCallback(({ x, y }: CityPan) => {
+  const mapPanRef = useRef<CityPan>({ x: 0, y: 0 });
+  const mapZoomRef = useRef(1);
+  const updateMapWorldTransform = useCallback(() => {
     if (!mapWorldRef.current) return;
-    mapWorldRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    const { x, y } = mapPanRef.current;
+    mapWorldRef.current.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${mapZoomRef.current})`;
   }, []);
+  const moveMapWorld = useCallback(
+    ({ x, y }: CityPan) => {
+      mapPanRef.current = { x, y };
+      updateMapWorldTransform();
+    },
+    [updateMapWorldTransform],
+  );
+  const zoomMapWorld = useCallback(
+    (zoom: number) => {
+      mapZoomRef.current = zoom;
+      updateMapWorldTransform();
+    },
+    [updateMapWorldTransform],
+  );
   const { fundingEligible, trustBand } = summarize(world);
   const {
     cash,
@@ -189,7 +206,7 @@ export function MarketGameView({
                 m.incomingRepayment(money(nextMovement.incomingAmount))}
               {nextMovement.incomingAmount > 0 &&
                 nextMovement.outgoingAmount > 0 &&
-                " · "}
+                ", "}
               {nextMovement.outgoingAmount > 0 &&
                 m.outgoingRepayment(money(nextMovement.outgoingAmount))}
             </span>
@@ -255,6 +272,7 @@ export function MarketGameView({
           zoomInLabel={m.zoomIn}
           zoomOutLabel={m.zoomOut}
           onPanChange={moveMapWorld}
+          onZoomChange={zoomMapWorld}
           onFirstDrag={onFirstMapDrag}
           showNavigation={showFullMarket}
         />
@@ -386,7 +404,8 @@ export function MarketGameView({
                   style={{ left: `${product.x}%`, top: `${product.y}%` }}
                   role="button"
                   tabIndex={0}
-                  aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
+                  aria-label={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
+                  title={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
                   onClick={() => onSelectProduct(product)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
@@ -408,7 +427,8 @@ export function MarketGameView({
                   key={product.id}
                   className={`product-node deposit-product-node map-node${product.active ? "" : " paused"}`}
                   style={{ left: `${product.x}%`, top: `${product.y}%` }}
-                  aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
+                  aria-label={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
+                  title={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
                 >
                   <span className="product-icon">
                     <Landmark aria-hidden="true" />
@@ -582,7 +602,7 @@ export function MarketGameView({
             <span
               className={clockView.paused ? "status-dot paused" : "status-dot"}
             />
-            <strong>{m.dayStatus(day + 1, clockView.paused)}</strong>
+            <strong>{m.dayStatus(day + 1)}</strong>
           </div>
           <div className="time-actions">
             <button

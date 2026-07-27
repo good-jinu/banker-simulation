@@ -129,7 +129,7 @@ export function useMarketEffects({
           setNotice(m.fundingArrived);
           break;
         // Deliberately not routed through `notice`: the transient banner is
-        // where the concrete event ("DEFAULT · Mina · $100") belongs, and the
+        // where the concrete event ("DEFAULT Mina $100") belongs, and the
         // trust reading would otherwise overwrite it on the very same tick.
         case "trust-shift":
           setTrustMessage(trustReasonMessage(event.reason, m));

@@ -64,20 +64,40 @@ export function ProductBuilder({
     }) as React.CSSProperties;
 
   return (
-    <section className="product-builder" role="dialog" aria-modal="true">
+    <section
+      className={`product-builder${guided ? " guided-product-builder" : ""}`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={guided ? "guided-product-title" : undefined}
+      aria-describedby={guided ? "guided-product-copy" : undefined}
+    >
       <button className="modal-close" onClick={onClose} aria-label={m.close}>
         <X />
       </button>
-      <span className="product-builder-icon">
-        <SlidersHorizontal aria-hidden="true" />
-      </span>
-      <small>{m.productLessonEyebrow}</small>
-      <h2>{m.productBuilderTitle}</h2>
-      <p>{m.productBuilderCopy}</p>
-      <div className="product-cost">
-        <Coins aria-hidden="true" />
-        <span>{m.productSetupCost(money(creationCost))}</span>
-      </div>
+      {guided ? (
+        <header className="product-launch-header">
+          <span className="product-builder-icon">
+            <SlidersHorizontal aria-hidden="true" />
+          </span>
+          <div>
+            <h2 id="guided-product-title">{m.guidedProductTitle}</h2>
+            <p id="guided-product-copy">{m.guidedProductCopy}</p>
+          </div>
+        </header>
+      ) : (
+        <>
+          <span className="product-builder-icon">
+            <SlidersHorizontal aria-hidden="true" />
+          </span>
+          <small>{m.productLessonEyebrow}</small>
+          <h2>{m.productBuilderTitle}</h2>
+          <p>{m.productBuilderCopy}</p>
+          <div className="product-cost">
+            <Coins aria-hidden="true" />
+            <span>{m.productSetupCost(money(creationCost))}</span>
+          </div>
+        </>
+      )}
       {!guided && (
         <div className="product-rule-grid">
           <label>
@@ -186,16 +206,43 @@ export function ProductBuilder({
           </label>
         </div>
       )}
-      <div className="product-preview">
-        <strong>{m.productPreview}</strong>
-        <span>
-          {m.productRuleSummary(
-            money(rules.minimumIncome),
-            money(rules.minimumAmount),
-            money(rules.maximumAmount),
-          )}
-        </span>
-      </div>
+      {guided ? (
+        <dl className="guided-product-summary">
+          <div>
+            <dt>{m.guidedProductEligibility}</dt>
+            <dd>
+              {m.guidedProductEligibilityValue(money(rules.minimumIncome))}
+            </dd>
+          </div>
+          <div>
+            <dt>{m.productCostLabel}</dt>
+            <dd>{money(creationCost)}</dd>
+          </div>
+          <div className="guided-product-terms">
+            <dt>{m.guidedProductTerms}</dt>
+            <dd>
+              {m.guidedProductTermsValue(
+                money(rules.minimumAmount),
+                money(rules.maximumAmount),
+                rules.interestRate,
+                rules.minimumTerm,
+                rules.maximumTerm,
+              )}
+            </dd>
+          </div>
+        </dl>
+      ) : (
+        <div className="product-preview">
+          <strong>{m.productPreview}</strong>
+          <span>
+            {m.productRuleSummary(
+              money(rules.minimumIncome),
+              money(rules.minimumAmount),
+              money(rules.maximumAmount),
+            )}
+          </span>
+        </div>
+      )}
       <button className="create-product-button" onClick={() => onCreate(rules)}>
         <SlidersHorizontal /> {m.createLoanProduct(money(creationCost))}
       </button>
