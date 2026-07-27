@@ -9,12 +9,28 @@ import {
   type FlowAnimation,
   type FlowLabels,
 } from "../market-flow.ts";
-import type { Customer, MarketWorld } from "../market-world.ts";
+import type { Customer, MarketWorld, TrustReason } from "../market-world.ts";
+
+type MarketMessages = ReturnType<typeof messagesFor>["market"];
+
+function trustReasonMessage(reason: TrustReason, m: MarketMessages): string {
+  switch (reason) {
+    case "contracts-completing":
+      return m.trustContractsCompleting;
+    case "earnings-sustainable":
+      return m.trustEarningsSustainable;
+    case "defaults-weakened-book":
+      return m.trustDefaultsWeakened;
+    case "obligation-unpaid":
+      return m.trustObligationUnpaid;
+    case "book-thinning":
+      return m.trustBookThinning;
+  }
+}
 
 type UseMarketEffectsOptions = {
   world: MarketWorld;
   locale: Locale;
-  hasProductGoal: boolean;
   onOpenProductBuilder: () => void;
   onOpenFunding: () => void;
 };
@@ -22,7 +38,6 @@ type UseMarketEffectsOptions = {
 export function useMarketEffects({
   world,
   locale,
-  hasProductGoal,
   onOpenProductBuilder,
   onOpenFunding,
 }: UseMarketEffectsOptions) {
@@ -34,6 +49,9 @@ export function useMarketEffects({
   const [flowQueue, setFlowQueue] = useState<FlowAnimation[]>([]);
   const [activeFlow, setActiveFlow] = useState<FlowAnimation | null>(null);
   const [trustPulse, setTrustPulse] = useState<"up" | "down" | null>(null);
+  /** The standing explanation under the trust rail. Unlike `notice` it does
+   * not time out — it stays until the bank's standing next moves. */
+  const [trustMessage, setTrustMessage] = useState<string | null>(null);
   const flowId = useRef(0);
 
   useEffect(() => {
@@ -49,11 +67,30 @@ export function useMarketEffects({
               money(event.customer.amount),
             ),
           );
-          if (hasProductGoal && world.products.length === 0)
+          if (!world.products.some((product) => product.kind === "loan"))
             onOpenProductBuilder();
+          break;
+        case "customer-repayment":
+          setNotice(
+            m.noticeCustomerRepayment(
+              localize(event.customer.name, locale),
+              money(event.amount),
+            ),
+          );
           break;
         case "loan-request":
           setLoanRequestNotice(event.customer);
+          break;
+        case "deposit-accepted":
+          setNotice(
+            m.noticeDepositAccepted(
+              localize(event.depositor.name, locale),
+              money(event.depositor.amount),
+            ),
+          );
+          break;
+        case "deposit-withdrawal":
+          setNotice(m.noticeDepositWithdrawal(money(event.amount)));
           break;
         case "borrowed":
           setNotice(
@@ -68,7 +105,6 @@ export function useMarketEffects({
             m.noticeFundingRepayment(
               localize(event.lender.name, locale),
               money(event.amount),
-              event.trustDelta,
             ),
           );
           break;
@@ -92,6 +128,13 @@ export function useMarketEffects({
           onOpenFunding();
           setNotice(m.fundingArrived);
           break;
+        // Deliberately not routed through `notice`: the transient banner is
+        // where the concrete event ("DEFAULT · Mina · $100") belongs, and the
+        // trust reading would otherwise overwrite it on the very same tick.
+        case "trust-shift":
+          setTrustMessage(trustReasonMessage(event.reason, m));
+          setTrustPulse(event.direction);
+          break;
         case "insolvent":
           setNotice(
             world.failureReason === "trust"
@@ -104,19 +147,24 @@ export function useMarketEffects({
       }
     }
   }, [
-    hasProductGoal,
     locale,
     m,
     onOpenFunding,
     onOpenProductBuilder,
     world.events,
     world.failureReason,
-    world.products.length,
+    world.products,
   ]);
 
   useEffect(() => {
     const pointFor = (id: string) =>
-      pointForId(id, world.customers, world.funding, world.products);
+      pointForId(
+        id,
+        world.customers,
+        world.depositors,
+        world.funding,
+        world.products,
+      );
     const labels: FlowLabels = {
       funded: m.flowFunded,
       cashIn: m.flowCashIn,
@@ -132,16 +180,14 @@ export function useMarketEffects({
       .filter((flow): flow is Omit<FlowAnimation, "id"> => flow !== null)
       .map((flow) => ({ ...flow, id: ++flowId.current }));
     if (flows.length > 0) setFlowQueue((pending) => [...pending, ...flows]);
-
-    const fundingTrustEvent = world.events.find(
-      (event) =>
-        event.type === "funding-repayment" || event.type === "funding-default",
-    );
-    if (fundingTrustEvent)
-      setTrustPulse(
-        fundingTrustEvent.type === "funding-repayment" ? "up" : "down",
-      );
-  }, [m, world.events, world.funding, world.customers, world.products]);
+  }, [
+    m,
+    world.events,
+    world.funding,
+    world.customers,
+    world.depositors,
+    world.products,
+  ]);
 
   useEffect(() => {
     if (activeFlow || flowQueue.length === 0) return;
@@ -183,5 +229,6 @@ export function useMarketEffects({
     notice,
     setNotice,
     trustPulse,
+    trustMessage,
   };
 }

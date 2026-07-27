@@ -33,9 +33,24 @@ export const ko: Messages = {
     greeting: "안녕하세요! 급하게 필요한 돈이 있어요.",
     challengeGreeting: "일을 계속하려면 운영 자금이 필요해요.",
     loanQuestion: "$100을 빌릴 수 있을까요?",
+    onboardingFirstStep: "첫 번째 단계",
+    coachmarkNewControl: "새로운 조작",
+    onboardingFirstCustomer: "미나를 만나 대출이 필요한 이유를 들어보세요.",
+    onboardingFirstRepayment:
+      "시간을 재생해 미나가 첫 계약을 마치는 과정을 지켜보세요.",
+    onboardingSecondDecision:
+      "다음 고객을 만나 정보를 확인하고 직접 판단하세요.",
+    onboardingDepositProduct:
+      "고객 예금을 받기 전에 은행의 예금 상품을 먼저 출시하세요.",
+    onboardingLoanProduct:
+      "앞서 배운 대출 판단을 반복 가능한 상품으로 만드세요.",
     challengeLoanQuestion: (amount: string) => `${amount}을 빌릴 수 있을까요?`,
     askPurpose: "대출 용도를 물어본다",
     askIncome: "소득을 물어본다",
+    firstLoanRejectLocked:
+      "첫 계약에서는 대출 실행과 상환 흐름을 배우므로 거절할 수 없습니다.",
+    firstLoanApprovalCoachmark:
+      "미나에게 대출하고 계약이 상환되는 과정을 확인하세요.",
     incomeAnswer: "월 소득은 약 $2,400입니다.",
     informationComplete: "정보 확인 완료 · 12일 후 $110 상환",
     informationChecked: (amount: string, days: number) =>
@@ -53,14 +68,35 @@ export const ko: Messages = {
     openUnderwriting: "여신 심사 데스크 열기",
     noticeRepayment: (amount: string) => `상환 완료 · ${amount}`,
     noticeDefault: (name: string, amount: string) =>
-      `연체 · ${name} · ${amount}`,
-    noticeFundingRepayment: (
-      name: string,
-      amount: string,
-      trustDelta: number,
-    ) => `상환 완료 · ${name} · ${amount} · 신뢰도 +${trustDelta}`,
+      `채무불이행 · ${name} · ${amount}`,
+    noticeCustomerRepayment: (name: string, amount: string) =>
+      `상환 완료 · ${name} · ${amount}`,
+    noticeFundingRepayment: (name: string, amount: string) =>
+      `상환 완료 · ${name} · ${amount}`,
     noticeFundingDefault: (name: string, amount: string) =>
-      `연체 · ${name} · ${amount} · 신뢰도 -20`,
+      `연체 · ${name} · ${amount}`,
+    // 정성적 표현만 사용한다. 변동 폭은 플레이어에게 드러내지 않는다.
+    trustContractsCompleting:
+      "신뢰도 상승 · 계약을 끝까지 마친 고객이 늘고 있다.",
+    trustEarningsSustainable:
+      "신뢰도 상승 · 은행의 수익이 자리를 잡아가고 있다.",
+    trustDefaultsWeakened: "신뢰도 압박 · 채무불이행이 대출 자산을 약화시켰다.",
+    trustObligationUnpaid:
+      "갚지 못한 채무가 남아 있는 동안에는 신뢰도가 오르지 않는다.",
+    trustBookThinning: "신뢰도 하락 · 은행이 상대하는 고객이 줄고 있다.",
+    opinionTitle: "시장 평판",
+    opinionReach: "고객 기반",
+    opinionStrength: "재무 건전성",
+    opinionReliability: "신뢰성",
+    opinionReachLow: "제한적",
+    opinionReachMid: "성장 중",
+    opinionReachHigh: "확립됨",
+    opinionStrengthLow: "취약",
+    opinionStrengthMid: "안정",
+    opinionStrengthHigh: "견고",
+    opinionReliabilityLow: "의심받음",
+    opinionReliabilityMid: "검증됨",
+    opinionReliabilityHigh: "탁월함",
     noticeFundingSettlement: (name: string, amount: string) =>
       `연체 청산 · ${name} · ${amount}`,
     flowFunded: "대출 실행",
@@ -74,18 +110,23 @@ export const ko: Messages = {
     noticeInsolvent: "오늘 만기인 부채를 갚을 현금이 부족합니다.",
     noticeLoanRequest: (name: string, amount: string) =>
       `${name} 고객이 ${amount} 대출을 요청합니다.`,
+    noticeDepositRequest: (name: string, amount: string) =>
+      `${name} 고객이 ${amount} 예금을 맡기고 싶어 합니다.`,
+    noticeDepositAccepted: (name: string, amount: string) =>
+      `예금 수취 · ${name} · ${amount}`,
+    noticeDepositWithdrawal: (amount: string) => `예금 인출 · ${amount}`,
     fundingArrived: "다른 은행들의 자금 대출 제안이 도착했습니다.",
     insufficientCash: "현금이 부족합니다.",
     viewFunding: "다른 은행의 제안을 확인하세요.",
     fundingUnavailable: "외부 자금 제안은 세 번째 대출 후 3일 뒤 도착합니다.",
     borrowed: (name: string, amount: string) =>
       `${name}에서 ${amount}를 빌렸습니다.`,
-    goalsPanelTitle: (number: string) => `LEVEL ${number} 목표`,
-    allGoalsComplete: "모든 목표 완료",
     currentDate: "현재 날짜",
     currentCash: "현금",
     trust: "은행 신뢰도",
+    onlyGoal: "단 하나의 목표",
     trustScore: (value: number) => `${value}/100`,
+    trustGoalCaption: "좋은 계약을 지켜 100을 달성하세요.",
     trustStrong: "대주 신뢰도가 높음",
     trustSteady: "대주 신뢰도가 안정적",
     trustAtRisk: "대주 신뢰도가 위험함",
@@ -124,6 +165,7 @@ export const ko: Messages = {
     loansIssued: "실행 대출",
     cumulativeLoans: "누적 대출",
     loanReceivables: "대출 채권",
+    depositLiabilities: "고객 예금 부채",
     finalNetWorth: "최종 순자산",
     checkResult: "결과 확인 · 레벨 완료",
     balanceSheet: "MY BANK BALANCE SHEET",
@@ -138,7 +180,17 @@ export const ko: Messages = {
     fundingBook: "외부 자금 상환 의무",
     noOutstandingLoans: "미회수 고객 대출 없음",
     noFundingObligations: "외부 자금 상환 의무 없음",
+    depositBook: "고객 예금 내역",
+    noCustomerDeposits: "보유 중인 고객 예금 없음",
     loanRequestTitle: "NEW LOAN REQUEST",
+    depositRequestTitle: "SAVINGS DEPOSIT REQUEST",
+    depositRequestCopy: (amount: string) =>
+      `${amount}을 안전하게 은행에 맡기고 싶어요.`,
+    depositRequestWarning:
+      "예금은 오늘의 운영 현금을 늘리지만, 고객이 인출할 때 은행이 돌려줘야 하는 돈입니다.",
+    depositRate: (rate: number) => `예금 이자 ${rate}%`,
+    acceptDeposit: (amount: string) => `예금 수취 · ${amount}`,
+    depositBalance: (amount: string) => `보관 중 · ${amount}`,
     requestCopy: (amount: string) =>
       `사업과 생활에 필요한 ${amount}를 빌리고 싶어요.`,
     job: "직업",
@@ -167,8 +219,6 @@ export const ko: Messages = {
     annualRate: (rate: number) => `연 ${rate}%`,
     select: "선택",
     close: "닫기",
-    goalSurvive: (day: number) => `${day}일까지 생존`,
-    dayProgress: (day: number) => `${day}일차`,
     loanProgress: (count: number) => `${count}건`,
     loanTerms: (days: number, rate: number) => `${days}일 · 이자 ${rate}%`,
     defaultRisk: "연체 위험",
@@ -183,14 +233,24 @@ export const ko: Messages = {
       "외부 채무를 너무 많이 이행하지 못했습니다. 다른 은행들이 더 이상 이 은행을 믿고 거래하지 않습니다.",
     returnToStages: "스테이지로 돌아가기",
     loanProductName: "소득 기준 대출",
+    depositProductName: "동네 안심 예금",
+    depositProductEyebrow: "은행이 먼저 제안합니다",
+    depositProductTitle: "예금 상품 출시",
+    depositProductCopy:
+      "은행이 조건을 공개한 뒤에만 고객이 가입하고 돈을 맡깁니다. 예금은 운영 현금이 되지만 이자와 함께 돌려줘야 합니다.",
+    depositProductRate: (rate: number) => `예금 이자 ${rate}%`,
+    createDepositProduct: (cost: string) => `예금 상품 출시 · ${cost}`,
+    depositProductActivated:
+      "예금 상품 활성화 · 고객 예금이 은행으로 들어오기 시작합니다.",
     productActivated:
       "대출 상품 활성화 · 조건에 맞는 신청은 자동으로 실행됩니다.",
     productLessonEyebrow: "안전한 판단 자동화",
     productBuilderTitle: "대출 상품 만들기",
     productBuilderCopy:
-      "상품은 새 신청을 대신 심사합니다. 아래 조건을 통과한 고객에게만 현금이 자동으로 지급됩니다.",
+      "상품은 상시 계약 규칙입니다. 은행에 현금이 있는 동안 조건에 맞는 모든 고객과 자동으로 계약합니다.",
     productMinimumIncome: "최소 월 소득",
     productOccupation: "허용 직업",
+    productInterestRate: "계약 금리",
     productOccupationAny: "모든 직업",
     productOccupationEmployed: "직장인",
     productOccupationSelfEmployed: "자영업자",
@@ -208,6 +268,50 @@ export const ko: Messages = {
       "이 상품은 일시정지되었습니다. 기존 계약은 계속 유지되지만 새 신청은 자동 실행되지 않습니다.",
     pauseProduct: "상품 일시정지",
     resumeProduct: "상품 재개",
+    alertGuard: "경보 안전장치",
+    alertGuardEnabled: "안전장치 연결됨",
+    alertGuardDisabled: "안전장치 없음",
+    alertGuardCopy:
+      "안전장치가 연결된 라인은 시장 경보 중인 고객군에 새 대출을 실행하지 않습니다.",
+    connectAlertGuard: "경보 안전장치 연결",
+    disconnectAlertGuard: "경보 안전장치 해제",
+    marketWire: "시장 뉴스",
+    openMarketWire: "시장 뉴스 열기",
+    unreadNews: (count: number) => `읽지 않은 시장 뉴스 ${count}개`,
+    noMarketNews: "아직 시장 뉴스가 없습니다. 도시의 흐름을 지켜보세요.",
+    newsDay: (day: number) => `DAY ${day}`,
+    showOnMap: "지도에서 보기",
+    newsWatch: "관찰",
+    newsAlert: "경보",
+    newsOpportunity: "기회",
+    segmentWorkers: "직장인",
+    segmentSmallBusiness: "자영업",
+    segmentDelivery: "배달업",
+    segmentTechnology: "기술업",
+    segmentLowCredit: "신용 회복 고객",
+    resultReport: "운영 결과 보고서",
+    contractsCompleted: "상환 완료 계약",
+    contractsDefaulted: "채무불이행",
+    automatedLoans: "자동화 실행",
+    automatedOutcome: "자동화 상환 / 부도",
+    interestEarned: "회수 이자",
+    fundingBorrowed: "조달한 외부 자금",
+    fundingHonored: "외부 자금 상환",
+    fundingMissed: "외부 자금 연체",
+    depositsAccepted: "수취한 예금",
+    depositsWithdrawn: "인출된 예금",
+    depositInterestPaid: "지급한 예금 이자",
+    resultDiagnosis: "운영 진단",
+    diagnosisLosses:
+      "최근 손실이 대출 장부를 약화시켰습니다. 완료 계약이 신뢰를 회복할 때까지 노출된 라인을 보호하세요.",
+    diagnosisFunding:
+      "외부 자금 상환을 놓쳤습니다. 다음 확장 전에는 더 많은 현금을 남겨 두세요.",
+    diagnosisAutomation:
+      "자동화 라인의 상환 완료가 손실보다 많았습니다. 확장 전에도 시장 신호를 계속 관찰하세요.",
+    diagnosisThinBook:
+      "신뢰할 시장 기록을 만들 만큼 계약이 아직 완료되지 않았습니다. 신중히 실행하고 상환을 기다리세요.",
+    diagnosisResilient:
+      "압박 속에서도 은행은 약속을 지켰습니다. 더 까다로운 시장에 도전할 준비가 되었습니다.",
     createLoanProduct: (cost: string) => `대출 상품 활성화 · ${cost}`,
     productAutoLending: "자동 대출",
     rangeMinimum: (label: string) => `${label} 최솟값`,

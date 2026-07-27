@@ -1,9 +1,21 @@
 import type { MarketStageConfig } from "../market/market-campaign.ts";
-import type { ConsultationProgress } from "../market/CustomerConsultation.tsx";
-import { CLOCK_SPEEDS, type ClockSpeed } from "../lib/game-clock.ts";
-import type { MarketWorld } from "../market/market-world.ts";
 import {
+  isConsultationQuestionId,
+  type ConsultationProgress,
+} from "../market/market-consultation.ts";
+import { CLOCK_SPEEDS, type ClockSpeed } from "../lib/game-clock.ts";
+import {
+  emptyMarketRunStats,
+  type MarketRunStats,
+  type MarketWorld,
+  withdrawalEventFor,
+} from "../market/market-world.ts";
+import { isReputation } from "../market/market-trust.ts";
+import { isOnboardingStep } from "../market/market-onboarding.ts";
+import {
+  inferredCompletedCoachmarks,
   initialMarketUiState,
+  isCoachmarkId,
   type MarketUiState,
 } from "../market/market-ui-state.ts";
 
@@ -11,29 +23,29 @@ const DATABASE_NAME = "banker-simulation";
 const DATABASE_VERSION = 3;
 const STORE_NAME = "save-parts";
 
-const MARKET_SESSION_SCHEMA_VERSION = 2;
+const MARKET_SESSION_SCHEMA_VERSION = 1;
 
 export interface CampaignProgress {
-  schemaVersion: 2;
+  schemaVersion: 1;
   completedStageIds: string[];
   rewards: string[];
   mostRecentStageId: string | null;
 }
 
 export interface PlayerSettings {
-  schemaVersion: 2;
+  schemaVersion: 1;
   reducedMotion: boolean;
   locale?: "en" | "ko";
 }
 
 export interface SaveEnvelope {
-  schemaVersion: 2;
+  schemaVersion: 1;
   campaign: CampaignProgress;
   settings: PlayerSettings;
 }
 
 export interface MarketSessionSave {
-  schemaVersion: 2;
+  schemaVersion: 1;
   stageId: string;
   phase: "intro" | "map";
   world: MarketWorld;
@@ -45,14 +57,14 @@ export interface MarketSessionSave {
 
 export function emptySave(): SaveEnvelope {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     campaign: {
-      schemaVersion: 2,
+      schemaVersion: 1,
       completedStageIds: [],
       rewards: [],
       mostRecentStageId: null,
     },
-    settings: { schemaVersion: 2, reducedMotion: false },
+    settings: { schemaVersion: 1, reducedMotion: false },
   };
 }
 
@@ -83,7 +95,7 @@ export function migrateCampaign(value: unknown): CampaignProgress {
   if (!value || typeof value !== "object") return fallback;
   const record = value as Record<string, unknown>;
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     completedStageIds: Array.isArray(record.completedStageIds)
       ? record.completedStageIds.filter(
           (stageId): stageId is string => typeof stageId === "string",
@@ -110,7 +122,7 @@ export function migrateSettings(value: unknown): PlayerSettings {
       ? record.locale
       : undefined;
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     reducedMotion: record.reducedMotion === true,
     ...(locale ? { locale } : {}),
   };
@@ -121,7 +133,7 @@ export function migrateSaveParts(
   settingsValue: unknown,
 ): SaveEnvelope {
   return {
-    schemaVersion: 2,
+    schemaVersion: 1,
     campaign: migrateCampaign(campaignValue),
     settings: migrateSettings(settingsValue),
   };
@@ -150,7 +162,7 @@ export async function saveGame(save: SaveEnvelope): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(STORE_NAME, "readwrite");
       const store = transaction.objectStore(STORE_NAME);
-      store.put({ schemaVersion: 2 }, "meta");
+      store.put({ schemaVersion: 1 }, "meta");
       store.put(structuredClone(save.campaign), "campaign");
       store.put(structuredClone(save.settings), "settings");
       store.delete("activeRun");
@@ -178,7 +190,24 @@ function migrateProducts(value: unknown): MarketWorld["products"] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((product) => {
     if (product.kind === "loan") {
-      return { ...product, active: product.active !== false };
+      const rules = isRecord(product.rules)
+        ? {
+            ...product.rules,
+            interestRate:
+              typeof product.rules.interestRate === "number"
+                ? product.rules.interestRate
+                : 10,
+          }
+        : product.rules;
+      return { ...product, active: product.active !== false, rules };
+    }
+    if (product.kind === "deposit") {
+      return {
+        ...product,
+        active: product.active !== false,
+        interestRate:
+          typeof product.interestRate === "number" ? product.interestRate : 2,
+      };
     }
     return product;
   }) as MarketWorld["products"];
@@ -186,6 +215,19 @@ function migrateProducts(value: unknown): MarketWorld["products"] {
 
 function emptyConsultation(): ConsultationProgress {
   return { asked: [], lastQuestion: null, expression: "requesting" };
+}
+
+function migrateMarketRunStats(value: unknown): MarketRunStats {
+  const fallback = emptyMarketRunStats();
+  if (!isRecord(value)) return fallback;
+  return Object.fromEntries(
+    Object.keys(fallback).map((key) => [
+      key,
+      typeof value[key] === "number"
+        ? value[key]
+        : fallback[key as keyof MarketRunStats],
+    ]),
+  ) as MarketRunStats;
 }
 
 export function migrateMarketSession(
@@ -210,6 +252,9 @@ export function migrateMarketSession(
     !Number.isFinite(rawWorld.trust) ||
     rawWorld.trust < 0 ||
     rawWorld.trust > 100 ||
+    // Trust is derived from the reputation record, so a save without one
+    // cannot be replayed. Reject rather than invent a plausible history.
+    !isReputation(rawWorld.reputation) ||
     (rawWorld.failureReason !== null &&
       rawWorld.failureReason !== "cash" &&
       rawWorld.failureReason !== "trust") ||
@@ -224,10 +269,7 @@ export function migrateMarketSession(
     ? value.consultation
     : {};
   const asked = Array.isArray(rawConsultation.asked)
-    ? rawConsultation.asked.filter(
-        (question): question is "purpose" | "income" =>
-          question === "purpose" || question === "income",
-      )
+    ? rawConsultation.asked.filter(isConsultationQuestionId)
     : [];
   const lastQuestion =
     rawConsultation.lastQuestion === "purpose" ||
@@ -247,6 +289,68 @@ export function migrateMarketSession(
   const speed = CLOCK_SPEEDS.includes(rawClock.speed as ClockSpeed)
     ? (rawClock.speed as ClockSpeed)
     : 1;
+  let products = migrateProducts(rawWorld.products);
+  let depositors = Array.isArray(rawWorld.depositors)
+    ? (rawWorld.depositors as MarketWorld["depositors"]).map((depositor) => ({
+        ...depositor,
+      }))
+    : config.depositSeeds.map((depositor) => ({ ...depositor }));
+  let onboarding: MarketWorld["onboarding"] = isOnboardingStep(
+    rawWorld.onboarding,
+  )
+    ? rawWorld.onboarding
+    : "full";
+  if (
+    (depositors.some((depositor) => depositor.status === "accepted") ||
+      onboarding === "full") &&
+    !products.some((product) => product.kind === "deposit")
+  ) {
+    const migratedProductId = "migrated-savings-product";
+    const rate =
+      depositors.find((depositor) => depositor.status === "accepted")?.rate ??
+      2;
+    products = [
+      ...products,
+      {
+        id: migratedProductId,
+        kind: "deposit",
+        name: "Existing savings",
+        x: 50,
+        y: 68,
+        active: true,
+        interestRate: rate,
+      },
+    ];
+    depositors = depositors.map((depositor) =>
+      depositor.status === "accepted" && !depositor.productId
+        ? { ...depositor, productId: migratedProductId }
+        : depositor,
+    );
+  }
+  const hasDepositProduct = products.some(
+    (product) => product.kind === "deposit",
+  );
+  if (onboarding === "deposits" && hasDepositProduct) onboarding = "products";
+  if (onboarding === "products" && !hasDepositProduct) onboarding = "deposits";
+  const rawUi = isRecord(value.ui) ? value.ui : {};
+  const hasDraggedMap = rawUi.hasDraggedMap === true;
+  const savedIntroduced = Array.isArray(rawUi.introducedCoachmarks)
+    ? rawUi.introducedCoachmarks.filter(isCoachmarkId)
+    : [];
+  const savedCompleted = Array.isArray(rawUi.completedCoachmarks)
+    ? rawUi.completedCoachmarks.filter(isCoachmarkId)
+    : [];
+  const inferredCompleted = inferredCompletedCoachmarks(
+    onboarding,
+    asked,
+    hasDraggedMap,
+  );
+  const completedCoachmarks = [
+    ...new Set([...savedCompleted, ...inferredCompleted]),
+  ];
+  const introducedCoachmarks = [
+    ...new Set([...savedIntroduced, ...completedCoachmarks]),
+  ];
   return {
     schemaVersion: MARKET_SESSION_SCHEMA_VERSION,
     stageId,
@@ -255,15 +359,29 @@ export function migrateMarketSession(
       ...(rawWorld as MarketWorld),
       level: config.level,
       config,
+      // Existing saved runs predate the guided lesson. Keep their earned
+      // systems visible rather than moving a returning player backwards.
+      onboarding,
       funding: rawWorld.funding as MarketWorld["funding"],
-      products: migrateProducts(rawWorld.products),
+      products,
+      depositors,
+      withdrawalEvent: isRecord(rawWorld.withdrawalEvent)
+        ? (rawWorld.withdrawalEvent as MarketWorld["withdrawalEvent"])
+        : withdrawalEventFor(
+            typeof rawWorld.seed === "number" ? rawWorld.seed : 1,
+            config,
+          ),
+      news: Array.isArray(rawWorld.news) ? rawWorld.news : [],
+      stats: migrateMarketRunStats(rawWorld.stats),
       events: [],
     },
     consultation: { asked, lastQuestion, expression },
     clock: { paused: rawClock.paused !== false, speed },
     ui: {
       ...initialMarketUiState(),
-      hasDraggedMap: isRecord(value.ui) && value.ui.hasDraggedMap === true,
+      hasDraggedMap,
+      introducedCoachmarks,
+      completedCoachmarks,
     },
     savedAt: typeof value.savedAt === "number" ? value.savedAt : 0,
   };

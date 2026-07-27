@@ -8,6 +8,7 @@ import type { LoanProductRules, OccupationRule } from "./market-world.ts";
 type ProductBuilderProps = {
   locale: Locale;
   creationCost: number;
+  guided?: boolean;
   onCreate: (rules: LoanProductRules) => void;
   onClose: () => void;
 };
@@ -15,6 +16,7 @@ type ProductBuilderProps = {
 export function ProductBuilder({
   locale,
   creationCost,
+  guided = false,
   onCreate,
   onClose,
 }: ProductBuilderProps) {
@@ -22,6 +24,7 @@ export function ProductBuilder({
   const [rules, setRules] = useState<LoanProductRules>({
     minimumIncome: 1_500,
     occupation: "employed",
+    interestRate: 10,
     minimumAmount: 300,
     maximumAmount: 1_000,
     minimumTerm: 6,
@@ -75,97 +78,114 @@ export function ProductBuilder({
         <Coins aria-hidden="true" />
         <span>{m.productSetupCost(money(creationCost))}</span>
       </div>
-      <div className="product-rule-grid">
-        <label>
-          <span>{m.productMinimumIncome}</span>
-          <input
-            type="number"
-            min="0"
-            step="100"
-            value={rules.minimumIncome}
-            onChange={setNumber("minimumIncome")}
-          />
-        </label>
-        <label>
-          <span>{m.productOccupation}</span>
-          <select
-            value={rules.occupation}
-            onChange={(event) =>
-              setRules((current) => ({
-                ...current,
-                occupation: event.target.value as OccupationRule,
-              }))
-            }
-          >
-            <option value="any">{m.productOccupationAny}</option>
-            <option value="employed">{m.productOccupationEmployed}</option>
-            <option value="self-employed">
-              {m.productOccupationSelfEmployed}
-            </option>
-          </select>
-        </label>
-        <label>
-          <span>{m.productLoanRange}</span>
-          <div
-            className="product-range-slider"
-            style={rangeStyle(rules.minimumAmount, rules.maximumAmount, 2_500)}
-          >
+      {!guided && (
+        <div className="product-rule-grid">
+          <label>
+            <span>{m.productMinimumIncome}</span>
             <input
-              className="range-thumb range-minimum"
-              type="range"
+              type="number"
               min="0"
-              max="2500"
               step="100"
-              value={rules.minimumAmount}
-              onChange={setRange("amount", "minimum")}
-              aria-label={m.rangeMinimum(m.productLoanRange)}
+              value={rules.minimumIncome}
+              onChange={setNumber("minimumIncome")}
             />
+          </label>
+          <label>
+            <span>{m.productOccupation}</span>
+            <select
+              value={rules.occupation}
+              onChange={(event) =>
+                setRules((current) => ({
+                  ...current,
+                  occupation: event.target.value as OccupationRule,
+                }))
+              }
+            >
+              <option value="any">{m.productOccupationAny}</option>
+              <option value="employed">{m.productOccupationEmployed}</option>
+              <option value="self-employed">
+                {m.productOccupationSelfEmployed}
+              </option>
+            </select>
+          </label>
+          <label>
+            <span>{m.productInterestRate}</span>
             <input
-              className="range-thumb range-maximum"
-              type="range"
-              min="0"
-              max="2500"
-              step="100"
-              value={rules.maximumAmount}
-              onChange={setRange("amount", "maximum")}
-              aria-label={m.rangeMaximum(m.productLoanRange)}
-            />
-            <output>
-              {money(rules.minimumAmount)} – {money(rules.maximumAmount)}
-            </output>
-          </div>
-        </label>
-        <label>
-          <span>{m.productDueRange}</span>
-          <div
-            className="product-range-slider"
-            style={rangeStyle(rules.minimumTerm, rules.maximumTerm, 20)}
-          >
-            <input
-              className="range-thumb range-minimum"
-              type="range"
+              type="number"
               min="1"
-              max="20"
-              value={rules.minimumTerm}
-              onChange={setRange("term", "minimum")}
-              aria-label={m.rangeMinimum(m.productDueRange)}
+              max="30"
+              step="1"
+              value={rules.interestRate}
+              onChange={setNumber("interestRate")}
             />
-            <input
-              className="range-thumb range-maximum"
-              type="range"
-              min="1"
-              max="20"
-              value={rules.maximumTerm}
-              onChange={setRange("term", "maximum")}
-              aria-label={m.rangeMaximum(m.productDueRange)}
-            />
-            <output>
-              {m.rangeDays(rules.minimumTerm)} –{" "}
-              {m.rangeDays(rules.maximumTerm)}
-            </output>
-          </div>
-        </label>
-      </div>
+          </label>
+          <label>
+            <span>{m.productLoanRange}</span>
+            <div
+              className="product-range-slider"
+              style={rangeStyle(
+                rules.minimumAmount,
+                rules.maximumAmount,
+                2_500,
+              )}
+            >
+              <input
+                className="range-thumb range-minimum"
+                type="range"
+                min="0"
+                max="2500"
+                step="100"
+                value={rules.minimumAmount}
+                onChange={setRange("amount", "minimum")}
+                aria-label={m.rangeMinimum(m.productLoanRange)}
+              />
+              <input
+                className="range-thumb range-maximum"
+                type="range"
+                min="0"
+                max="2500"
+                step="100"
+                value={rules.maximumAmount}
+                onChange={setRange("amount", "maximum")}
+                aria-label={m.rangeMaximum(m.productLoanRange)}
+              />
+              <output>
+                {money(rules.minimumAmount)} – {money(rules.maximumAmount)}
+              </output>
+            </div>
+          </label>
+          <label>
+            <span>{m.productDueRange}</span>
+            <div
+              className="product-range-slider"
+              style={rangeStyle(rules.minimumTerm, rules.maximumTerm, 20)}
+            >
+              <input
+                className="range-thumb range-minimum"
+                type="range"
+                min="1"
+                max="20"
+                value={rules.minimumTerm}
+                onChange={setRange("term", "minimum")}
+                aria-label={m.rangeMinimum(m.productDueRange)}
+              />
+              <input
+                className="range-thumb range-maximum"
+                type="range"
+                min="1"
+                max="20"
+                value={rules.maximumTerm}
+                onChange={setRange("term", "maximum")}
+                aria-label={m.rangeMaximum(m.productDueRange)}
+              />
+              <output>
+                {m.rangeDays(rules.minimumTerm)} –{" "}
+                {m.rangeDays(rules.maximumTerm)}
+              </output>
+            </div>
+          </label>
+        </div>
+      )}
       <div className="product-preview">
         <strong>{m.productPreview}</strong>
         <span>

@@ -15,6 +15,7 @@ export function MapViewport({
   zoomOutLabel,
   onFirstDrag,
   onPanChange,
+  showNavigation = true,
 }: {
   customerCount: number;
   dragHint: string;
@@ -23,6 +24,7 @@ export function MapViewport({
   zoomOutLabel: string;
   onFirstDrag: () => void;
   onPanChange: (pan: CityPan) => void;
+  showNavigation?: boolean;
 }) {
   const [zoom, setZoom] = useState(1);
 
@@ -32,31 +34,33 @@ export function MapViewport({
         customerCount={customerCount}
         zoom={zoom}
         dragHint={dragHint}
-        showDragHint={!hasDraggedMap}
+        showDragHint={showNavigation && !hasDraggedMap}
         onPanChange={onPanChange}
         onFirstDrag={onFirstDrag}
         onZoomChange={setZoom}
       />
-      <div className="map-zoom-controls">
-        <button
-          onClick={() =>
-            setZoom((current) => Math.min(current + ZOOM_STEP, MAX_ZOOM))
-          }
-          aria-label={zoomInLabel}
-          disabled={zoom >= MAX_ZOOM}
-        >
-          <ZoomIn aria-hidden="true" />
-        </button>
-        <button
-          onClick={() =>
-            setZoom((current) => Math.max(current - ZOOM_STEP, MIN_ZOOM))
-          }
-          aria-label={zoomOutLabel}
-          disabled={zoom <= MIN_ZOOM}
-        >
-          <ZoomOut aria-hidden="true" />
-        </button>
-      </div>
+      {showNavigation && (
+        <div className="map-zoom-controls">
+          <button
+            onClick={() =>
+              setZoom((current) => Math.min(current + ZOOM_STEP, MAX_ZOOM))
+            }
+            aria-label={zoomInLabel}
+            disabled={zoom >= MAX_ZOOM}
+          >
+            <ZoomIn aria-hidden="true" />
+          </button>
+          <button
+            onClick={() =>
+              setZoom((current) => Math.max(current - ZOOM_STEP, MIN_ZOOM))
+            }
+            aria-label={zoomOutLabel}
+            disabled={zoom <= MIN_ZOOM}
+          >
+            <ZoomOut aria-hidden="true" />
+          </button>
+        </div>
+      )}
     </>
   );
 }

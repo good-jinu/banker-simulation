@@ -6,20 +6,17 @@ import { money } from "./market-format.ts";
 import { ConsultationQuestions } from "./ConsultationQuestions.tsx";
 import { LoanDecisionActions } from "./LoanDecisionActions.tsx";
 import {
+  CONSULTATION_QUESTIONS,
+  type ConsultationProgress,
+  type ConsultationQuestionId,
+} from "./market-consultation.ts";
+import {
   avatarFor,
   type Customer,
   type CustomerExpression,
 } from "./market-world.ts";
 
-export type ConsultationQuestionId = "purpose" | "income";
-export type ConsultationProgress = {
-  asked: ConsultationQuestionId[];
-  lastQuestion: ConsultationQuestionId | null;
-  expression: CustomerExpression;
-};
 type ConversationMode = "intro" | "request";
-
-const CONSULTATION_QUESTIONS: ConsultationQuestionId[] = ["purpose", "income"];
 
 export function CustomerConsultation({
   customer,
@@ -33,8 +30,11 @@ export function CustomerConsultation({
   onReject,
   onNeedFunding,
   canApprove = true,
+  requireQuestionsBeforeDecision = false,
+  forceApproval = false,
   initialProgress,
   onProgressChange,
+  onQuestionAsked,
 }: {
   customer: Customer;
   locale: Locale;
@@ -48,8 +48,12 @@ export function CustomerConsultation({
   onReject?: () => void;
   onNeedFunding?: () => void;
   canApprove?: boolean;
+  /** The first customer teaches information gathering before a decision. */
+  requireQuestionsBeforeDecision?: boolean;
+  forceApproval?: boolean;
   initialProgress?: ConsultationProgress;
   onProgressChange?: (progress: ConsultationProgress) => void;
+  onQuestionAsked?: (question: ConsultationQuestionId) => void;
 }) {
   const m = messagesFor(locale).market;
   const [consultation, setConsultation] = useState<
@@ -82,6 +86,7 @@ export function CustomerConsultation({
     setConsultation((current) => ({ ...current, [question]: true }));
     setLastQuestion(question);
     setExpression("relieved");
+    onQuestionAsked?.(question);
   }
 
   function evidence(question: ConsultationQuestionId): string {
@@ -94,6 +99,10 @@ export function CustomerConsultation({
     mode === "intro"
       ? `${showRiskEstimate ? m.challengeGreeting : m.greeting} ${showRiskEstimate ? m.challengeLoanQuestion(money(customer.amount)) : m.loanQuestion}`
       : m.requestCopy(money(customer.amount));
+  const hasRequiredInformation =
+    !requireQuestionsBeforeDecision ||
+    answered.length === CONSULTATION_QUESTIONS.length;
+  const canMakeDecision = canApprove && hasRequiredInformation;
 
   return (
     <section
@@ -129,7 +138,9 @@ export function CustomerConsultation({
         />
         <LoanDecisionActions
           amount={customer.amount}
-          canApprove={canApprove}
+          canApprove={canMakeDecision}
+          canReject={hasRequiredInformation && !forceApproval}
+          needsFunding={!canApprove}
           locale={locale}
           mode={mode}
           showRiskEstimate={showRiskEstimate}
@@ -137,6 +148,9 @@ export function CustomerConsultation({
           onNeedFunding={onNeedFunding}
           onProceed={onProceed}
           onReject={onReject}
+          {...(forceApproval
+            ? { rejectLockedHint: m.firstLoanRejectLocked }
+            : {})}
         />
       </div>
     </section>

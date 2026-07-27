@@ -3,6 +3,7 @@ import {
   lazy,
   Suspense,
   useCallback,
+  useEffect,
   useReducer,
   useRef,
   useState,
@@ -10,18 +11,33 @@ import {
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS } from "../lib/game-clock.ts";
+import { CoachmarkSpotlight } from "./CoachmarkSpotlight.tsx";
 import { MarketDialogs } from "./MarketDialogs.tsx";
 import { MarketGameView } from "./MarketGameView.tsx";
+import {
+  initialConsultationProgress,
+  type ConsultationProgress,
+} from "./market-consultation.ts";
+import type { MarketOverlay } from "./market-overlay.ts";
 import { useMarketClock } from "./hooks/useMarketClock.ts";
 import { useMarketEffects } from "./hooks/useMarketEffects.ts";
+import { useMarketProductCreation } from "./hooks/useMarketProductCreation.ts";
 import {
   useMarketModalClock,
   type ClockView,
 } from "./hooks/useMarketModalClock.ts";
 import { useMarketSession } from "./hooks/useMarketSession.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
-import { money } from "./market-format.ts";
-import { initialMarketUiState, type MarketUiState } from "./market-ui-state.ts";
+import { shouldPauseOnOnboardingEntry } from "./market-onboarding.ts";
+import {
+  activeCoachmarkFor,
+  COACHMARKS,
+  completeCoachmark,
+  initialMarketUiState,
+  introduceCoachmark,
+  type CoachmarkId,
+  type MarketUiState,
+} from "./market-ui-state.ts";
 import { useMarketRunOptions } from "./market-run.tsx";
 import {
   createWorld,
@@ -29,11 +45,12 @@ import {
   summarize,
   type Customer,
   type Funding,
-  type LoanProduct,
-  type LoanProductRules,
+  type MarketSegment,
 } from "./market-world.ts";
 import { type GameClock } from "../lib/game-clock.ts";
 import "./market.css";
+import "./products.css";
+import "./coachmark.css";
 import "./city/city.css";
 
 const MarketDevTools = import.meta.env.DEV
@@ -65,20 +82,20 @@ export function MarketApp({
   const [world, dispatch] = useReducer(marketReducer, undefined, () =>
     createWorld(Date.now() >>> 0, stage.config),
   );
-  const [selected, setSelected] = useState<Customer | null>(null);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(
-    null,
-  );
-  const [productBuilderOpen, setProductBuilderOpen] = useState(false);
-  const [fundingOpen, setFundingOpen] = useState(false);
-  const [assetsOpen, setAssetsOpen] = useState(false);
-  const [goalsOpen, setGoalsOpen] = useState(false);
+  const [overlay, setOverlay] = useState<MarketOverlay | null>(null);
+  const [highlightedSegment, setHighlightedSegment] =
+    useState<MarketSegment | null>(null);
   const [clockView, setClockView] = useState<ClockView>({
     paused: true,
     speed: 1,
   });
   const [ui, setUi] = useState<MarketUiState>(initialMarketUiState);
+  const [consultation, setConsultation] = useState<ConsultationProgress>(
+    initialConsultationProgress,
+  );
   const clockRef = useRef<GameClock | null>(null);
+  const openedFirstConsultation = useRef(false);
+  const previousOnboarding = useRef(world.onboarding);
   const session = useMarketSession({
     stage,
     world,
@@ -87,40 +104,94 @@ export function MarketApp({
     setClockView,
     ui,
     setUi,
+    consultation,
+    setConsultation,
     devMode,
     devPhase,
     devFresh,
   });
+  useEffect(() => {
+    if (
+      !session.sessionReady ||
+      openedFirstConsultation.current ||
+      world.onboarding !== "first-customer"
+    )
+      return;
+    const firstCustomer = world.customers.find(
+      (customer) => customer.id === world.config.introCustomerId,
+    );
+    if (!firstCustomer) return;
+    openedFirstConsultation.current = true;
+    setOverlay({ kind: "customer", customerId: firstCustomer.id });
+  }, [
+    session.sessionReady,
+    world.config.introCustomerId,
+    world.customers,
+    world.onboarding,
+  ]);
   useMarketClock(session.sessionReady, dispatch, clockRef);
-  const openProductBuilder = useCallback(() => setProductBuilderOpen(true), []);
-  const openFunding = useCallback(() => setFundingOpen(true), []);
-  const { activeFlow, loanRequestNotice, notice, setNotice, trustPulse } =
-    useMarketEffects({
-      world,
-      locale,
-      hasProductGoal: world.config.goals.productCount > 0,
-      onOpenProductBuilder: openProductBuilder,
-      onOpenFunding: openFunding,
-    });
-  const modalOpen = Boolean(
-    selected ||
-    productBuilderOpen ||
-    fundingOpen ||
-    assetsOpen ||
-    selectedProductId !== null ||
-    world.missionCleared ||
-    world.insolvent,
+  const openProductBuilder = useCallback(
+    () => setOverlay({ kind: "product-builder", productKind: "loan" }),
+    [],
   );
+  const openDepositProductBuilder = useCallback(
+    () => setOverlay({ kind: "product-builder", productKind: "deposit" }),
+    [],
+  );
+  const openFunding = useCallback(() => setOverlay({ kind: "funding" }), []);
+  const {
+    activeFlow,
+    loanRequestNotice,
+    notice,
+    setNotice,
+    trustPulse,
+    trustMessage,
+  } = useMarketEffects({
+    world,
+    locale,
+    onOpenProductBuilder: openProductBuilder,
+    onOpenFunding: openFunding,
+  });
+  const modalOpen = Boolean(overlay || world.missionCleared || world.insolvent);
+  const markCoachmarkIntroduced = useCallback((id: CoachmarkId) => {
+    setUi((current) => introduceCoachmark(current, id));
+  }, []);
+  const markCoachmarkCompleted = useCallback((id: CoachmarkId) => {
+    setUi((current) => completeCoachmark(current, id));
+  }, []);
+  const pendingCoachmark =
+    stage.config.onboarding === "guided"
+      ? activeCoachmarkFor(world.onboarding, ui, consultation.asked)
+      : null;
+  const activeCoachmark =
+    overlay?.kind !== "product-builder" &&
+    !world.missionCleared &&
+    !world.insolvent
+      ? pendingCoachmark
+      : null;
+  const coachmarkDefinition = activeCoachmark
+    ? COACHMARKS[activeCoachmark]
+    : null;
+  const coachmarkCopy = coachmarkDefinition
+    ? m[coachmarkDefinition.copyKey]
+    : "";
   useMarketModalClock(modalOpen, clockRef, setClockView);
+  useEffect(() => {
+    if (previousOnboarding.current === world.onboarding) return;
+    previousOnboarding.current = world.onboarding;
+    if (!shouldPauseOnOnboardingEntry(world.onboarding)) return;
+    clockRef.current?.pause();
+    setClockView((current) =>
+      current.paused ? current : { ...current, paused: true },
+    );
+  }, [world.onboarding]);
 
   const { cash, fundingEligible } = { cash: world.cash, ...summarize(world) };
-  const hasProductGoal = world.config.goals.productCount > 0;
-
   const approve = useCallback(
     (customer: Customer) => {
-      setSelected(null);
+      setOverlay(null);
       if (cash < customer.amount) {
-        if (fundingEligible) setFundingOpen(true);
+        if (fundingEligible) setOverlay({ kind: "funding" });
         setNotice(
           fundingEligible
             ? `${m.insufficientCash} ${m.viewFunding}`
@@ -129,52 +200,44 @@ export function MarketApp({
         return;
       }
       dispatch({ type: "approve", customerId: customer.id });
-    },
-    [cash, dispatch, fundingEligible, m, setNotice],
-  );
-  const reject = useCallback(
-    (customer: Customer) => {
-      dispatch({ type: "reject", customerId: customer.id });
-      setSelected(null);
-      if (hasProductGoal && world.products.length === 0)
-        setProductBuilderOpen(true);
-    },
-    [dispatch, hasProductGoal, world.products.length],
-  );
-  const createLoanProduct = useCallback(
-    (rules: LoanProductRules) => {
-      if (cash < world.config.productCreationCost) {
-        setNotice(
-          m.productInsufficientCash(money(world.config.productCreationCost)),
-        );
-        return;
-      }
-      const product: LoanProduct = {
-        id: `loan-product-${world.products.filter((item) => item.kind === "loan").length + 1}`,
-        kind: "loan",
-        name: m.loanProductName,
-        x: 50,
-        y: 26,
-        active: true,
-        rules,
-      };
-      dispatch({ type: "create-product", product });
-      setProductBuilderOpen(false);
-      setNotice(m.productActivated);
+      if (
+        world.onboarding === "first-customer" &&
+        customer.id === world.config.introCustomerId
+      )
+        markCoachmarkCompleted("approve-first-loan");
+      setConsultation(initialConsultationProgress());
     },
     [
       cash,
       dispatch,
+      fundingEligible,
       m,
+      markCoachmarkCompleted,
       setNotice,
-      world.config.productCreationCost,
-      world.products,
+      world.config.introCustomerId,
+      world.onboarding,
     ],
   );
+  const reject = useCallback(
+    (customer: Customer) => {
+      dispatch({ type: "reject", customerId: customer.id });
+      setOverlay(null);
+      setConsultation(initialConsultationProgress());
+    },
+    [dispatch],
+  );
+  const { createDepositProduct, createLoanProduct } = useMarketProductCreation({
+    world,
+    locale,
+    dispatch,
+    closeBuilder: () => setOverlay(null),
+    completeCoachmark: markCoachmarkCompleted,
+    setNotice,
+  });
   const borrow = useCallback(
     (lender: Funding) => {
       dispatch({ type: "borrow", lenderId: lender.id });
-      setFundingOpen(false);
+      setOverlay(null);
     },
     [dispatch],
   );
@@ -182,8 +245,11 @@ export function MarketApp({
   function toggleClock(): void {
     const gameClock = clockRef.current;
     if (!gameClock) return;
-    if (gameClock.paused) gameClock.play();
-    else gameClock.pause();
+    if (gameClock.paused) {
+      gameClock.play();
+      if (world.onboarding === "first-repayment")
+        markCoachmarkCompleted("play-first-repayment");
+    } else gameClock.pause();
     setClockView((current) => ({ ...current, paused: gameClock.paused }));
   }
   function cycleSpeed(): void {
@@ -214,25 +280,35 @@ export function MarketApp({
         activeFlow={activeFlow}
         loanRequestNotice={loanRequestNotice}
         trustPulse={trustPulse}
+        trustMessage={trustMessage}
         clockView={clockView}
         modalOpen={modalOpen}
         hasDraggedMap={ui.hasDraggedMap}
-        goalsOpen={goalsOpen}
+        highlightedSegment={highlightedSegment}
         onBack={onBack}
-        onOpenAssets={() => setAssetsOpen(true)}
+        onOpenAssets={() => setOverlay({ kind: "assets" })}
+        onOpenNews={() => {
+          dispatch({ type: "read-market-news" });
+          setOverlay({ kind: "news" });
+        }}
         onOpenProductBuilder={openProductBuilder}
-        onToggleGoals={() => setGoalsOpen((value) => !value)}
-        onSelectCustomer={setSelected}
-        onSelectProduct={(product) => setSelectedProductId(product.id)}
+        onOpenDepositProductBuilder={openDepositProductBuilder}
+        onSelectCustomer={(customer) => {
+          if (world.onboarding === "second-decision")
+            markCoachmarkCompleted("second-customer");
+          setOverlay({ kind: "customer", customerId: customer.id });
+        }}
+        onSelectProduct={(product) =>
+          setOverlay({ kind: "product", productId: product.id })
+        }
         onOpenFunding={openFunding}
         onToggleClock={toggleClock}
         onCycleSpeed={cycleSpeed}
         onFirstMapDrag={() =>
-          setUi((current) =>
-            current.hasDraggedMap
-              ? current
-              : { ...current, hasDraggedMap: true },
-          )
+          setUi((current) => ({
+            ...completeCoachmark(current, "drag-market-map"),
+            hasDraggedMap: true,
+          }))
         }
       />
       {notice && (
@@ -259,30 +335,47 @@ export function MarketApp({
         stage={stage}
         locale={locale}
         world={world}
-        selected={selected}
-        selectedProductId={selectedProductId}
-        productBuilderOpen={productBuilderOpen}
-        fundingOpen={fundingOpen}
-        assetsOpen={assetsOpen}
-        onCloseSelected={() => setSelected(null)}
-        onCloseSelectedProduct={() => setSelectedProductId(null)}
-        onCloseProductBuilder={() => setProductBuilderOpen(false)}
-        onCloseFunding={() => setFundingOpen(false)}
-        onCloseAssets={() => setAssetsOpen(false)}
+        overlay={overlay}
+        consultation={consultation}
+        onCloseOverlay={() => setOverlay(null)}
+        onConsultationProgress={setConsultation}
+        onConsultationQuestionAsked={(question) => {
+          if (question === "purpose" && world.onboarding === "first-customer")
+            markCoachmarkCompleted("first-customer");
+        }}
         onApprove={approve}
         onReject={reject}
         onNeedFunding={() => {
-          setSelected(null);
-          setFundingOpen(true);
+          setOverlay({ kind: "funding" });
         }}
         onCreateProduct={createLoanProduct}
+        onCreateDepositProduct={createDepositProduct}
         onToggleProduct={(productId, active) =>
           dispatch({ type: "set-product-active", productId, active })
         }
+        onToggleProductAlertGuard={(productId, enabled) =>
+          dispatch({ type: "set-product-alert-guard", productId, enabled })
+        }
+        onShowNewsSegment={(segment) => {
+          setHighlightedSegment(segment);
+          setOverlay(null);
+        }}
         onBorrow={borrow}
         onComplete={() => (onComplete ? onComplete() : onBack())}
         onBack={onBack}
       />
+      {activeCoachmark && (
+        <CoachmarkSpotlight
+          id={activeCoachmark}
+          title={
+            coachmarkDefinition?.title === "first-step"
+              ? m.onboardingFirstStep
+              : m.coachmarkNewControl
+          }
+          copy={coachmarkCopy}
+          onShown={markCoachmarkIntroduced}
+        />
+      )}
     </>
   );
 }

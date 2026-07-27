@@ -1,12 +1,14 @@
 import type { LocalText } from "../i18n/local-text.ts";
-import type { Customer, Funding, MarketLevel } from "./market-world.ts";
+import type {
+  Customer,
+  Depositor,
+  Funding,
+  MarketLevel,
+} from "./market-world.ts";
+import type { MarketNewsDefinition } from "./market-news.ts";
 
 export type MarketGoals = {
-  loanCount: number;
-  cumulativeLent: number;
-  netWorth: number;
-  survivalDay: number | null;
-  productCount: number;
+  trustTarget: number;
 };
 
 export type CustomerGenerationConfig = {
@@ -22,6 +24,25 @@ export type CustomerGenerationConfig = {
   rateRange: number;
 };
 
+export type DepositGenerationConfig = {
+  amountMin: number;
+  amountStep: number;
+  amountRange: number;
+  rateMin: number;
+  rateRange: number;
+};
+
+/** A shared liquidity shock. Campaigns decide when it appears, never how deposits work. */
+export type WithdrawalPressureConfig = {
+  earliestDay: number;
+  dayRange: number;
+  warningDays: number;
+  withdrawalShare: number;
+  title: LocalText;
+  body: LocalText;
+  action: LocalText;
+};
+
 /**
  * Narrative copy that varies per stage but isn't a goal number or a rule —
  * kept here (like title/subtitle) so a new stage is pure data, never a new
@@ -29,29 +50,36 @@ export type CustomerGenerationConfig = {
  */
 export type MarketStageCopy = {
   districtLabel: LocalText;
-  goalLoansLabel: LocalText;
-  goalCumulativeLentLabel: LocalText;
-  goalNetWorthLabel: LocalText;
-  goalProductLabel: LocalText;
   missionCompleteLabel: LocalText;
   learnCustomerHint: LocalText;
 };
 
 export type MarketStageConfig = {
   level: MarketLevel;
+  /** The first level reveals systems through completed player actions. */
+  onboarding: "guided" | "full";
+  /** The opening contract is a teaching moment, not an early random failure. */
+  introCustomerGuaranteedRepayment: boolean;
   startingCash: number;
   goals: MarketGoals;
   maxVisibleCustomers: number;
   spawnEveryDays: number;
+  maxVisibleDepositors: number;
+  depositSpawnEveryDays: number;
   fundingUnlockDelayDays: number;
   productCreationCost: number;
   introCustomerId: string | null;
   introApprovesAutomatically: boolean;
   randomizeDefaultRisk: boolean;
   fundingRepaymentsEnabled: boolean;
+  /** Campaign-authored market reporting and its hidden segment pressure. */
+  newsSchedule: readonly MarketNewsDefinition[];
   customerSeeds: readonly Customer[];
+  depositSeeds: readonly Depositor[];
   fundingSeeds: readonly Funding[];
   customerGeneration: CustomerGenerationConfig;
+  depositGeneration: DepositGenerationConfig;
+  withdrawalPressure: WithdrawalPressureConfig | null;
   copy: MarketStageCopy;
 };
 
@@ -67,22 +95,66 @@ export type MarketCampaignStage = {
 
 const firstYieldConfig: MarketStageConfig = {
   level: "first-yield",
+  onboarding: "guided",
+  introCustomerGuaranteedRepayment: true,
   startingCash: 700,
   goals: {
-    loanCount: 1,
-    cumulativeLent: 500,
-    netWorth: 1_500,
-    survivalDay: null,
-    productCount: 0,
+    trustTarget: 100,
   },
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
+  maxVisibleDepositors: 2,
+  depositSpawnEveryDays: 4,
   fundingUnlockDelayDays: 3,
   productCreationCost: 100,
   introCustomerId: "mina",
   introApprovesAutomatically: true,
-  randomizeDefaultRisk: false,
+  randomizeDefaultRisk: true,
   fundingRepaymentsEnabled: true,
+  newsSchedule: [
+    {
+      id: "riverside-orders-signal",
+      threadId: "riverside-orders",
+      day: 6,
+      phase: "signal",
+      severity: "opportunity",
+      title: {
+        en: "Riverside orders are picking up",
+        ko: "리버사이드 주문이 늘고 있습니다",
+      },
+      body: {
+        en: "Local shops report a steadier flow of weekend customers.",
+        ko: "지역 상점들이 주말 고객 흐름이 안정되고 있다고 전합니다.",
+      },
+      action: {
+        en: "Watch small-business lines for a sustainable opening.",
+        ko: "자영업자 라인에서 지속 가능한 기회를 살펴보세요.",
+      },
+      affectedSegments: ["small-business"],
+      riskAdjustment: -4,
+    },
+    {
+      id: "riverside-orders-outcome",
+      threadId: "riverside-orders",
+      day: 15,
+      phase: "outcome",
+      severity: "opportunity",
+      title: {
+        en: "Riverside demand held through the month",
+        ko: "리버사이드 수요가 한 달 동안 유지됐습니다",
+      },
+      body: {
+        en: "The seasonal lift is now part of the district's ordinary trade.",
+        ko: "계절적 수요가 이 지역의 일상적인 거래 흐름으로 자리 잡았습니다.",
+      },
+      action: {
+        en: "Keep growing only where repayment performance supports it.",
+        ko: "상환 성과가 뒷받침되는 라인만 계속 확장하세요.",
+      },
+      affectedSegments: ["small-business"],
+      riskAdjustment: 0,
+    },
+  ],
   customerSeeds: [
     {
       id: "mina",
@@ -120,6 +192,34 @@ const firstYieldConfig: MarketStageConfig = {
           ko: "다음 달 근무 일정표",
         },
       },
+      status: "waiting",
+    },
+  ],
+  depositSeeds: [
+    {
+      id: "soojin-savings",
+      name: { en: "Soojin Lee", ko: "수진 이" },
+      job: { en: "Village pharmacist", ko: "마을 약사" },
+      amount: 260,
+      rate: 2,
+      balance: 0,
+      appears: 0,
+      x: 81,
+      y: 21,
+      avatar: "/assets/pop-art/avatars/auditor-neutral.png",
+      status: "waiting",
+    },
+    {
+      id: "taeho-savings",
+      name: { en: "Taeho Choi", ko: "태호 최" },
+      job: { en: "Town grocer", ko: "마을 식료품점 주인" },
+      amount: 340,
+      rate: 2,
+      balance: 0,
+      appears: 0,
+      x: 18,
+      y: 76,
+      avatar: "/assets/pop-art/avatars/fund-manager-neutral.png",
       status: "waiting",
     },
   ],
@@ -170,16 +270,36 @@ const firstYieldConfig: MarketStageConfig = {
     rateMin: 7,
     rateRange: 10,
   },
+  depositGeneration: {
+    amountMin: 120,
+    amountStep: 40,
+    amountRange: 11,
+    rateMin: 1,
+    rateRange: 3,
+  },
+  withdrawalPressure: {
+    earliestDay: 18,
+    dayRange: 8,
+    warningDays: 2,
+    withdrawalShare: 0.7,
+    title: {
+      en: "Residents are preparing to withdraw savings",
+      ko: "주민들이 예금을 인출할 준비를 하고 있습니다",
+    },
+    body: {
+      en: "A local rumour has people keeping more cash at home. Depositors will soon ask for part of their balances.",
+      ko: "지역 소문으로 주민들이 현금을 더 보유하려 합니다. 곧 예금 고객들이 잔액 일부를 찾으려 할 것입니다.",
+    },
+    action: {
+      en: "Keep enough cash on hand before the withdrawal day.",
+      ko: "인출일 전까지 충분한 현금을 확보하세요.",
+    },
+  },
   copy: {
     districtLabel: { en: "RIVERSIDE DISTRICT", ko: "리버사이드 지구" },
-    goalLoansLabel: { en: "First loan", ko: "첫 대출" },
-    goalCumulativeLentLabel: { en: "Lend $500", ko: "$500 대출" },
-    goalNetWorthLabel: { en: "Net worth $1,500", ko: "순자산 $1,500" },
-    // Stage has no product goal (productCount: 0), so this never renders.
-    goalProductLabel: { en: "Create a loan product", ko: "대출 상품 만들기" },
     missionCompleteLabel: {
-      en: "Three bank-management goals completed.",
-      ko: "세 가지 은행 운영 목표를 모두 달성했습니다.",
+      en: "Your bank earned the market's complete trust.",
+      ko: "우리 은행이 시장의 완전한 신뢰를 얻었습니다.",
     },
     learnCustomerHint: {
       en: "Get to know the customer before lending.",
@@ -190,28 +310,94 @@ const firstYieldConfig: MarketStageConfig = {
 
 const creditUnderPressureConfig: MarketStageConfig = {
   level: "credit-under-pressure",
+  onboarding: "full",
+  introCustomerGuaranteedRepayment: false,
   startingCash: 900,
   goals: {
-    loanCount: 3,
-    cumulativeLent: 1_500,
-    netWorth: 1_400,
-    survivalDay: 26,
-    productCount: 1,
+    trustTarget: 100,
   },
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
+  maxVisibleDepositors: 1,
+  depositSpawnEveryDays: 3,
   fundingUnlockDelayDays: 3,
   productCreationCost: 100,
   introCustomerId: "jun",
   introApprovesAutomatically: false,
   randomizeDefaultRisk: true,
   fundingRepaymentsEnabled: true,
+  newsSchedule: [
+    {
+      id: "yard-gigs-signal",
+      threadId: "yard-gigs",
+      day: 3,
+      phase: "signal",
+      severity: "watch",
+      title: {
+        en: "North Yard shifts are becoming irregular",
+        ko: "노스 야드 근무 일정이 불규칙해지고 있습니다",
+      },
+      body: {
+        en: "Delivery and casual workers report fewer predictable shifts.",
+        ko: "배달·일용직 고객이 예측 가능한 근무가 줄었다고 말합니다.",
+      },
+      action: {
+        en: "Review exposed lines before the next repayment cycle.",
+        ko: "다음 상환 주기 전에 노출된 라인을 검토하세요.",
+      },
+      affectedSegments: ["delivery", "low-credit"],
+      riskAdjustment: 0,
+    },
+    {
+      id: "yard-gigs-warning",
+      threadId: "yard-gigs",
+      day: 8,
+      phase: "warning",
+      severity: "alert",
+      title: {
+        en: "North Yard repayment pressure is worsening",
+        ko: "노스 야드 상환 압박이 커지고 있습니다",
+      },
+      body: {
+        en: "Cash-flow pressure is now visible in delivery and precarious-work households.",
+        ko: "배달·불안정 노동 고객군에서 현금흐름 압박이 뚜렷해지고 있습니다.",
+      },
+      action: {
+        en: "Guard or pause exposed automated lines while you reassess them.",
+        ko: "재검토하는 동안 노출된 자동화 라인에 안전장치를 연결하거나 중단하세요.",
+      },
+      affectedSegments: ["delivery", "low-credit"],
+      riskAdjustment: 12,
+    },
+    {
+      id: "yard-gigs-recovery",
+      threadId: "yard-gigs",
+      day: 20,
+      phase: "recovery",
+      severity: "watch",
+      title: {
+        en: "North Yard work is stabilizing",
+        ko: "노스 야드 고용이 안정되고 있습니다",
+      },
+      body: {
+        en: "The acute disruption has eased, though the district still needs care.",
+        ko: "급격한 혼란은 줄었지만 이 지역은 여전히 주의가 필요합니다.",
+      },
+      action: {
+        en: "Reopen lines gradually and watch the completed contracts.",
+        ko: "라인을 천천히 재개하고 완료되는 계약을 지켜보세요.",
+      },
+      affectedSegments: ["delivery", "low-credit"],
+      riskAdjustment: -12,
+    },
+  ],
   customerSeeds: [
     {
       id: "jun",
       name: { en: "Jun Park", ko: "준 박" },
       job: { en: "No current job", ko: "현재 직업 없음" },
       occupation: "unemployed",
+      segment: "low-credit",
       income: 0,
       amount: 420,
       rate: 12,
@@ -247,6 +433,21 @@ const creditUnderPressureConfig: MarketStageConfig = {
           ko: "제시한 담보나 보증인이 없음",
         },
       },
+      status: "waiting",
+    },
+  ],
+  depositSeeds: [
+    {
+      id: "city-savings",
+      name: { en: "Hana Moon", ko: "하나 문" },
+      job: { en: "City hospital nurse", ko: "도시 병원 간호사" },
+      amount: 420,
+      rate: 2,
+      balance: 0,
+      appears: 0,
+      x: 81,
+      y: 21,
+      avatar: "/assets/pop-art/avatars/mina-neutral.png",
       status: "waiting",
     },
   ],
@@ -297,21 +498,19 @@ const creditUnderPressureConfig: MarketStageConfig = {
     rateMin: 10,
     rateRange: 11,
   },
+  depositGeneration: {
+    amountMin: 220,
+    amountStep: 60,
+    amountRange: 13,
+    rateMin: 1,
+    rateRange: 4,
+  },
+  withdrawalPressure: null,
   copy: {
     districtLabel: { en: "NORTH YARD DISTRICT", ko: "노스 야드 지구" },
-    goalLoansLabel: { en: "Issue 3 loans", ko: "대출 3건 실행하기" },
-    goalCumulativeLentLabel: {
-      en: "Lend at least $1,500",
-      ko: "대출 누적 $1,500 이상",
-    },
-    goalNetWorthLabel: {
-      en: "Reach $1,400 in net worth",
-      ko: "순자산 $1,400 달성",
-    },
-    goalProductLabel: { en: "Create a loan product", ko: "대출 상품 만들기" },
     missionCompleteLabel: {
-      en: "You balanced credit risk, liquidity, and debt maturity through day 26.",
-      ko: "26일까지 신용 위험, 유동성, 부채 만기를 균형 있게 관리했습니다.",
+      en: "Your decisions held up under pressure. The market fully trusts this bank.",
+      ko: "압박 속에서도 판단을 증명했습니다. 시장이 이 은행을 완전히 신뢰합니다.",
     },
     learnCustomerHint: {
       en: "Income relative to the loan amount determines repayment risk.",

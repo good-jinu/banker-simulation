@@ -31,9 +31,24 @@ export const en = {
     greeting: "Hello! I urgently need some money.",
     challengeGreeting: "I need capital to keep my work going.",
     loanQuestion: "$100 loan, please?",
+    onboardingFirstStep: "FIRST STEP",
+    coachmarkNewControl: "NEW CONTROL",
+    onboardingFirstCustomer: "Meet Mina and learn why she needs the loan.",
+    onboardingFirstRepayment:
+      "Press play and watch Mina complete the first contract.",
+    onboardingSecondDecision:
+      "Meet the next customer, check the facts, and make your own decision.",
+    onboardingDepositProduct:
+      "Launch a savings product before accepting customer deposits.",
+    onboardingLoanProduct:
+      "Turn your lending judgment into a reusable loan product.",
     challengeLoanQuestion: (amount: string) => `${amount} loan, please?`,
     askPurpose: "Ask what the loan is for",
     askIncome: "Ask about their income",
+    firstLoanRejectLocked:
+      "The first contract teaches lending and repayment, so rejection is locked.",
+    firstLoanApprovalCoachmark:
+      "Lend to Mina and watch how the contract is repaid.",
     incomeAnswer: "My monthly income is about $2,400.",
     informationComplete: "Information checked · $110 due in 12 days",
     informationChecked: (amount: string, days: number) =>
@@ -52,13 +67,36 @@ export const en = {
     noticeRepayment: (amount: string) => `REPAID · ${amount}`,
     noticeDefault: (name: string, amount: string) =>
       `DEFAULT · ${name} · ${amount}`,
-    noticeFundingRepayment: (
-      name: string,
-      amount: string,
-      trustDelta: number,
-    ) => `PAID · ${name} · ${amount} · TRUST +${trustDelta}`,
+    noticeCustomerRepayment: (name: string, amount: string) =>
+      `REPAID · ${name} · ${amount}`,
+    noticeFundingRepayment: (name: string, amount: string) =>
+      `PAID · ${name} · ${amount}`,
     noticeFundingDefault: (name: string, amount: string) =>
-      `DEFAULT · ${name} · ${amount} · TRUST -20`,
+      `MISSED · ${name} · ${amount}`,
+    // Qualitative only — the player is told what moved, never by how much.
+    trustContractsCompleting:
+      "Trust is rising — more customers are completing their contracts.",
+    trustEarningsSustainable:
+      "Trust is rising — the bank's earnings are becoming sustainable.",
+    trustDefaultsWeakened:
+      "Trust is under pressure — defaults weakened the loan book.",
+    trustObligationUnpaid:
+      "Trust cannot grow further while an obligation remains unpaid.",
+    trustBookThinning:
+      "Trust is slipping — the bank is serving fewer customers than it was.",
+    opinionTitle: "Market Opinion",
+    opinionReach: "Customer reach",
+    opinionStrength: "Financial strength",
+    opinionReliability: "Reliability",
+    opinionReachLow: "Limited",
+    opinionReachMid: "Growing",
+    opinionReachHigh: "Established",
+    opinionStrengthLow: "Fragile",
+    opinionStrengthMid: "Stable",
+    opinionStrengthHigh: "Strong",
+    opinionReliabilityLow: "Questioned",
+    opinionReliabilityMid: "Proven",
+    opinionReliabilityHigh: "Exceptional",
     noticeFundingSettlement: (name: string, amount: string) =>
       `SETTLED · ${name} · ${amount}`,
     flowFunded: "FUNDED",
@@ -72,6 +110,12 @@ export const en = {
     noticeInsolvent: "The bank cannot cover a debt due today.",
     noticeLoanRequest: (name: string, amount: string) =>
       `${name} requests a ${amount} loan.`,
+    noticeDepositRequest: (name: string, amount: string) =>
+      `${name} would like to deposit ${amount}.`,
+    noticeDepositAccepted: (name: string, amount: string) =>
+      `DEPOSIT RECEIVED · ${name} · ${amount}`,
+    noticeDepositWithdrawal: (amount: string) =>
+      `SAVINGS WITHDRAWN · ${amount}`,
     fundingArrived: "Funding offers from other banks have arrived.",
     insufficientCash: "Insufficient cash.",
     viewFunding: "Check other banks' offers.",
@@ -79,12 +123,12 @@ export const en = {
       "External funding arrives three days after your third loan.",
     borrowed: (name: string, amount: string) =>
       `Borrowed ${amount} from ${name}.`,
-    goalsPanelTitle: (number: string) => `LEVEL ${number} GOALS`,
-    allGoalsComplete: "All goals complete",
     currentDate: "CURRENT DATE",
     currentCash: "Cash",
     trust: "Bank trust",
+    onlyGoal: "ONLY GOAL",
     trustScore: (value: number) => `${value}/100`,
+    trustGoalCaption: "Keep good contracts. Reach 100.",
     trustStrong: "Strong lender confidence",
     trustSteady: "Steady lender confidence",
     trustAtRisk: "Lender confidence at risk",
@@ -123,6 +167,7 @@ export const en = {
     loansIssued: "Loans issued",
     cumulativeLoans: "Cumulative lending",
     loanReceivables: "Loan receivables",
+    depositLiabilities: "Customer deposits owed",
     finalNetWorth: "Final net worth",
     checkResult: "Review results · Complete level",
     balanceSheet: "MY BANK BALANCE SHEET",
@@ -137,8 +182,18 @@ export const en = {
     fundingBook: "Funding obligations",
     noOutstandingLoans: "No outstanding customer loans",
     noFundingObligations: "No external funding obligations",
+    depositBook: "Customer deposits",
+    noCustomerDeposits: "No customer deposits held",
     dueInDays: (days: number) => `Due in ${days} days`,
     loanRequestTitle: "NEW LOAN REQUEST",
+    depositRequestTitle: "SAVINGS DEPOSIT REQUEST",
+    depositRequestCopy: (amount: string) =>
+      `I would like to keep ${amount} safely with your bank.`,
+    depositRequestWarning:
+      "Deposits add working cash today, but remain money the bank must return when customers withdraw it.",
+    depositRate: (rate: number) => `${rate}% savings rate`,
+    acceptDeposit: (amount: string) => `Accept deposit · ${amount}`,
+    depositBalance: (amount: string) => `Held · ${amount}`,
     requestCopy: (amount: string) =>
       `I would like to borrow ${amount} for my business and living expenses.`,
     job: "Job",
@@ -167,8 +222,6 @@ export const en = {
     annualRate: (rate: number) => `${rate}% annual`,
     select: "Select",
     close: "Close",
-    goalSurvive: (day: number) => `Survive day ${day}`,
-    dayProgress: (day: number) => `Day ${day}`,
     loanProgress: (count: number) => `${count} loan${count === 1 ? "" : "s"}`,
     loanTerms: (days: number, rate: number) =>
       `${days} days · ${rate}% interest`,
@@ -184,14 +237,24 @@ export const en = {
       "The bank defaulted on too many external debts. Other banks no longer trust it enough to keep operating.",
     returnToStages: "Return to stages",
     loanProductName: "Income Guard Loan",
+    depositProductName: "Neighborhood Savings",
+    depositProductEyebrow: "OFFER SAVINGS FIRST",
+    depositProductTitle: "Launch a Savings Product",
+    depositProductCopy:
+      "Customers can deposit only after your bank publishes terms. Their money becomes working cash, but the bank must return it with interest.",
+    depositProductRate: (rate: number) => `${rate}% savings interest`,
+    createDepositProduct: (cost: string) => `Launch savings product · ${cost}`,
+    depositProductActivated:
+      "Savings product active · customer deposits are now entering the bank.",
     productActivated:
       "Loan Product active · qualifying requests will be funded automatically.",
     productLessonEyebrow: "AUTOMATE THE SAFE DECISION",
     productBuilderTitle: "Create a Loan Product",
     productBuilderCopy:
-      "A Product checks every new request for you. Only customers inside these rules receive cash automatically.",
+      "A Product is a standing contract. Every matching customer receives cash automatically while the bank can fund them.",
     productMinimumIncome: "Minimum monthly income",
     productOccupation: "Allowed occupation",
+    productInterestRate: "Contract interest rate",
     productOccupationAny: "Any occupation",
     productOccupationEmployed: "Employed",
     productOccupationSelfEmployed: "Self-employed",
@@ -209,6 +272,51 @@ export const en = {
       "This product is paused. Existing contracts continue, but new requests will not be funded automatically.",
     pauseProduct: "Pause product",
     resumeProduct: "Resume product",
+    alertGuard: "Alert guard",
+    alertGuardEnabled: "Guard connected",
+    alertGuardDisabled: "No guard connected",
+    alertGuardCopy:
+      "A guarded line holds new loans for customer groups under an active market alert.",
+    connectAlertGuard: "Connect alert guard",
+    disconnectAlertGuard: "Disconnect alert guard",
+    marketWire: "MARKET WIRE",
+    openMarketWire: "Open market wire",
+    unreadNews: (count: number) =>
+      `${count} unread report${count === 1 ? "" : "s"}`,
+    noMarketNews: "No market reports yet. Keep the city moving.",
+    newsDay: (day: number) => `DAY ${day}`,
+    showOnMap: "Show on map",
+    newsWatch: "Watch",
+    newsAlert: "Alert",
+    newsOpportunity: "Opportunity",
+    segmentWorkers: "Workers",
+    segmentSmallBusiness: "Small business",
+    segmentDelivery: "Delivery",
+    segmentTechnology: "Technology",
+    segmentLowCredit: "Credit rebuilding",
+    resultReport: "RUN REPORT",
+    contractsCompleted: "Contracts completed",
+    contractsDefaulted: "Defaults",
+    automatedLoans: "Automated loans",
+    automatedOutcome: "Automated outcomes",
+    interestEarned: "Interest collected",
+    fundingBorrowed: "Funding borrowed",
+    fundingHonored: "Funding honored",
+    fundingMissed: "Funding missed",
+    depositsAccepted: "Deposits accepted",
+    depositsWithdrawn: "Savings withdrawn",
+    depositInterestPaid: "Savings interest paid",
+    resultDiagnosis: "OPERATING READOUT",
+    diagnosisLosses:
+      "Recent losses weakened the loan book. Protect exposed lines until completed contracts rebuild confidence.",
+    diagnosisFunding:
+      "A funding obligation was missed. Keep more cash available before expanding lending again.",
+    diagnosisAutomation:
+      "Your automated line completed more contracts than it lost. Keep watching its market signals before scaling it.",
+    diagnosisThinBook:
+      "Too few contracts resolved to establish a reliable market record. Build carefully and let loans complete.",
+    diagnosisResilient:
+      "The bank kept its promises under pressure. Its network is ready for a more demanding market.",
     createLoanProduct: (cost: string) => `Activate loan product · ${cost}`,
     productAutoLending: "AUTO LOANS",
     rangeMinimum: (label: string) => `${label} minimum`,

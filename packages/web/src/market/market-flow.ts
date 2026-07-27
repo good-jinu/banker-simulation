@@ -1,5 +1,6 @@
 import type {
   Customer,
+  Depositor,
   Funding,
   MarketEvent,
   Product,
@@ -9,6 +10,7 @@ export type MapPoint = { x: number; y: number };
 export type FlowKind =
   | "loan-out"
   | "funding-in"
+  | "deposit-in"
   | "customer-repayment"
   | "funding-repayment"
   | "funding-settlement"
@@ -38,12 +40,14 @@ export type FlowLabels = {
 export function pointForId(
   id: string,
   customers: Customer[],
+  depositors: Depositor[],
   funding: Funding[],
   products: Product[],
 ): MapPoint {
   if (id === "banker") return { x: 50, y: 49 };
   return (
     customers.find((customer) => customer.id === id) ??
+    depositors.find((depositor) => depositor.id === id) ??
     funding.find((lender) => lender.id === id) ??
     products.find((product) => product.id === id) ?? { x: 50, y: 50 }
   );
@@ -55,6 +59,7 @@ export function flowForEvent(
   labels: FlowLabels,
 ): Omit<FlowAnimation, "id"> | null {
   const customerPoint = (customer: Customer): MapPoint => customer;
+  const depositorPoint = (depositor: Depositor): MapPoint => depositor;
   const lenderPoint = (lender: Funding): MapPoint => lender;
   switch (event.type) {
     case "transfer": {
@@ -84,6 +89,15 @@ export function flowForEvent(
         amount: event.amount,
         kind: "customer-repayment",
         label: labels.repaid,
+      };
+    case "deposit-accepted":
+      return {
+        from: depositorPoint(event.depositor),
+        to: pointFor("banker"),
+        stampAt: pointFor("banker"),
+        amount: event.depositor.amount,
+        kind: "deposit-in",
+        label: labels.cashIn,
       };
     case "product-cash-in":
       return {

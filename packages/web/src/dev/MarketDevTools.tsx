@@ -49,7 +49,7 @@ export function MarketDevTools({
   const [status, setStatus] = useState<string | null>(null);
   const createSnapshot = useCallback(
     (): MarketSessionSave => ({
-      schemaVersion: 2,
+      schemaVersion: 1,
       stageId: stage.id,
       phase: "map",
       world: { ...world, events: [] },

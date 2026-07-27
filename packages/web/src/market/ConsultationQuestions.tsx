@@ -1,9 +1,11 @@
 import { Check, Info } from "lucide-react";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
-import type { ConsultationQuestionId } from "./CustomerConsultation.tsx";
-
-const QUESTIONS: ConsultationQuestionId[] = ["purpose", "income"];
+import {
+  CONSULTATION_QUESTIONS,
+  type ConsultationQuestionId,
+} from "./market-consultation.ts";
+import { coachmarkTarget } from "./market-ui-state.ts";
 
 export function ConsultationQuestions({
   asked,
@@ -17,14 +19,17 @@ export function ConsultationQuestions({
   const m = messagesFor(locale).market;
   return (
     <div className="question-list">
-      {QUESTIONS.map((question) => {
+      {CONSULTATION_QUESTIONS.map((question) => {
         const wasAsked = Boolean(asked[question]);
         return (
           <div className="question-group" key={question}>
             <button
               className={wasAsked ? "asked" : ""}
               onClick={() => onAsk(question)}
-              disabled={wasAsked}
+              aria-pressed={wasAsked}
+              {...coachmarkTarget(
+                question === "purpose" ? "first-customer" : null,
+              )}
             >
               {wasAsked ? <Check /> : <Info />}
               {question === "purpose" ? m.askPurpose : m.askIncome}

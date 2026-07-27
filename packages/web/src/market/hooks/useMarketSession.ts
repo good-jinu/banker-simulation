@@ -21,6 +21,7 @@ import {
   initialMarketUiState,
   type MarketUiState,
 } from "../market-ui-state.ts";
+import type { ConsultationProgress } from "../market-consultation.ts";
 
 type UseMarketSessionOptions = {
   stage: MarketCampaignStage;
@@ -30,6 +31,8 @@ type UseMarketSessionOptions = {
   setClockView: Dispatch<SetStateAction<ClockView>>;
   ui: MarketUiState;
   setUi: Dispatch<SetStateAction<MarketUiState>>;
+  consultation: ConsultationProgress;
+  setConsultation: Dispatch<SetStateAction<ConsultationProgress>>;
   devMode: boolean;
   devPhase: "intro" | "map";
   devFresh: boolean;
@@ -43,6 +46,8 @@ export function useMarketSession({
   setClockView,
   ui,
   setUi,
+  consultation,
+  setConsultation,
   devMode,
   devPhase,
   devFresh,
@@ -50,16 +55,16 @@ export function useMarketSession({
   const [sessionReady, setSessionReady] = useState(false);
   const createSnapshot = useCallback(
     (): MarketSessionSave => ({
-      schemaVersion: 2,
+      schemaVersion: 1,
       stageId: stage.id,
       phase: "map",
       world: { ...world, events: [] },
-      consultation: { asked: [], lastQuestion: null, expression: "requesting" },
+      consultation,
       clock: clockView,
       ui,
       savedAt: Date.now(),
     }),
-    [clockView, stage.id, ui, world],
+    [clockView, consultation, stage.id, ui, world],
   );
 
   useEffect(() => {
@@ -71,6 +76,7 @@ export function useMarketSession({
           dispatch({ type: "restore", world: session.world });
           setClockView(session.clock);
           setUi(session.ui);
+          setConsultation(session.consultation);
         } else if (devMode && devPhase === "map") {
           dispatch({
             type: "restore",
@@ -92,6 +98,7 @@ export function useMarketSession({
     devPhase,
     dispatch,
     setClockView,
+    setConsultation,
     setUi,
     stage.config,
     stage.id,
