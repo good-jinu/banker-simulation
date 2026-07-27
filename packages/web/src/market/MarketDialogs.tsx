@@ -197,7 +197,6 @@ export function MarketDialogs({
             <ProductBuilder
               locale={locale}
               creationCost={world.config.productCreationCost}
-              guided={world.onboarding === "products"}
               onCreate={onCreateProduct}
               onClose={onCloseOverlay}
             />
