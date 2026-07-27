@@ -1,7 +1,12 @@
 import type { MarketStageConfig } from "../market/market-campaign.ts";
 import type { ConsultationProgress } from "../market/CustomerConsultation.tsx";
 import { CLOCK_SPEEDS, type ClockSpeed } from "../lib/game-clock.ts";
-import type { MarketWorld } from "../market/market-world.ts";
+import {
+  emptyMarketRunStats,
+  type MarketRunStats,
+  type MarketWorld,
+  withdrawalEventFor,
+} from "../market/market-world.ts";
 import { isReputation } from "../market/market-trust.ts";
 import {
   initialMarketUiState,
@@ -198,6 +203,19 @@ function emptyConsultation(): ConsultationProgress {
   return { asked: [], lastQuestion: null, expression: "requesting" };
 }
 
+function migrateMarketRunStats(value: unknown): MarketRunStats {
+  const fallback = emptyMarketRunStats();
+  if (!isRecord(value)) return fallback;
+  return Object.fromEntries(
+    Object.keys(fallback).map((key) => [
+      key,
+      typeof value[key] === "number"
+        ? value[key]
+        : fallback[key as keyof MarketRunStats],
+    ]),
+  ) as MarketRunStats;
+}
+
 export function migrateMarketSession(
   value: unknown,
   stageId: string,
@@ -270,6 +288,17 @@ export function migrateMarketSession(
       config,
       funding: rawWorld.funding as MarketWorld["funding"],
       products: migrateProducts(rawWorld.products),
+      depositors: Array.isArray(rawWorld.depositors)
+        ? (rawWorld.depositors as MarketWorld["depositors"])
+        : config.depositSeeds.map((depositor) => ({ ...depositor })),
+      withdrawalEvent: isRecord(rawWorld.withdrawalEvent)
+        ? (rawWorld.withdrawalEvent as MarketWorld["withdrawalEvent"])
+        : withdrawalEventFor(
+            typeof rawWorld.seed === "number" ? rawWorld.seed : 1,
+            config,
+          ),
+      news: Array.isArray(rawWorld.news) ? rawWorld.news : [],
+      stats: migrateMarketRunStats(rawWorld.stats),
       events: [],
     },
     consultation: { asked, lastQuestion, expression },

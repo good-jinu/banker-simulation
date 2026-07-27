@@ -2330,6 +2330,7 @@ button {
 }
 
 .event-edge-funding-in,
+.event-edge-deposit-in,
 .event-edge-funding-repayment,
 .event-edge-funding-settlement {
   stroke: var(--orange);
@@ -3293,6 +3294,442 @@ button {
   color: #6b4a18;
   border: 2px dashed var(--ink);
   font-size: 11px;
+}
+
+/* Market operations: news lives beside the map, while its effects remain part
+   of the illustrated network instead of becoming another dashboard. */
+.market-news-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 8px 10px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.next-cash-movement {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 1px 7px;
+  padding: 5px 8px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: #fff1c8;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.next-cash-movement small {
+  color: #6b4a18;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+
+.next-cash-movement strong {
+  text-align: right;
+}
+
+.next-cash-movement span {
+  grid-column: 1 / -1;
+  white-space: nowrap;
+}
+
+.market-news-button svg {
+  width: 17px;
+}
+
+.market-news-button b {
+  min-width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: var(--red);
+  font-size: 9px;
+}
+
+.market-news-button.unread {
+  background: var(--yellow);
+}
+
+.market-news-desk {
+  position: relative;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 32px));
+  overflow: auto;
+  padding: 26px;
+  color: var(--ink);
+  border: 4px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 9px 9px 0 var(--ink);
+}
+
+.market-news-desk > header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-right: 38px;
+  border-bottom: 3px solid var(--ink);
+}
+
+.market-news-desk header h2,
+.market-news-desk header small {
+  margin: 0;
+}
+
+.market-news-desk header h2 {
+  font-size: 24px;
+  letter-spacing: 0.04em;
+}
+
+.market-news-desk header small,
+.market-news-meta {
+  color: #6b4a18;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.market-news-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+}
+
+.market-news-icon svg {
+  width: 22px;
+}
+
+.market-news-list {
+  display: grid;
+  gap: 12px;
+}
+
+.market-news-list article {
+  padding: 14px;
+  border: 2px solid var(--ink);
+  background: #fff7dc;
+}
+
+.market-news-list article.market-news-alert {
+  border-color: var(--red);
+  background: #ffe0cf;
+}
+
+.market-news-list article.market-news-opportunity {
+  border-color: #2d7c39;
+  background: #e1f5cd;
+}
+
+.market-news-meta {
+  display: flex;
+  justify-content: space-between;
+}
+
+.market-news-meta b {
+  color: var(--ink);
+}
+
+.market-news-list h3 {
+  margin: 6px 0;
+  font-size: 16px;
+}
+
+.market-news-list p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.market-news-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 10px 0;
+}
+
+.market-news-tags span {
+  padding: 3px 6px;
+  border: 1px solid var(--ink);
+  background: var(--yellow);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.market-news-action {
+  padding-left: 9px;
+  border-left: 3px solid var(--red);
+  color: #6b2717;
+}
+
+.market-news-list article button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 12px;
+  padding: 6px 9px;
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  background: var(--ink);
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.market-news-list article button svg {
+  width: 13px;
+}
+
+.market-news-empty {
+  margin: 0;
+  padding: 20px;
+  border: 2px dashed var(--ink);
+  color: #6b4a18;
+  font-size: 12px;
+}
+
+.customer-node.market-alert .portrait {
+  animation: market-alert 1.3s ease-in-out infinite;
+}
+
+.customer-node.market-highlight .portrait {
+  outline: 5px solid var(--yellow);
+  outline-offset: 3px;
+}
+
+.product-node.guarded::after {
+  content: "!";
+  position: absolute;
+  right: -9px;
+  bottom: -8px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--yellow);
+  font-size: 12px;
+  font-weight: 950;
+}
+
+@keyframes market-alert {
+  50% {
+    filter: drop-shadow(0 0 10px var(--red));
+    transform: scale(1.05);
+  }
+}
+
+.product-alert-guard {
+  margin-top: 12px;
+  padding: 12px;
+  border: 2px solid var(--ink);
+  background: #fff1c8;
+}
+
+.product-alert-guard strong {
+  display: block;
+  font-size: 12px;
+}
+
+.product-alert-guard p {
+  margin: 5px 0 10px;
+  color: #6b4a18;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.product-alert-guard button {
+  padding: 7px 9px;
+  color: var(--paper);
+  border: 2px solid var(--ink);
+  background: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.depositor-node .portrait {
+  border-color: #2d7c39;
+  background: #dff1c8;
+}
+
+.depositor-node.waiting .portrait {
+  animation: depositor-arrival 1.8s ease-in-out infinite;
+}
+
+@keyframes depositor-arrival {
+  50% {
+    box-shadow: 0 0 0 6px rgba(104, 177, 73, 0.35);
+  }
+}
+
+.deposit-request {
+  display: grid;
+  grid-template-columns: 1fr 0.88fr;
+  min-height: 410px;
+  overflow: hidden;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--paper);
+}
+
+.deposit-request-scene {
+  position: relative;
+  display: grid;
+  align-content: end;
+  min-height: 410px;
+  padding: 22px;
+  background:
+    radial-gradient(circle at 50% 55%, #a9dd9a, transparent 50%), #275b3c;
+}
+
+.deposit-request-scene > span {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  padding: 5px 8px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: var(--yellow);
+  font-size: 9px;
+  font-weight: 950;
+}
+
+.deposit-request-scene img {
+  width: min(250px, 88%);
+  max-height: 300px;
+  justify-self: center;
+  object-fit: contain;
+  object-position: bottom;
+  filter: drop-shadow(8px 10px 0 rgba(17, 16, 13, 0.25));
+}
+
+.deposit-request-scene p {
+  margin: 0;
+  padding: 11px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: #fff6d9;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.deposit-request-details {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 28px;
+}
+
+.deposit-request-details small {
+  color: #6b4a18;
+  font-weight: 800;
+}
+
+.deposit-request-details > strong {
+  color: #1f6a31;
+  font-size: 34px;
+}
+
+.deposit-request-details > span {
+  width: fit-content;
+  padding: 4px 7px;
+  border: 1px solid var(--ink);
+  background: #dff1c8;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.deposit-request-details > p {
+  margin: 4px 0 8px;
+  color: #6b4a18;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.deposit-request-details > div {
+  display: grid;
+  grid-template-columns: 0.72fr 1fr;
+  gap: 7px;
+}
+
+.deposit-request-details button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 10px;
+  border: 2px solid var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.deposit-request-details button svg {
+  width: 14px;
+}
+
+.result-diagnoses {
+  margin-top: 14px;
+  padding: 12px;
+  color: var(--ink);
+  text-align: left;
+  border: 2px solid var(--ink);
+  background: #fff1c8;
+}
+
+.result-diagnoses h3 {
+  margin: 0 0 7px;
+  color: var(--red);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.result-diagnoses p {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 620px) {
+  .market-news-button span {
+    display: none;
+  }
+
+  .next-cash-movement {
+    display: none;
+  }
+
+  .market-news-desk {
+    padding: 20px;
+  }
+
+  .deposit-request {
+    grid-template-columns: 1fr;
+  }
+
+  .deposit-request-scene {
+    min-height: 260px;
+  }
 }
 
 .dev-test-panel {

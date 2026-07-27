@@ -28,9 +28,11 @@ import {
   marketReducer,
   summarize,
   type Customer,
+  type Depositor,
   type Funding,
   type LoanProduct,
   type LoanProductRules,
+  type MarketSegment,
 } from "./market-world.ts";
 import { type GameClock } from "../lib/game-clock.ts";
 import "./market.css";
@@ -66,12 +68,18 @@ export function MarketApp({
     createWorld(Date.now() >>> 0, stage.config),
   );
   const [selected, setSelected] = useState<Customer | null>(null);
+  const [selectedDepositor, setSelectedDepositor] = useState<Depositor | null>(
+    null,
+  );
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
     null,
   );
   const [productBuilderOpen, setProductBuilderOpen] = useState(false);
   const [fundingOpen, setFundingOpen] = useState(false);
   const [assetsOpen, setAssetsOpen] = useState(false);
+  const [newsOpen, setNewsOpen] = useState(false);
+  const [highlightedSegment, setHighlightedSegment] =
+    useState<MarketSegment | null>(null);
   const [clockView, setClockView] = useState<ClockView>({
     paused: true,
     speed: 1,
@@ -108,9 +116,11 @@ export function MarketApp({
   });
   const modalOpen = Boolean(
     selected ||
+    selectedDepositor ||
     productBuilderOpen ||
     fundingOpen ||
     assetsOpen ||
+    newsOpen ||
     selectedProductId !== null ||
     world.missionCleared ||
     world.insolvent,
@@ -141,6 +151,20 @@ export function MarketApp({
       if (world.products.length === 0) setProductBuilderOpen(true);
     },
     [dispatch, world.products.length],
+  );
+  const acceptDeposit = useCallback(
+    (depositor: Depositor) => {
+      dispatch({ type: "accept-deposit", depositorId: depositor.id });
+      setSelectedDepositor(null);
+    },
+    [dispatch],
+  );
+  const rejectDeposit = useCallback(
+    (depositor: Depositor) => {
+      dispatch({ type: "reject-deposit", depositorId: depositor.id });
+      setSelectedDepositor(null);
+    },
+    [dispatch],
   );
   const createLoanProduct = useCallback(
     (rules: LoanProductRules) => {
@@ -219,10 +243,16 @@ export function MarketApp({
         clockView={clockView}
         modalOpen={modalOpen}
         hasDraggedMap={ui.hasDraggedMap}
+        highlightedSegment={highlightedSegment}
         onBack={onBack}
         onOpenAssets={() => setAssetsOpen(true)}
+        onOpenNews={() => {
+          dispatch({ type: "read-market-news" });
+          setNewsOpen(true);
+        }}
         onOpenProductBuilder={openProductBuilder}
         onSelectCustomer={setSelected}
+        onSelectDepositor={setSelectedDepositor}
         onSelectProduct={(product) => setSelectedProductId(product.id)}
         onOpenFunding={openFunding}
         onToggleClock={toggleClock}
@@ -260,17 +290,23 @@ export function MarketApp({
         locale={locale}
         world={world}
         selected={selected}
+        selectedDepositor={selectedDepositor}
         selectedProductId={selectedProductId}
         productBuilderOpen={productBuilderOpen}
         fundingOpen={fundingOpen}
         assetsOpen={assetsOpen}
+        newsOpen={newsOpen}
         onCloseSelected={() => setSelected(null)}
+        onCloseSelectedDepositor={() => setSelectedDepositor(null)}
         onCloseSelectedProduct={() => setSelectedProductId(null)}
         onCloseProductBuilder={() => setProductBuilderOpen(false)}
         onCloseFunding={() => setFundingOpen(false)}
         onCloseAssets={() => setAssetsOpen(false)}
+        onCloseNews={() => setNewsOpen(false)}
         onApprove={approve}
         onReject={reject}
+        onAcceptDeposit={acceptDeposit}
+        onRejectDeposit={rejectDeposit}
         onNeedFunding={() => {
           setSelected(null);
           setFundingOpen(true);
@@ -279,6 +315,13 @@ export function MarketApp({
         onToggleProduct={(productId, active) =>
           dispatch({ type: "set-product-active", productId, active })
         }
+        onToggleProductAlertGuard={(productId, enabled) =>
+          dispatch({ type: "set-product-alert-guard", productId, enabled })
+        }
+        onShowNewsSegment={(segment) => {
+          setHighlightedSegment(segment);
+          setNewsOpen(false);
+        }}
         onBorrow={borrow}
         onComplete={() => (onComplete ? onComplete() : onBack())}
         onBack={onBack}

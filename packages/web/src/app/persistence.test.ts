@@ -109,6 +109,32 @@ describe("save migration", () => {
     expect(migrated?.ui).toEqual({ hasDraggedMap: true });
   });
 
+  it("hydrates deposit state for a session saved before deposits were introduced", () => {
+    const stage = marketCampaignStages[0]!;
+    const world = createWorld(7, stage.config);
+    const legacyWorld = { ...world } as Record<string, unknown>;
+    delete legacyWorld.depositors;
+    delete legacyWorld.withdrawalEvent;
+    delete legacyWorld.news;
+    delete legacyWorld.stats;
+    const migrated = migrateMarketSession(
+      {
+        schemaVersion: 2,
+        stageId: stage.id,
+        phase: "map",
+        world: legacyWorld,
+      },
+      stage.id,
+      stage.config,
+    );
+
+    expect(migrated?.world.depositors).toHaveLength(
+      stage.config.depositSeeds.length,
+    );
+    expect(migrated?.world.withdrawalEvent).not.toBeNull();
+    expect(migrated?.world.stats.depositsAccepted).toBe(0);
+  });
+
   it("rejects a session belonging to another stage", () => {
     const config = marketCampaignStages[0]!.config;
     expect(

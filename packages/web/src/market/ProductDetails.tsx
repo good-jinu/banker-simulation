@@ -9,6 +9,7 @@ type ProductDetailsProps = {
   product: LoanProduct;
   onClose: () => void;
   onToggleActive: (productId: string, active: boolean) => void;
+  onToggleAlertGuard: (productId: string, enabled: boolean) => void;
 };
 
 export function ProductDetails({
@@ -16,6 +17,7 @@ export function ProductDetails({
   product,
   onClose,
   onToggleActive,
+  onToggleAlertGuard,
 }: ProductDetailsProps) {
   const m = messagesFor(locale).market;
   const occupationLabel =
@@ -83,6 +85,19 @@ export function ProductDetails({
       >
         {product.active ? m.pauseProduct : m.resumeProduct}
       </button>
+      <div className="product-alert-guard">
+        <strong>{m.alertGuard}</strong>
+        <p>{m.alertGuardCopy}</p>
+        <button
+          onClick={() =>
+            onToggleAlertGuard(product.id, !product.pauseOnMarketAlert)
+          }
+        >
+          {product.pauseOnMarketAlert
+            ? m.disconnectAlertGuard
+            : m.connectAlertGuard}
+        </button>
+      </div>
     </section>
   );
 }

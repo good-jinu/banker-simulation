@@ -3,16 +3,21 @@ import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CustomerConsultation } from "./CustomerConsultation.tsx";
+import { DepositRequest } from "./DepositRequest.tsx";
 import { InterbankConversation } from "./InterbankConversation.tsx";
 import { ProductBuilder } from "./ProductBuilder.tsx";
 import { ProductDetails } from "./ProductDetails.tsx";
+import { MarketNewsDesk } from "./MarketNewsDesk.tsx";
+import { MarketResultReport } from "./MarketResultReport.tsx";
 import { money } from "./market-format.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
   type Customer,
+  type Depositor,
   type Funding,
   type LoanProduct,
   type LoanProductRules,
+  type MarketSegment,
   type MarketWorld,
 } from "./market-world.ts";
 
@@ -21,20 +26,28 @@ type MarketDialogsProps = {
   locale: Locale;
   world: MarketWorld;
   selected: Customer | null;
+  selectedDepositor: Depositor | null;
   selectedProductId: string | null;
   productBuilderOpen: boolean;
   fundingOpen: boolean;
   assetsOpen: boolean;
+  newsOpen: boolean;
   onCloseSelected: () => void;
+  onCloseSelectedDepositor: () => void;
   onCloseSelectedProduct: () => void;
   onCloseProductBuilder: () => void;
   onCloseFunding: () => void;
   onCloseAssets: () => void;
+  onCloseNews: () => void;
   onApprove: (customer: Customer) => void;
   onReject: (customer: Customer) => void;
+  onAcceptDeposit: (depositor: Depositor) => void;
+  onRejectDeposit: (depositor: Depositor) => void;
   onNeedFunding: () => void;
   onCreateProduct: (rules: LoanProductRules) => void;
   onToggleProduct: (productId: string, active: boolean) => void;
+  onToggleProductAlertGuard: (productId: string, enabled: boolean) => void;
+  onShowNewsSegment: (segment: MarketSegment) => void;
   onBorrow: (lender: Funding) => void;
   onComplete: () => void;
   onBack: () => void;
@@ -45,26 +58,34 @@ export function MarketDialogs({
   locale,
   world,
   selected,
+  selectedDepositor,
   selectedProductId,
   productBuilderOpen,
   fundingOpen,
   assetsOpen,
+  newsOpen,
   onCloseSelected,
+  onCloseSelectedDepositor,
   onCloseSelectedProduct,
   onCloseProductBuilder,
   onCloseFunding,
   onCloseAssets,
+  onCloseNews,
   onApprove,
   onReject,
+  onAcceptDeposit,
+  onRejectDeposit,
   onNeedFunding,
   onCreateProduct,
   onToggleProduct,
+  onToggleProductAlertGuard,
+  onShowNewsSegment,
   onBorrow,
   onComplete,
   onBack,
 }: MarketDialogsProps) {
   const m = messagesFor(locale).market;
-  const { cash, day, customers, funding, trust } = world;
+  const { cash, day, customers, depositors, funding, trust } = world;
   const loanReceivables = customers
     .filter((customer) => customer.status === "accepted")
     .reduce((total, customer) => total + customer.amount, 0);
@@ -72,7 +93,10 @@ export function MarketDialogs({
   const fundingLiabilities = funding
     .filter((lender) => lender.accepted)
     .reduce((total, lender) => total + lender.amount, 0);
-  const netWorth = totalAssets - fundingLiabilities;
+  const depositLiabilities = depositors
+    .filter((depositor) => depositor.status === "accepted")
+    .reduce((total, depositor) => total + depositor.balance, 0);
+  const netWorth = totalAssets - fundingLiabilities - depositLiabilities;
   const trustBand =
     trust >= 80
       ? "strong"
@@ -122,47 +146,13 @@ export function MarketDialogs({
               </i>
             ))}
           </div>
-          <section className="mission-clear-card">
-            <span className="clear-seal">
-              <img src="/assets/pop-art/atoms/approval-stamp.svg" alt="" />
-            </span>
-            <small>
-              LEVEL {String(stage.number).padStart(2, "0")} COMPLETE
-            </small>
-            <h2 id="mission-clear-title">MISSION CLEAR!</h2>
-            <p>{localize(stage.config.copy.missionCompleteLabel, locale)}</p>
-            <div className="result-grid">
-              <div>
-                <span>{m.elapsedTime}</span>
-                <strong>DAY {day + 1}</strong>
-              </div>
-              <div>
-                <span>{m.trust}</span>
-                <strong>{m.trustScore(trust)}</strong>
-              </div>
-              <div>
-                <span>{m.loansIssued}</span>
-                <strong>{m.loanProgress(world.loanCount)}</strong>
-              </div>
-              <div>
-                <span>{m.cumulativeLoans}</span>
-                <strong>{money(world.cumulativeLent)}</strong>
-              </div>
-              <div>
-                <span>{m.currentCash}</span>
-                <strong>{money(cash)}</strong>
-              </div>
-              <div>
-                <span>{m.loanReceivables}</span>
-                <strong>{money(loanReceivables)}</strong>
-              </div>
-              <div className="result-total">
-                <span>{m.finalNetWorth}</span>
-                <strong>{money(netWorth)}</strong>
-              </div>
-            </div>
-            <button onClick={onComplete}>{m.checkResult}</button>
-          </section>
+          <MarketResultReport
+            stage={stage}
+            locale={locale}
+            world={world}
+            won
+            onContinue={onComplete}
+          />
         </div>
       )}
       {assetsOpen && (
@@ -204,6 +194,10 @@ export function MarketDialogs({
                 <dt>{m.loanReceivables}</dt>
                 <dd>{money(loanReceivables)}</dd>
               </div>
+              <div>
+                <dt>{m.depositLiabilities}</dt>
+                <dd>{money(depositLiabilities)}</dd>
+              </div>
               <div className="total">
                 <dt>{m.totalAssets}</dt>
                 <dd>{money(totalAssets)}</dd>
@@ -227,6 +221,7 @@ export function MarketDialogs({
             </div>
             <PortfolioDetails
               customers={customers}
+              depositors={depositors}
               funding={funding}
               locale={locale}
               day={day}
@@ -265,6 +260,28 @@ export function MarketDialogs({
           </section>
         </div>
       )}
+      {selectedDepositor && (
+        <div className="modal-backdrop" onMouseDown={onCloseSelectedDepositor}>
+          <section
+            className="consultation-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={onCloseSelectedDepositor}
+              aria-label={m.close}
+            >
+              <X />
+            </button>
+            <DepositRequest
+              depositor={selectedDepositor}
+              locale={locale}
+              onAccept={() => onAcceptDeposit(selectedDepositor)}
+              onReject={() => onRejectDeposit(selectedDepositor)}
+            />
+          </section>
+        </div>
+      )}
       {selectedProduct && (
         <div className="modal-backdrop" onMouseDown={onCloseSelectedProduct}>
           <ProductDetails
@@ -272,6 +289,7 @@ export function MarketDialogs({
             product={selectedProduct}
             onClose={onCloseSelectedProduct}
             onToggleActive={onToggleProduct}
+            onToggleAlertGuard={onToggleProductAlertGuard}
           />
         </div>
       )}
@@ -306,6 +324,16 @@ export function MarketDialogs({
           </section>
         </div>
       )}
+      {newsOpen && (
+        <div className="modal-backdrop" onMouseDown={onCloseNews}>
+          <MarketNewsDesk
+            locale={locale}
+            world={world}
+            onClose={onCloseNews}
+            onShowSegment={onShowNewsSegment}
+          />
+        </div>
+      )}
       {world.insolvent && (
         <div
           className="mission-clear-backdrop loss-backdrop"
@@ -313,23 +341,13 @@ export function MarketDialogs({
           aria-modal="true"
           aria-labelledby="loss-title"
         >
-          <section className="mission-clear-card loss-card">
-            <span className="clear-seal">
-              <img src="/assets/pop-art/atoms/rejection-stamp.svg" alt="" />
-            </span>
-            <small>LEVEL {String(stage.number).padStart(2, "0")}</small>
-            <h2 id="loss-title">
-              {world.failureReason === "trust"
-                ? m.trustFailureTitle
-                : m.insolventTitle}
-            </h2>
-            <p>
-              {world.failureReason === "trust"
-                ? m.trustFailureDescription
-                : m.insolventDescription}
-            </p>
-            <button onClick={onBack}>{m.returnToStages}</button>
-          </section>
+          <MarketResultReport
+            stage={stage}
+            locale={locale}
+            world={world}
+            won={false}
+            onContinue={onBack}
+          />
         </div>
       )}
     </>
@@ -338,17 +356,22 @@ export function MarketDialogs({
 
 function PortfolioDetails({
   customers,
+  depositors,
   funding,
   locale,
   day,
 }: {
   customers: Customer[];
+  depositors: Depositor[];
   funding: Funding[];
   locale: Locale;
   day: number;
 }) {
   const m = messagesFor(locale).market;
   const loans = customers.filter((customer) => customer.status === "accepted");
+  const deposits = depositors.filter(
+    (depositor) => depositor.status === "accepted",
+  );
   const debts = funding.filter((lender) => lender.accepted);
   return (
     <div className="portfolio-details">
@@ -367,6 +390,20 @@ function PortfolioDetails({
                   money(customer.amount * (1 + customer.rate / 100)),
                 )}
               </small>
+            </article>
+          ))}
+        </div>
+      )}
+      <h3>{m.depositBook}</h3>
+      {deposits.length === 0 ? (
+        <p className="portfolio-empty">{m.noCustomerDeposits}</p>
+      ) : (
+        <div className="portfolio-list">
+          {deposits.map((depositor) => (
+            <article key={depositor.id}>
+              <strong>{localize(depositor.name, locale)}</strong>
+              <span>{money(depositor.balance)}</span>
+              <small>{m.depositRate(depositor.rate)}</small>
             </article>
           ))}
         </div>

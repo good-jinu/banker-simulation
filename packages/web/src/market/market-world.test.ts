@@ -98,6 +98,30 @@ describe("upcoming repayment", () => {
     expect(upcomingRepayment(createWorld(1))).toBeNull();
   });
 
+  it("shows a scheduled customer-withdrawal demand as an outgoing cash movement", () => {
+    let world = createWorld(1);
+    const depositor = world.depositors[0]!;
+    world = marketReducer(world, {
+      type: "accept-deposit",
+      depositorId: depositor.id,
+    });
+    world = {
+      ...world,
+      withdrawalEvent: {
+        warningDay: 2,
+        withdrawalDay: 3,
+        withdrawalShare: 1,
+        status: "warned",
+      },
+    };
+
+    expect(upcomingRepayment(world)).toEqual({
+      dueDay: 3,
+      incomingAmount: 0,
+      outgoingAmount: depositor.amount * (1 + depositor.rate / 100),
+    });
+  });
+
   it("returns the nearest accepted customer repayment", () => {
     const world = run(createWorld(1), { type: "begin" });
 
@@ -313,7 +337,61 @@ describe("level two credit risk", () => {
     expect(world.events).toContainEqual(
       expect.objectContaining({ type: "product-lent" }),
     );
+    expect(world.stats.automatedIssued).toBe(1);
     expect(world.cash).toBe(300); // $900 start − $100 setup − $500 loan
+  });
+
+  it("holds an alert-affected customer when an automated line has a guard", () => {
+    const start = createWorld(1, "credit-under-pressure");
+    const product = {
+      id: "guarded-line",
+      kind: "loan" as const,
+      name: "Guarded line",
+      x: 50,
+      y: 26,
+      active: false,
+      rules: {
+        minimumIncome: 1_500,
+        occupation: "employed" as const,
+        interestRate: 10,
+        minimumAmount: 100,
+        maximumAmount: 1_000,
+        minimumTerm: 6,
+        maximumTerm: 12,
+      },
+    };
+    const withProduct = marketReducer(
+      { ...start, customers: [] },
+      { type: "create-product", product },
+    );
+    const guarded = marketReducer(withProduct, {
+      type: "set-product-alert-guard",
+      productId: product.id,
+      enabled: true,
+    });
+    const warning = start.config.newsSchedule.find(
+      (article) => article.id === "yard-gigs-warning",
+    )!;
+    const applicant = {
+      ...start.customers[0]!,
+      id: "delivery-applicant",
+      income: 2_500,
+      occupation: "employed" as const,
+      segment: "delivery" as const,
+      amount: 400,
+      term: 8,
+      status: "waiting" as const,
+    };
+    const held = marketReducer(
+      {
+        ...guarded,
+        news: [{ ...warning, publishedDay: 8, read: true }],
+        customers: [applicant],
+      },
+      { type: "set-product-active", productId: product.id, active: true },
+    );
+
+    expect(held.customers[0]?.status).toBe("waiting");
   });
 
   it("contracts every matching same-day customer when cash is available", () => {
@@ -539,6 +617,56 @@ describe("level two credit risk", () => {
     expect(world.trust).toBeLessThanOrEqual(TRUST_COLLAPSE);
     expect(world.insolvent).toBe(true);
     expect(world.failureReason).toBe("trust");
+  });
+});
+
+describe("customer deposits", () => {
+  it("adds working cash and an equal customer-deposit liability", () => {
+    const start = createWorld(1);
+    const depositor = start.depositors[0]!;
+    const accepted = marketReducer(start, {
+      type: "accept-deposit",
+      depositorId: depositor.id,
+    });
+
+    expect(accepted.cash).toBe(start.cash + depositor.amount);
+    expect(summarize(accepted).depositLiabilities).toBe(depositor.amount);
+    expect(summarize(accepted).netWorth).toBe(summarize(start).netWorth);
+    expect(accepted.stats.depositsAccepted).toBe(1);
+  });
+
+  it("settles a warned withdrawal from cash and records the interest cost", () => {
+    const start = createWorld(1);
+    const depositor = start.depositors[0]!;
+    let world = marketReducer(start, {
+      type: "accept-deposit",
+      depositorId: depositor.id,
+    });
+    world = {
+      ...world,
+      withdrawalEvent: {
+        warningDay: 1,
+        withdrawalDay: 2,
+        withdrawalShare: 1,
+        status: "scheduled",
+      },
+    };
+
+    world = marketReducer(world, { type: "advance-day" });
+    expect(world.withdrawalEvent?.status).toBe("warned");
+    expect(
+      world.news.some((article) => article.threadId === "deposit-withdrawal"),
+    ).toBe(true);
+
+    world = marketReducer(world, { type: "advance-day" });
+    expect(world.depositors[0]?.status).toBe("withdrawn");
+    expect(world.stats.depositPrincipalWithdrawn).toBe(depositor.amount);
+    expect(world.stats.depositInterestPaid).toBeCloseTo(
+      depositor.amount * (depositor.rate / 100),
+    );
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ type: "deposit-withdrawal" }),
+    );
   });
 });
 

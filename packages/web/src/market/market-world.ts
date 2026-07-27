@@ -18,6 +18,12 @@ import {
   type TrustAssessment,
   type TrustContext,
 } from "./market-trust.ts";
+import {
+  hasMarketAlertForSegment,
+  publishMarketNews,
+  riskAdjustmentForSegment,
+  type MarketNews,
+} from "./market-news.ts";
 
 /**
  * Pure simulation core for the open-market level. The world is plain data,
@@ -28,12 +34,16 @@ import {
  */
 
 export type CustomerStatus = "waiting" | "accepted";
+export type DepositStatus = "waiting" | "accepted" | "withdrawn";
 /** A stage id string. Not a closed union — new stages don't need a type edit. */
 export type MarketLevel = string;
 /** Product types are deliberately a discriminated union so deposits and
  * insurance can add their own rules and lifecycle without changing loans. */
 export type ProductKind = "loan" | "deposit" | "insurance";
 export type OccupationRule = "any" | "employed" | "self-employed";
+/** Groups that the market can describe without exposing a credit-score formula. */
+export type MarketSegment =
+  "workers" | "small-business" | "delivery" | "technology" | "low-credit";
 export type LoanProductRules = {
   minimumIncome: number;
   occupation: OccupationRule;
@@ -50,6 +60,8 @@ export type LoanProduct = {
   x: number;
   y: number;
   active: boolean;
+  /** A visible safety module: alert-affected customers wait until the line is safe. */
+  pauseOnMarketAlert?: boolean;
   rules: LoanProductRules;
 };
 /** Reserved variants make the product platform additive rather than loan-only. */
@@ -73,6 +85,7 @@ export type Customer = {
   name: LocalText;
   job: LocalText;
   occupation?: Exclude<OccupationRule, "any"> | "unemployed";
+  segment?: MarketSegment;
   income: number;
   amount: number;
   rate: number;
@@ -87,6 +100,30 @@ export type Customer = {
   status: CustomerStatus;
   /** Set only when the loan was issued by an automated product. */
   productId?: string;
+};
+
+/** A depositor is a first-class market participant, not free cash. */
+export type Depositor = {
+  id: string;
+  name: LocalText;
+  job: LocalText;
+  amount: number;
+  /** Annual interest paid when funds are withdrawn. */
+  rate: number;
+  /** Principal the bank currently owes this customer. */
+  balance: number;
+  appears: number;
+  x: number;
+  y: number;
+  avatar: string;
+  status: DepositStatus;
+};
+
+export type WithdrawalEvent = {
+  warningDay: number;
+  withdrawalDay: number;
+  withdrawalShare: number;
+  status: "scheduled" | "warned" | "settled";
 };
 
 export type Funding = {
@@ -113,6 +150,39 @@ export type TrustReason =
   | "obligation-unpaid"
   | "book-thinning";
 
+/** Permanent run totals. Unlike reputation, these never decay and are safe to report. */
+export type MarketRunStats = {
+  repaid: number;
+  defaulted: number;
+  automatedIssued: number;
+  automatedRepaid: number;
+  automatedDefaulted: number;
+  interestEarned: number;
+  fundingBorrowed: number;
+  fundingRepaid: number;
+  fundingMissed: number;
+  depositsAccepted: number;
+  depositPrincipalWithdrawn: number;
+  depositInterestPaid: number;
+};
+
+export function emptyMarketRunStats(): MarketRunStats {
+  return {
+    repaid: 0,
+    defaulted: 0,
+    automatedIssued: 0,
+    automatedRepaid: 0,
+    automatedDefaulted: 0,
+    interestEarned: 0,
+    fundingBorrowed: 0,
+    fundingRepaid: 0,
+    fundingMissed: 0,
+    depositsAccepted: 0,
+    depositPrincipalWithdrawn: 0,
+    depositInterestPaid: 0,
+  };
+}
+
 export type MarketEvent =
   | { type: "repayment"; amount: number }
   | {
@@ -126,6 +196,9 @@ export type MarketEvent =
       risk: number;
     }
   | { type: "loan-request"; customer: Customer }
+  | { type: "deposit-request"; depositor: Depositor }
+  | { type: "deposit-accepted"; depositor: Depositor }
+  | { type: "deposit-withdrawal"; amount: number }
   | { type: "transfer"; from: string; to: string; amount: number }
   | { type: "product-created"; product: Product }
   | { type: "product-lent"; product: LoanProduct; customer: Customer }
@@ -148,6 +221,7 @@ export type MarketEvent =
     }
   | { type: "funding-settlement"; lender: Funding; amount: number }
   | { type: "funding-unlocked" }
+  | { type: "market-news"; news: MarketNews }
   | { type: "trust-shift"; direction: "up" | "down"; reason: TrustReason }
   | { type: "insolvent" }
   | { type: "mission-clear" };
@@ -159,6 +233,7 @@ export type MarketWorld = {
   day: number;
   cash: number;
   customers: Customer[];
+  depositors: Depositor[];
   products: Product[];
   funding: Funding[];
   loanCount: number;
@@ -173,6 +248,11 @@ export type MarketWorld = {
   /** Decayed evidence the composite is recomputed from. */
   reputation: Reputation;
   fundingAnnounced: boolean;
+  withdrawalEvent: WithdrawalEvent | null;
+  /** Published market reporting, retained so a run can be reviewed after it ends. */
+  news: MarketNews[];
+  /** Non-decaying end-of-run accounting. */
+  stats: MarketRunStats;
   /** Events produced by the most recent action only. */
   events: MarketEvent[];
 };
@@ -183,9 +263,13 @@ export type MarketAction =
   | { type: "begin" }
   | { type: "approve"; customerId: string }
   | { type: "reject"; customerId: string }
+  | { type: "accept-deposit"; depositorId: string }
+  | { type: "reject-deposit"; depositorId: string }
   | { type: "borrow"; lenderId: string }
   | { type: "create-product"; product: LoanProduct }
-  | { type: "set-product-active"; productId: string; active: boolean };
+  | { type: "set-product-active"; productId: string; active: boolean }
+  | { type: "set-product-alert-guard"; productId: string; enabled: boolean }
+  | { type: "read-market-news" };
 
 export const FIRST_CUSTOMER: Customer =
   marketStageByLevel("first-yield").config.customerSeeds[0]!;
@@ -270,6 +354,22 @@ function randomInt(
   return [Math.floor(value * bound), nextSeed];
 }
 
+export function withdrawalEventFor(
+  seed: number,
+  config: MarketStageConfig,
+): WithdrawalEvent | null {
+  const pressure = config.withdrawalPressure;
+  if (!pressure) return null;
+  const withdrawalDay =
+    pressure.earliestDay + ((seed >>> 8) % Math.max(1, pressure.dayRange));
+  return {
+    warningDay: Math.max(1, withdrawalDay - pressure.warningDays),
+    withdrawalDay,
+    withdrawalShare: pressure.withdrawalShare,
+    status: "scheduled",
+  };
+}
+
 export function createWorld(
   seed = 1,
   stageOrLevel: MarketStageConfig | MarketLevel = "first-yield",
@@ -278,6 +378,7 @@ export function createWorld(
     typeof stageOrLevel === "string"
       ? marketStageById(stageOrLevel).config
       : stageOrLevel;
+  const withdrawalEvent = withdrawalEventFor(seed, config);
   return {
     level: config.level,
     config,
@@ -285,6 +386,7 @@ export function createWorld(
     day: 0,
     cash: config.startingCash,
     customers: config.customerSeeds.map((customer) => ({ ...customer })),
+    depositors: config.depositSeeds.map((depositor) => ({ ...depositor })),
     products: [],
     funding: config.fundingSeeds.map((lender) => ({ ...lender })),
     loanCount: 0,
@@ -298,6 +400,9 @@ export function createWorld(
     trust: openingTrust(config.startingCash),
     reputation: emptyReputation(),
     fundingAnnounced: false,
+    withdrawalEvent,
+    news: [],
+    stats: emptyMarketRunStats(),
     events: [],
   };
 }
@@ -310,10 +415,13 @@ export function goalsFor(world: MarketWorld) {
  * Challenge-level default chance. A loan at or below one month of income is
  * precarious; applicants earning several times the requested amount are safer.
  */
-export function defaultRisk(customer: Customer): number {
+export function defaultRisk(customer: Customer, marketAdjustment = 0): number {
   if (customer.income <= 0 || customer.occupation === "unemployed") return 100;
   const incomeToLoan = customer.income / customer.amount;
-  return Math.min(55, Math.max(5, Math.round(62 - incomeToLoan * 18)));
+  return Math.min(
+    75,
+    Math.max(5, Math.round(62 - incomeToLoan * 18 + marketAdjustment)),
+  );
 }
 
 /** The world-derived half of the trust inputs. Net assets, not gross, so
@@ -354,6 +462,9 @@ export function summarize(world: MarketWorld) {
   const fundingLiabilities = world.funding
     .filter((lender) => lender.accepted)
     .reduce((total, lender) => total + lender.amount, 0);
+  const depositLiabilities = world.depositors
+    .filter((depositor) => depositor.status === "accepted")
+    .reduce((total, depositor) => total + depositor.balance, 0);
   const totalAssets = world.cash + loanReceivables;
   const hasFunding = world.funding.some((lender) => lender.accepted);
   const trustBand =
@@ -367,8 +478,9 @@ export function summarize(world: MarketWorld) {
   return {
     loanReceivables,
     fundingLiabilities,
+    depositLiabilities,
     totalAssets,
-    netWorth: totalAssets - fundingLiabilities,
+    netWorth: totalAssets - fundingLiabilities - depositLiabilities,
     hasFunding,
     trustBand,
     fundingEligible:
@@ -420,7 +532,31 @@ export function upcomingRepayment(
           outgoingAmount: lender.amount * (1 + lender.rate / 100),
         }))
     : [];
-  const repayments = [...customerRepayments, ...fundingRepayments];
+  const pendingWithdrawalAmount =
+    world.withdrawalEvent === null
+      ? 0
+      : withdrawalAmount(
+          world.depositors,
+          world.withdrawalEvent.withdrawalShare,
+        );
+  const withdrawal =
+    world.withdrawalEvent &&
+    world.withdrawalEvent.status === "warned" &&
+    world.withdrawalEvent.withdrawalDay >= world.day &&
+    pendingWithdrawalAmount > 0
+      ? [
+          {
+            dueDay: world.withdrawalEvent.withdrawalDay,
+            incomingAmount: 0,
+            outgoingAmount: pendingWithdrawalAmount,
+          },
+        ]
+      : [];
+  const repayments = [
+    ...customerRepayments,
+    ...fundingRepayments,
+    ...withdrawal,
+  ];
   const dueDay = repayments.reduce<number | null>(
     (nearest, repayment) =>
       nearest === null ? repayment.dueDay : Math.min(nearest, repayment.dueDay),
@@ -461,6 +597,16 @@ export function marketReducer(
         ),
         events: [],
       };
+    case "accept-deposit":
+      return withDerivedEvents(acceptDeposit(world, action.depositorId));
+    case "reject-deposit":
+      return {
+        ...world,
+        depositors: world.depositors.filter(
+          (depositor) => depositor.id !== action.depositorId,
+        ),
+        events: [],
+      };
     case "borrow":
       return withDerivedEvents(borrow(world, action.lenderId));
     case "create-product":
@@ -469,6 +615,16 @@ export function marketReducer(
       return withDerivedEvents(
         setProductActive(world, action.productId, action.active),
       );
+    case "set-product-alert-guard":
+      return withDerivedEvents(
+        setProductAlertGuard(world, action.productId, action.enabled),
+      );
+    case "read-market-news":
+      return {
+        ...world,
+        news: world.news.map((article) => ({ ...article, read: true })),
+        events: [],
+      };
   }
 }
 
@@ -490,16 +646,56 @@ function withDerivedEvents(world: MarketWorld): MarketWorld {
 
 function advanceDay(world: MarketWorld): MarketWorld {
   const day = world.day + 1;
-  const events: MarketEvent[] = [];
+  const marketReport = publishMarketNews(
+    world.news,
+    world.config.newsSchedule,
+    day,
+  );
+  let news = marketReport.news;
+  const events: MarketEvent[] = marketReport.published.map((news) => ({
+    type: "market-news",
+    news,
+  }));
   let repayment = 0;
   const repaidCustomers: Customer[] = [];
+  const stats = { ...world.stats };
+  let withdrawalEvent = world.withdrawalEvent;
+  let depositors = world.depositors;
+  if (
+    withdrawalEvent?.status === "scheduled" &&
+    withdrawalEvent.warningDay === day
+  ) {
+    const pressure = world.config.withdrawalPressure;
+    if (pressure) {
+      const withdrawalNews: MarketNews = {
+        id: `withdrawal-warning-${withdrawalEvent.withdrawalDay}`,
+        threadId: "deposit-withdrawal",
+        day,
+        publishedDay: day,
+        phase: "warning",
+        severity: "alert",
+        title: pressure.title,
+        body: pressure.body,
+        action: pressure.action,
+        affectedSegments: [],
+        riskAdjustment: 0,
+        read: false,
+      };
+      news = [...news, withdrawalNews];
+      events.push({ type: "market-news", news: withdrawalNews });
+      withdrawalEvent = { ...withdrawalEvent, status: "warned" };
+    }
+  }
   // A day of forgetting happens before the day's events are recorded, so
   // today's outcomes are weighed at full value against a fading history.
   const reputation = decayReputation(world.reputation);
   let seed = world.seed;
   let customers = world.customers.filter((customer) => {
     if (customer.status === "accepted" && customer.dueDay === day) {
-      const risk = defaultRisk(customer);
+      const risk = defaultRisk(
+        customer,
+        riskAdjustmentForSegment(news, customer.segment),
+      );
       let roll = 100;
       if (world.config.randomizeDefaultRisk) {
         let random: number;
@@ -513,6 +709,8 @@ function advanceDay(world: MarketWorld): MarketWorld {
         reputation.openLoss += customer.amount;
         reputation.realizedProfit -= customer.amount;
         if (customer.productId) reputation.productDefaulted += 1;
+        stats.defaulted += 1;
+        if (customer.productId) stats.automatedDefaulted += 1;
         events.push({ type: "default", customer, risk });
       } else {
         const amount = customer.amount * (1 + customer.rate / 100);
@@ -539,6 +737,9 @@ function advanceDay(world: MarketWorld): MarketWorld {
       reputation.realizedProfit += customer.amount * (customer.rate / 100);
       reputation.fairness += rateFairness(customer.rate);
       if (customer.productId) reputation.productRepaid += 1;
+      stats.repaid += 1;
+      stats.interestEarned += customer.amount * (customer.rate / 100);
+      if (customer.productId) stats.automatedRepaid += 1;
       const product = productForCustomer(world.products, customer);
       if (product) {
         events.push({
@@ -564,6 +765,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
       cash -= amount;
       reputation.fundingHonored += 1;
       reputation.realizedProfit -= lender.amount * (lender.rate / 100);
+      stats.fundingRepaid += 1;
       events.push({
         type: "funding-repayment",
         lender,
@@ -575,6 +777,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
     // The bank breaking its own promise is the strongest negative signal it
     // can send: it hits the funding record and caps trust outright.
     reputation.fundingMissed += 1;
+    stats.fundingMissed += 1;
     events.push({
       type: "funding-default",
       lender,
@@ -605,6 +808,40 @@ function advanceDay(world: MarketWorld): MarketWorld {
         ? { ...lender, defaulted: true }
         : lender,
     );
+  if (
+    withdrawalEvent &&
+    withdrawalEvent.status !== "settled" &&
+    withdrawalEvent.withdrawalDay === day
+  ) {
+    const payout = withdrawalAmount(
+      depositors,
+      withdrawalEvent.withdrawalShare,
+    );
+    const principal = depositors
+      .filter((depositor) => depositor.status === "accepted")
+      .reduce(
+        (total, depositor) =>
+          total + depositor.balance * withdrawalEvent!.withdrawalShare,
+        0,
+      );
+    const interest = payout - principal;
+    cash -= payout;
+    depositors = depositors.map((depositor) => {
+      if (depositor.status !== "accepted") return depositor;
+      const balance =
+        depositor.balance * (1 - withdrawalEvent!.withdrawalShare);
+      return {
+        ...depositor,
+        balance,
+        status: balance < 1 ? "withdrawn" : "accepted",
+      };
+    });
+    reputation.realizedProfit -= interest;
+    stats.depositPrincipalWithdrawn += principal;
+    stats.depositInterestPaid += interest;
+    events.push({ type: "deposit-withdrawal", amount: payout });
+    withdrawalEvent = { ...withdrawalEvent, status: "settled" };
+  }
   // Net assets, computed the same way summarize() does. Automated lending runs
   // after this point but only swaps cash for receivables, so it cannot move
   // net worth — and therefore cannot move trust on the day it fires.
@@ -614,8 +851,11 @@ function advanceDay(world: MarketWorld): MarketWorld {
   const liabilities = normalizedFunding
     .filter((lender) => lender.accepted)
     .reduce((total, lender) => total + lender.amount, 0);
+  const depositLiabilities = depositors
+    .filter((depositor) => depositor.status === "accepted")
+    .reduce((total, depositor) => total + depositor.balance, 0);
   const assessment = assessTrust(reputation, {
-    netWorth: cash + receivables - liabilities,
+    netWorth: cash + receivables - liabilities - depositLiabilities,
     startingCash: world.config.startingCash,
     hasUnpaidObligation: normalizedFunding.some(
       (lender) => lender.accepted && lender.defaulted,
@@ -643,7 +883,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
     customers.length < world.config.maxVisibleCustomers
   ) {
     const occupied = new Set(
-      customers.map((customer) => `${customer.x},${customer.y}`),
+      [...customers, ...depositors].map((person) => `${person.x},${person.y}`),
     );
     const available = CUSTOMER_POSITIONS.filter(
       (position) => !occupied.has(`${position.x},${position.y}`),
@@ -662,22 +902,65 @@ function advanceDay(world: MarketWorld): MarketWorld {
       events.push({ type: "loan-request", customer });
     }
   }
+  if (
+    day % world.config.depositSpawnEveryDays === 0 &&
+    depositors.filter((depositor) => depositor.status !== "withdrawn").length <
+      world.config.maxVisibleDepositors
+  ) {
+    const occupied = new Set(
+      [...customers, ...depositors].map((person) => `${person.x},${person.y}`),
+    );
+    const available = CUSTOMER_POSITIONS.filter(
+      (position) => !occupied.has(`${position.x},${position.y}`),
+    );
+    if (available.length > 0) {
+      let index: number;
+      [index, seed] = randomInt(seed, available.length);
+      let depositor: Depositor;
+      [depositor, seed] = randomDepositor(
+        day,
+        available[index]!,
+        seed,
+        world.config,
+      );
+      depositors = [...depositors, depositor];
+      events.push({ type: "deposit-request", depositor });
+    }
+  }
   const automated = automateLoans({
     ...world,
     day,
     cash,
     customers,
+    depositors,
     funding: normalizedFunding,
     seed,
     insolvent,
     failureReason,
     trust,
     reputation,
+    news,
+    stats,
+    withdrawalEvent,
     events,
   });
   return {
     ...automated,
   };
+}
+
+function withdrawalAmount(
+  depositors: readonly Depositor[],
+  withdrawalShare: number,
+): number {
+  return depositors
+    .filter((depositor) => depositor.status === "accepted")
+    .reduce(
+      (total, depositor) =>
+        total +
+        depositor.balance * withdrawalShare * (1 + depositor.rate / 100),
+      0,
+    );
 }
 
 /**
@@ -719,11 +1002,13 @@ function randomCustomer(
   };
   const generation = config.customerGeneration;
   const term = generation.termMin + roll(generation.termRange);
+  const jobIndex = roll(RANDOM_JOBS.length);
   const customer: Customer = {
     id: `customer-${day}`,
     name: RANDOM_NAMES[roll(RANDOM_NAMES.length)]!,
-    job: RANDOM_JOBS[roll(RANDOM_JOBS.length)]!,
+    job: RANDOM_JOBS[jobIndex]!,
     occupation: "employed",
+    segment: randomSegmentForJob(jobIndex),
     income:
       generation.incomeMin +
       roll(generation.incomeRange) * generation.incomeStep,
@@ -746,6 +1031,54 @@ function randomCustomer(
     status: "waiting",
   };
   return [customer, seed];
+}
+
+function randomDepositor(
+  day: number,
+  position: { x: number; y: number },
+  initialSeed: number,
+  config: MarketStageConfig,
+): [Depositor, number] {
+  let seed = initialSeed;
+  const roll = (bound: number): number => {
+    let value: number;
+    [value, seed] = randomInt(seed, bound);
+    return value;
+  };
+  const generation = config.depositGeneration;
+  const depositor: Depositor = {
+    id: `depositor-${day}`,
+    name: RANDOM_NAMES[roll(RANDOM_NAMES.length)]!,
+    job: RANDOM_JOBS[roll(RANDOM_JOBS.length)]!,
+    amount:
+      generation.amountMin +
+      roll(generation.amountRange) * generation.amountStep,
+    rate: generation.rateMin + roll(generation.rateRange),
+    balance: 0,
+    appears: day,
+    x: position.x,
+    y: position.y,
+    avatar: RANDOM_AVATARS[roll(RANDOM_AVATARS.length)]!,
+    status: "waiting",
+  };
+  return [depositor, seed];
+}
+
+function randomSegmentForJob(jobIndex: number): MarketSegment {
+  switch (jobIndex) {
+    case 0:
+      return "delivery";
+    case 1:
+    case 2:
+    case 4:
+    case 5:
+    case 7:
+      return "small-business";
+    case 6:
+      return "technology";
+    default:
+      return "workers";
+  }
 }
 
 /** The scripted intro loan to the first customer. */
@@ -782,6 +1115,29 @@ function approve(world: MarketWorld, customerId: string): MarketWorld {
   )
     return { ...world, events: [] };
   return lend(world, customer, undefined);
+}
+
+function acceptDeposit(world: MarketWorld, depositorId: string): MarketWorld {
+  const depositor = world.depositors.find((item) => item.id === depositorId);
+  if (!depositor || depositor.status !== "waiting")
+    return { ...world, events: [] };
+  const accepted: Depositor = {
+    ...depositor,
+    balance: depositor.amount,
+    status: "accepted",
+  };
+  return {
+    ...world,
+    cash: world.cash + accepted.amount,
+    depositors: world.depositors.map((item) =>
+      item.id === accepted.id ? accepted : item,
+    ),
+    stats: {
+      ...world.stats,
+      depositsAccepted: world.stats.depositsAccepted + 1,
+    },
+    events: [{ type: "deposit-accepted", depositor: accepted }],
+  };
 }
 
 function lend(
@@ -853,6 +1209,7 @@ function automateLoans(world: MarketWorld): MarketWorld {
   let loanCount = world.loanCount;
   let cumulativeLent = world.cumulativeLent;
   let thirdLoanDay = world.thirdLoanDay;
+  let automatedIssued = 0;
 
   // Create a single shallow copy of the customers array to mutate safely
   const nextCustomers = [...world.customers];
@@ -865,12 +1222,18 @@ function automateLoans(world: MarketWorld): MarketWorld {
     for (let i = 0; i < nextCustomers.length; i++) {
       const customer = nextCustomers[i]!;
       if (!customerMatchesLoanProduct(customer, product)) continue;
+      if (
+        product.pauseOnMarketAlert &&
+        hasMarketAlertForSegment(world.news, customer.segment)
+      )
+        continue;
       if (currentCash < customer.amount) continue;
 
       // Update counters and cash
       loanCount += 1;
       currentCash -= customer.amount;
       cumulativeLent += customer.amount;
+      automatedIssued += 1;
       if (loanCount === 3 && thirdLoanDay === null) {
         thirdLoanDay = world.day;
       }
@@ -917,6 +1280,13 @@ function automateLoans(world: MarketWorld): MarketWorld {
     loanCount,
     cumulativeLent,
     thirdLoanDay,
+    stats:
+      automatedIssued > 0
+        ? {
+            ...world.stats,
+            automatedIssued: world.stats.automatedIssued + automatedIssued,
+          }
+        : world.stats,
     events: [...world.events, ...newEvents],
   };
 }
@@ -953,6 +1323,28 @@ function setProductActive(
   return active ? automateLoans(nextWorld) : nextWorld;
 }
 
+function setProductAlertGuard(
+  world: MarketWorld,
+  productId: string,
+  enabled: boolean,
+): MarketWorld {
+  const product = world.products.find(
+    (item): item is LoanProduct =>
+      item.kind === "loan" && item.id === productId,
+  );
+  if (!product || Boolean(product.pauseOnMarketAlert) === enabled)
+    return { ...world, events: [] };
+  return {
+    ...world,
+    products: world.products.map((item) =>
+      item.id === productId && item.kind === "loan"
+        ? { ...item, pauseOnMarketAlert: enabled }
+        : item,
+    ),
+    events: [],
+  };
+}
+
 function productForCustomer(
   products: Product[],
   customer: Customer,
@@ -977,6 +1369,10 @@ function borrow(world: MarketWorld, lenderId: string): MarketWorld {
     funding: world.funding.map((item) =>
       item.id === lenderId ? accepted : item,
     ),
+    stats: {
+      ...world.stats,
+      fundingBorrowed: world.stats.fundingBorrowed + lender.amount,
+    },
     events: [
       {
         type: "transfer",

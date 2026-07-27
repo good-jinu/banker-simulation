@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   Landmark,
+  Newspaper,
   Pause,
   Play,
   Plus,
@@ -19,10 +20,17 @@ import { MapViewport } from "./map/MapViewport.tsx";
 import {
   avatarFor,
   summarize,
+  upcomingRepayment,
   type Customer,
+  type Depositor,
   type LoanProduct,
+  type MarketSegment,
   type MarketWorld,
 } from "./market-world.ts";
+import {
+  hasMarketAlertForSegment,
+  unreadMarketNewsCount,
+} from "./market-news.ts";
 
 type MarketGameViewProps = {
   stage: MarketCampaignStage;
@@ -35,10 +43,13 @@ type MarketGameViewProps = {
   clockView: ClockView;
   modalOpen: boolean;
   hasDraggedMap: boolean;
+  highlightedSegment: MarketSegment | null;
   onBack: () => void;
   onOpenAssets: () => void;
+  onOpenNews: () => void;
   onOpenProductBuilder: () => void;
   onSelectCustomer: (customer: Customer) => void;
+  onSelectDepositor: (depositor: Depositor) => void;
   onSelectProduct: (product: LoanProduct) => void;
   onOpenFunding: () => void;
   onToggleClock: () => void;
@@ -57,10 +68,13 @@ export function MarketGameView({
   clockView,
   modalOpen,
   hasDraggedMap,
+  highlightedSegment,
   onBack,
   onOpenAssets,
+  onOpenNews,
   onOpenProductBuilder,
   onSelectCustomer,
+  onSelectDepositor,
   onSelectProduct,
   onOpenFunding,
   onToggleClock,
@@ -75,12 +89,24 @@ export function MarketGameView({
     mapWorldRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
   }, []);
   const { fundingEligible, trustBand } = summarize(world);
-  const { cash, day, customers, funding, products, loanCount, trust } = world;
+  const {
+    cash,
+    day,
+    customers,
+    depositors,
+    funding,
+    products,
+    loanCount,
+    trust,
+  } = world;
   // Trust walks toward its target in fractional steps; the rail shows whole
   // points so a slow climb doesn't read as jitter.
   const displayedTrust = Math.round(trust);
   const visibleCustomers = customers.filter(
     (customer) => customer.appears <= day,
+  );
+  const visibleDepositors = depositors.filter(
+    (depositor) => depositor.appears <= day && depositor.status !== "withdrawn",
   );
   const introCustomer = customers.find(
     (customer) => customer.id === world.config.introCustomerId,
@@ -88,6 +114,8 @@ export function MarketGameView({
   const productLessonReady = introCustomer?.status !== "waiting";
   const highlightProductButton = productLessonReady && products.length === 0;
   const showFundingHint = fundingEligible;
+  const unreadNews = unreadMarketNewsCount(world.news);
+  const nextMovement = upcomingRepayment(world);
 
   useEffect(() => {
     setShowPlayPrompt(false);
@@ -127,6 +155,32 @@ export function MarketGameView({
             </span>
           </button>
         </div>
+        {nextMovement && (
+          <div className="next-cash-movement" aria-label={m.nextCashMovement}>
+            <small>{m.nextCashMovement}</small>
+            <strong>
+              {m.repaymentDueIn(Math.max(nextMovement.dueDay - day, 0))}
+            </strong>
+            <span>
+              {nextMovement.incomingAmount > 0 &&
+                m.incomingRepayment(money(nextMovement.incomingAmount))}
+              {nextMovement.incomingAmount > 0 &&
+                nextMovement.outgoingAmount > 0 &&
+                " · "}
+              {nextMovement.outgoingAmount > 0 &&
+                m.outgoingRepayment(money(nextMovement.outgoingAmount))}
+            </span>
+          </div>
+        )}
+        <button
+          className={`market-news-button${unreadNews > 0 ? " unread" : ""}`}
+          onClick={onOpenNews}
+          aria-label={m.openMarketWire}
+        >
+          <Newspaper aria-hidden="true" />
+          <span>{m.marketWire}</span>
+          {unreadNews > 0 && <b>{unreadNews}</b>}
+        </button>
         <div className="product-launcher-wrap">
           {highlightProductButton && (
             <span className="product-tutorial-callout" role="status">
@@ -276,7 +330,7 @@ export function MarketGameView({
             .map((product) => (
               <div
                 key={product.id}
-                className={`product-node map-node${product.active ? "" : " paused"}`}
+                className={`product-node map-node${product.active ? "" : " paused"}${product.pauseOnMarketAlert ? " guarded" : ""}`}
                 style={{ left: `${product.x}%`, top: `${product.y}%` }}
                 role="button"
                 tabIndex={0}
@@ -299,7 +353,7 @@ export function MarketGameView({
             return (
               <div
                 key={customer.id}
-                className={`customer-node map-node ${customer.status}${isWaiting ? " interactive" : ""}${customer.id === world.config.introCustomerId && isWaiting ? " intro-customer" : ""}`}
+                className={`customer-node map-node ${customer.status}${isWaiting ? " interactive" : ""}${customer.id === world.config.introCustomerId && isWaiting ? " intro-customer" : ""}${customer.segment === highlightedSegment ? " market-highlight" : ""}${hasMarketAlertForSegment(world.news, customer.segment) ? " market-alert" : ""}`}
                 style={{ left: `${customer.x}%`, top: `${customer.y}%` }}
                 role={isWaiting ? "button" : undefined}
                 tabIndex={isWaiting ? 0 : undefined}
@@ -357,6 +411,56 @@ export function MarketGameView({
                           money(customer.amount * (1 + customer.rate / 100)),
                         )}
                   </small>
+                </span>
+              </div>
+            );
+          })}
+          {visibleDepositors.map((depositor) => {
+            const isWaiting = depositor.status === "waiting";
+            return (
+              <div
+                key={depositor.id}
+                className={`depositor-node map-node ${depositor.status}${isWaiting ? " interactive" : ""}`}
+                style={{ left: `${depositor.x}%`, top: `${depositor.y}%` }}
+                role={isWaiting ? "button" : undefined}
+                tabIndex={isWaiting ? 0 : undefined}
+                aria-label={
+                  isWaiting
+                    ? m.noticeDepositRequest(
+                        localize(depositor.name, locale),
+                        money(depositor.amount),
+                      )
+                    : undefined
+                }
+                onClick={() => {
+                  if (isWaiting) onSelectDepositor(depositor);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    isWaiting &&
+                    (event.key === "Enter" || event.key === " ")
+                  ) {
+                    event.preventDefault();
+                    onSelectDepositor(depositor);
+                  }
+                }}
+              >
+                <span className="portrait">
+                  <img
+                    src={depositor.avatar}
+                    alt={m.customerAlt(
+                      localize(depositor.name, locale),
+                      m.mapMarker,
+                    )}
+                  />
+                </span>
+                <span className="node-label">
+                  <strong>
+                    {isWaiting
+                      ? money(depositor.amount)
+                      : m.depositBalance(money(depositor.balance))}
+                  </strong>
+                  <small>{m.depositRate(depositor.rate)}</small>
                 </span>
               </div>
             );

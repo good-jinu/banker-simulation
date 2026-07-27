@@ -80,6 +80,25 @@ export function useMarketEffects({
         case "loan-request":
           setLoanRequestNotice(event.customer);
           break;
+        case "deposit-request":
+          setNotice(
+            m.noticeDepositRequest(
+              localize(event.depositor.name, locale),
+              money(event.depositor.amount),
+            ),
+          );
+          break;
+        case "deposit-accepted":
+          setNotice(
+            m.noticeDepositAccepted(
+              localize(event.depositor.name, locale),
+              money(event.depositor.amount),
+            ),
+          );
+          break;
+        case "deposit-withdrawal":
+          setNotice(m.noticeDepositWithdrawal(money(event.amount)));
+          break;
         case "borrowed":
           setNotice(
             m.borrowed(
@@ -146,7 +165,13 @@ export function useMarketEffects({
 
   useEffect(() => {
     const pointFor = (id: string) =>
-      pointForId(id, world.customers, world.funding, world.products);
+      pointForId(
+        id,
+        world.customers,
+        world.depositors,
+        world.funding,
+        world.products,
+      );
     const labels: FlowLabels = {
       funded: m.flowFunded,
       cashIn: m.flowCashIn,
@@ -162,7 +187,14 @@ export function useMarketEffects({
       .filter((flow): flow is Omit<FlowAnimation, "id"> => flow !== null)
       .map((flow) => ({ ...flow, id: ++flowId.current }));
     if (flows.length > 0) setFlowQueue((pending) => [...pending, ...flows]);
-  }, [m, world.events, world.funding, world.customers, world.products]);
+  }, [
+    m,
+    world.events,
+    world.funding,
+    world.customers,
+    world.depositors,
+    world.products,
+  ]);
 
   useEffect(() => {
     if (activeFlow || flowQueue.length === 0) return;
