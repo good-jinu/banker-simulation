@@ -2,10 +2,13 @@ import { Landmark } from "lucide-react";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
+import { coachmarkTarget } from "./market-ui-state.ts";
 
 export function LoanDecisionActions({
   amount,
   canApprove,
+  canReject,
+  needsFunding,
   locale,
   mode,
   showRiskEstimate,
@@ -13,9 +16,12 @@ export function LoanDecisionActions({
   onNeedFunding,
   onProceed,
   onReject,
+  rejectLockedHint,
 }: {
   amount: number;
   canApprove: boolean;
+  canReject: boolean;
+  needsFunding: boolean;
   locale: Locale;
   mode: "intro" | "request";
   showRiskEstimate: boolean;
@@ -23,6 +29,7 @@ export function LoanDecisionActions({
   onNeedFunding?: (() => void) | undefined;
   onProceed?: (() => void) | undefined;
   onReject?: (() => void) | undefined;
+  rejectLockedHint?: string;
 }) {
   const m = messagesFor(locale).market;
   return (
@@ -34,19 +41,29 @@ export function LoanDecisionActions({
         </button>
       ) : (
         <div className="decision-row">
-          <button className="reject-button" onClick={onReject}>
-            {m.reject}
-          </button>
+          {onReject && (
+            <button
+              className="reject-button"
+              onClick={onReject}
+              disabled={!canReject}
+            >
+              {m.reject}
+            </button>
+          )}
           <button
             className="accept-button"
             onClick={onApprove}
             disabled={!canApprove}
+            {...coachmarkTarget("approve-first-loan")}
           >
             {m.lend(money(amount))}
           </button>
         </div>
       )}
-      {mode === "request" && !canApprove && onNeedFunding && (
+      {rejectLockedHint && (
+        <small className="decision-lock-hint">{rejectLockedHint}</small>
+      )}
+      {mode === "request" && needsFunding && onNeedFunding && (
         <button className="need-funding" onClick={onNeedFunding}>
           {m.fundingNeeded}
         </button>

@@ -1,0 +1,67 @@
+.coachmark-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+}
+
+.coachmark-scrim {
+  position: fixed;
+  z-index: 200;
+  background: rgba(8, 7, 5, 0.62);
+  pointer-events: auto;
+}
+
+.coachmark-ring {
+  position: fixed;
+  z-index: 201;
+  border: 4px solid var(--yellow, #ffd328);
+  box-shadow:
+    0 0 0 3px var(--ink, #11100d),
+    0 0 24px rgba(255, 211, 40, 0.85);
+  animation: coachmark-ring-pulse 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.coachmark-tip {
+  position: fixed;
+  z-index: 202;
+  padding: 0.85rem 1rem;
+  color: var(--ink, #11100d);
+  border: 3px solid var(--ink, #11100d);
+  background: var(--paper, #f7e5b7);
+  box-shadow: 5px 5px 0 var(--ink, #11100d);
+  text-align: center;
+  pointer-events: none;
+}
+
+.coachmark-tip small,
+.coachmark-tip strong {
+  display: block;
+}
+
+.coachmark-tip small {
+  color: var(--red, #ee321d);
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+}
+
+.coachmark-tip strong {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+@keyframes coachmark-ring-pulse {
+  50% {
+    filter: brightness(1.18);
+    transform: scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coachmark-ring {
+    animation: none;
+  }
+}

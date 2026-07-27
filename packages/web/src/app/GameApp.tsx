@@ -81,7 +81,7 @@ export function GameApp({
 
   useEffect(() => {
     if (!hydrated) return;
-    void saveGame({ schemaVersion: 2, campaign, settings });
+    void saveGame({ schemaVersion: 1, campaign, settings });
   }, [campaign, hydrated, settings]);
 
   function changeLocale(nextLocale: Locale): void {

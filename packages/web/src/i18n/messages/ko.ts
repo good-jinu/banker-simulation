@@ -33,9 +33,24 @@ export const ko: Messages = {
     greeting: "안녕하세요! 급하게 필요한 돈이 있어요.",
     challengeGreeting: "일을 계속하려면 운영 자금이 필요해요.",
     loanQuestion: "$100을 빌릴 수 있을까요?",
+    onboardingFirstStep: "첫 번째 단계",
+    coachmarkNewControl: "새로운 조작",
+    onboardingFirstCustomer: "미나를 만나 대출이 필요한 이유를 들어보세요.",
+    onboardingFirstRepayment:
+      "시간을 재생해 미나가 첫 계약을 마치는 과정을 지켜보세요.",
+    onboardingSecondDecision:
+      "다음 고객을 만나 정보를 확인하고 직접 판단하세요.",
+    onboardingDepositProduct:
+      "고객 예금을 받기 전에 은행의 예금 상품을 먼저 출시하세요.",
+    onboardingLoanProduct:
+      "앞서 배운 대출 판단을 반복 가능한 상품으로 만드세요.",
     challengeLoanQuestion: (amount: string) => `${amount}을 빌릴 수 있을까요?`,
     askPurpose: "대출 용도를 물어본다",
     askIncome: "소득을 물어본다",
+    firstLoanRejectLocked:
+      "첫 계약에서는 대출 실행과 상환 흐름을 배우므로 거절할 수 없습니다.",
+    firstLoanApprovalCoachmark:
+      "미나에게 대출하고 계약이 상환되는 과정을 확인하세요.",
     incomeAnswer: "월 소득은 약 $2,400입니다.",
     informationComplete: "정보 확인 완료 · 12일 후 $110 상환",
     informationChecked: (amount: string, days: number) =>
@@ -218,6 +233,15 @@ export const ko: Messages = {
       "외부 채무를 너무 많이 이행하지 못했습니다. 다른 은행들이 더 이상 이 은행을 믿고 거래하지 않습니다.",
     returnToStages: "스테이지로 돌아가기",
     loanProductName: "소득 기준 대출",
+    depositProductName: "동네 안심 예금",
+    depositProductEyebrow: "은행이 먼저 제안합니다",
+    depositProductTitle: "예금 상품 출시",
+    depositProductCopy:
+      "은행이 조건을 공개한 뒤에만 고객이 가입하고 돈을 맡깁니다. 예금은 운영 현금이 되지만 이자와 함께 돌려줘야 합니다.",
+    depositProductRate: (rate: number) => `예금 이자 ${rate}%`,
+    createDepositProduct: (cost: string) => `예금 상품 출시 · ${cost}`,
+    depositProductActivated:
+      "예금 상품 활성화 · 고객 예금이 은행으로 들어오기 시작합니다.",
     productActivated:
       "대출 상품 활성화 · 조건에 맞는 신청은 자동으로 실행됩니다.",
     productLessonEyebrow: "안전한 판단 자동화",

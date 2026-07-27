@@ -56,6 +56,10 @@ export type MarketStageCopy = {
 
 export type MarketStageConfig = {
   level: MarketLevel;
+  /** The first level reveals systems through completed player actions. */
+  onboarding: "guided" | "full";
+  /** The opening contract is a teaching moment, not an early random failure. */
+  introCustomerGuaranteedRepayment: boolean;
   startingCash: number;
   goals: MarketGoals;
   maxVisibleCustomers: number;
@@ -91,6 +95,8 @@ export type MarketCampaignStage = {
 
 const firstYieldConfig: MarketStageConfig = {
   level: "first-yield",
+  onboarding: "guided",
+  introCustomerGuaranteedRepayment: true,
   startingCash: 700,
   goals: {
     trustTarget: 100,
@@ -304,6 +310,8 @@ const firstYieldConfig: MarketStageConfig = {
 
 const creditUnderPressureConfig: MarketStageConfig = {
   level: "credit-under-pressure",
+  onboarding: "full",
+  introCustomerGuaranteedRepayment: false,
   startingCash: 900,
   goals: {
     trustTarget: 100,

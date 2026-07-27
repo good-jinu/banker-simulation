@@ -16,13 +16,14 @@ import type { ClockView } from "./hooks/useMarketModalClock.ts";
 import { money } from "./market-format.ts";
 import type { FlowAnimation } from "./market-flow.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
+import { onboardingCapabilities } from "./market-onboarding.ts";
+import { coachmarkTarget } from "./market-ui-state.ts";
 import { MapViewport } from "./map/MapViewport.tsx";
 import {
   avatarFor,
   summarize,
   upcomingRepayment,
   type Customer,
-  type Depositor,
   type LoanProduct,
   type MarketSegment,
   type MarketWorld,
@@ -48,8 +49,8 @@ type MarketGameViewProps = {
   onOpenAssets: () => void;
   onOpenNews: () => void;
   onOpenProductBuilder: () => void;
+  onOpenDepositProductBuilder: () => void;
   onSelectCustomer: (customer: Customer) => void;
-  onSelectDepositor: (depositor: Depositor) => void;
   onSelectProduct: (product: LoanProduct) => void;
   onOpenFunding: () => void;
   onToggleClock: () => void;
@@ -73,8 +74,8 @@ export function MarketGameView({
   onOpenAssets,
   onOpenNews,
   onOpenProductBuilder,
+  onOpenDepositProductBuilder,
   onSelectCustomer,
-  onSelectDepositor,
   onSelectProduct,
   onOpenFunding,
   onToggleClock,
@@ -98,21 +99,41 @@ export function MarketGameView({
     products,
     loanCount,
     trust,
+    onboarding,
   } = world;
+  const capabilities = onboardingCapabilities(onboarding);
+  const {
+    openingLesson,
+    awaitingFirstRepayment,
+    trust: showTrust,
+    deposits: showDeposits,
+    products: showProducts,
+    fullMarket: showFullMarket,
+  } = capabilities;
+  const showDepositProductLesson = onboarding === "deposits";
   // Trust walks toward its target in fractional steps; the rail shows whole
   // points so a slow climb doesn't read as jitter.
   const displayedTrust = Math.round(trust);
-  const visibleCustomers = customers.filter(
-    (customer) => customer.appears <= day,
-  );
+  const visibleCustomers = customers.filter((customer) => {
+    if (customer.appears > day) return false;
+    if (openingLesson || awaitingFirstRepayment)
+      return customer.id === world.config.introCustomerId;
+    if (onboarding === "second-decision")
+      return customer.id !== world.config.introCustomerId;
+    return true;
+  });
   const visibleDepositors = depositors.filter(
-    (depositor) => depositor.appears <= day && depositor.status !== "withdrawn",
+    (depositor) =>
+      showDeposits &&
+      depositor.appears <= day &&
+      depositor.status === "accepted",
   );
   const introCustomer = customers.find(
     (customer) => customer.id === world.config.introCustomerId,
   );
   const productLessonReady = introCustomer?.status !== "waiting";
-  const highlightProductButton = productLessonReady && products.length === 0;
+  const hasLoanProduct = products.some((product) => product.kind === "loan");
+  const highlightProductButton = productLessonReady && !hasLoanProduct;
   const showFundingHint = fundingEligible;
   const unreadNews = unreadMarketNewsCount(world.news);
   const nextMovement = upcomingRepayment(world);
@@ -142,20 +163,22 @@ export function MarketGameView({
         <button className="round-button" onClick={onBack} aria-label={m.back}>
           <ArrowLeft />
         </button>
-        <div className="market-status">
-          <button
-            className="brand"
-            onClick={onOpenAssets}
-            aria-label={m.bankAssets}
-          >
-            <Landmark />
-            <span>
-              <small>MY BANK</small>
-              <strong>{money(cash)}</strong>
-            </span>
-          </button>
-        </div>
-        {nextMovement && (
+        {!openingLesson && (
+          <div className="market-status">
+            <button
+              className="brand"
+              onClick={onOpenAssets}
+              aria-label={m.bankAssets}
+            >
+              <Landmark />
+              <span>
+                <small>MY BANK</small>
+                <strong>{money(cash)}</strong>
+              </span>
+            </button>
+          </div>
+        )}
+        {!openingLesson && nextMovement && (
           <div className="next-cash-movement" aria-label={m.nextCashMovement}>
             <small>{m.nextCashMovement}</small>
             <strong>
@@ -172,34 +195,59 @@ export function MarketGameView({
             </span>
           </div>
         )}
-        <button
-          className={`market-news-button${unreadNews > 0 ? " unread" : ""}`}
-          onClick={onOpenNews}
-          aria-label={m.openMarketWire}
-        >
-          <Newspaper aria-hidden="true" />
-          <span>{m.marketWire}</span>
-          {unreadNews > 0 && <b>{unreadNews}</b>}
-        </button>
-        <div className="product-launcher-wrap">
-          {highlightProductButton && (
-            <span className="product-tutorial-callout" role="status">
-              {m.productTutorialClick}
-            </span>
-          )}
+        {showFullMarket && (
           <button
-            className={`product-launcher${highlightProductButton ? " tutorial-highlight" : ""}`}
-            onClick={onOpenProductBuilder}
-            aria-label={m.openProducts}
-            disabled={!productLessonReady && products.length === 0}
+            className={`market-news-button${unreadNews > 0 ? " unread" : ""}`}
+            onClick={onOpenNews}
+            aria-label={m.openMarketWire}
           >
-            <Plus aria-hidden="true" />
-            <span className="sr-only">{m.addProduct}</span>
+            <Newspaper aria-hidden="true" />
+            <span>{m.marketWire}</span>
+            {unreadNews > 0 && <b>{unreadNews}</b>}
           </button>
-        </div>
+        )}
+        {showProducts && (
+          <div className="product-launcher-wrap">
+            {highlightProductButton && (
+              <span className="product-tutorial-callout" role="status">
+                {m.productTutorialClick}
+              </span>
+            )}
+            <button
+              className={`product-launcher${highlightProductButton ? " tutorial-highlight" : ""}`}
+              onClick={onOpenProductBuilder}
+              aria-label={m.openProducts}
+              disabled={!productLessonReady && !hasLoanProduct}
+              {...coachmarkTarget("create-loan-product")}
+            >
+              <Plus aria-hidden="true" />
+              <span className="sr-only">{m.addProduct}</span>
+            </button>
+          </div>
+        )}
+        {showDepositProductLesson && (
+          <div className="product-launcher-wrap">
+            <span className="product-tutorial-callout" role="status">
+              {m.onboardingDepositProduct}
+            </span>
+            <button
+              className="product-launcher tutorial-highlight"
+              onClick={onOpenDepositProductBuilder}
+              aria-label={m.depositProductTitle}
+              {...coachmarkTarget("launch-deposit-product")}
+            >
+              <Landmark aria-hidden="true" />
+              <span className="sr-only">{m.depositProductTitle}</span>
+            </button>
+          </div>
+        )}
       </header>
 
-      <section className="state-map" aria-label={m.loanStatusMap}>
+      <section
+        className="state-map"
+        aria-label={m.loanStatusMap}
+        {...coachmarkTarget("drag-market-map")}
+      >
         <MapViewport
           customerCount={loanCount}
           dragHint={m.dragCityHint}
@@ -208,32 +256,35 @@ export function MarketGameView({
           zoomOutLabel={m.zoomOut}
           onPanChange={moveMapWorld}
           onFirstDrag={onFirstMapDrag}
+          showNavigation={showFullMarket}
         />
-        <aside
-          className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
-          aria-label={`${m.trust} ${m.trustScore(displayedTrust)}`}
-        >
-          <div className="trust-rail-header">
-            <small>{m.onlyGoal}</small>
-            <span>{m.trust}</span>
-            <strong>{m.trustScore(displayedTrust)}</strong>
-          </div>
-          <div className="trust-rail-gauge">
-            <div className="trust-rail-meter" aria-hidden="true">
-              <span style={{ height: `${trust}%` }} />
-              <i style={{ bottom: "80%" }} />
-              <i style={{ bottom: "60%" }} />
-              <i style={{ bottom: "30%" }} />
+        {showTrust && (
+          <aside
+            className={`trust-rail trust-${trustBand}${trustPulse ? ` trust-pulse-${trustPulse}` : ""}`}
+            aria-label={`${m.trust} ${m.trustScore(displayedTrust)}`}
+          >
+            <div className="trust-rail-header">
+              <small>{m.onlyGoal}</small>
+              <span>{m.trust}</span>
+              <strong>{m.trustScore(displayedTrust)}</strong>
             </div>
-            <div className="trust-rail-scale" aria-hidden="true">
-              <small>100</small>
-              <small>0</small>
+            <div className="trust-rail-gauge">
+              <div className="trust-rail-meter" aria-hidden="true">
+                <span style={{ height: `${trust}%` }} />
+                <i style={{ bottom: "80%" }} />
+                <i style={{ bottom: "60%" }} />
+                <i style={{ bottom: "30%" }} />
+              </div>
+              <div className="trust-rail-scale" aria-hidden="true">
+                <small>100</small>
+                <small>0</small>
+              </div>
             </div>
-          </div>
-          <span className="trust-rail-caption">
-            {trustMessage ?? m.trustGoalCaption}
-          </span>
-        </aside>
+            <span className="trust-rail-caption">
+              {trustMessage ?? m.trustGoalCaption}
+            </span>
+          </aside>
+        )}
         <div className="map-world-layer" ref={mapWorldRef}>
           <svg
             className="connection-layer"
@@ -323,31 +374,47 @@ export function MarketGameView({
             </span>
             <strong>{money(cash)}</strong>
           </div>
-          {products
-            .filter(
-              (product): product is LoanProduct => product.kind === "loan",
-            )
-            .map((product) => (
-              <div
-                key={product.id}
-                className={`product-node map-node${product.active ? "" : " paused"}${product.pauseOnMarketAlert ? " guarded" : ""}`}
-                style={{ left: `${product.x}%`, top: `${product.y}%` }}
-                role="button"
-                tabIndex={0}
-                aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
-                onClick={() => onSelectProduct(product)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onSelectProduct(product);
-                  }
-                }}
-              >
-                <span className="product-icon">
-                  <SlidersHorizontal aria-hidden="true" />
-                </span>
-              </div>
-            ))}
+          {showProducts &&
+            products
+              .filter(
+                (product): product is LoanProduct => product.kind === "loan",
+              )
+              .map((product) => (
+                <div
+                  key={product.id}
+                  className={`product-node map-node${product.active ? "" : " paused"}${product.pauseOnMarketAlert ? " guarded" : ""}`}
+                  style={{ left: `${product.x}%`, top: `${product.y}%` }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
+                  onClick={() => onSelectProduct(product)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      onSelectProduct(product);
+                    }
+                  }}
+                >
+                  <span className="product-icon">
+                    <SlidersHorizontal aria-hidden="true" />
+                  </span>
+                </div>
+              ))}
+          {showDeposits &&
+            products
+              .filter((product) => product.kind === "deposit")
+              .map((product) => (
+                <div
+                  key={product.id}
+                  className={`product-node deposit-product-node map-node${product.active ? "" : " paused"}`}
+                  style={{ left: `${product.x}%`, top: `${product.y}%` }}
+                  aria-label={`${product.name} · ${product.active ? m.productActive : m.productPaused}`}
+                >
+                  <span className="product-icon">
+                    <Landmark aria-hidden="true" />
+                  </span>
+                </div>
+              ))}
           {visibleCustomers.map((customer) => {
             const isWaiting = customer.status === "waiting";
             return (
@@ -368,6 +435,9 @@ export function MarketGameView({
                 onClick={() => {
                   if (isWaiting) onSelectCustomer(customer);
                 }}
+                {...coachmarkTarget(
+                  onboarding === "second-decision" ? "second-customer" : null,
+                )}
                 onKeyDown={(event) => {
                   if (
                     isWaiting &&
@@ -416,34 +486,11 @@ export function MarketGameView({
             );
           })}
           {visibleDepositors.map((depositor) => {
-            const isWaiting = depositor.status === "waiting";
             return (
               <div
                 key={depositor.id}
-                className={`depositor-node map-node ${depositor.status}${isWaiting ? " interactive" : ""}`}
+                className={`depositor-node map-node ${depositor.status}`}
                 style={{ left: `${depositor.x}%`, top: `${depositor.y}%` }}
-                role={isWaiting ? "button" : undefined}
-                tabIndex={isWaiting ? 0 : undefined}
-                aria-label={
-                  isWaiting
-                    ? m.noticeDepositRequest(
-                        localize(depositor.name, locale),
-                        money(depositor.amount),
-                      )
-                    : undefined
-                }
-                onClick={() => {
-                  if (isWaiting) onSelectDepositor(depositor);
-                }}
-                onKeyDown={(event) => {
-                  if (
-                    isWaiting &&
-                    (event.key === "Enter" || event.key === " ")
-                  ) {
-                    event.preventDefault();
-                    onSelectDepositor(depositor);
-                  }
-                }}
               >
                 <span className="portrait">
                   <img
@@ -455,11 +502,7 @@ export function MarketGameView({
                   />
                 </span>
                 <span className="node-label">
-                  <strong>
-                    {isWaiting
-                      ? money(depositor.amount)
-                      : m.depositBalance(money(depositor.balance))}
-                  </strong>
+                  <strong>{m.depositBalance(money(depositor.balance))}</strong>
                   <small>{m.depositRate(depositor.rate)}</small>
                 </span>
               </div>
@@ -520,7 +563,7 @@ export function MarketGameView({
               </span>
             </div>
           )}
-          {showFundingHint && (
+          {showFullMarket && showFundingHint && (
             <button
               className="funding-hint"
               onClick={onOpenFunding}
@@ -533,31 +576,36 @@ export function MarketGameView({
           )}
         </div>
       </section>
-      <footer className="time-controller">
-        <div className="time-status">
-          <span
-            className={clockView.paused ? "status-dot paused" : "status-dot"}
-          />
-          <strong>{m.dayStatus(day + 1, clockView.paused)}</strong>
-        </div>
-        <div className="time-actions">
-          <button
-            className={`play-time${showPlayPrompt ? " play-time-prompt" : ""}`}
-            onClick={onToggleClock}
-            aria-label={clockView.paused ? m.playTime : m.pause}
-          >
-            {clockView.paused ? (
-              <Play fill="currentColor" aria-hidden="true" />
-            ) : (
-              <Pause fill="currentColor" aria-hidden="true" />
+      {!openingLesson && (
+        <footer className="time-controller">
+          <div className="time-status">
+            <span
+              className={clockView.paused ? "status-dot paused" : "status-dot"}
+            />
+            <strong>{m.dayStatus(day + 1, clockView.paused)}</strong>
+          </div>
+          <div className="time-actions">
+            <button
+              className={`play-time${showPlayPrompt ? " play-time-prompt" : ""}`}
+              onClick={onToggleClock}
+              aria-label={clockView.paused ? m.playTime : m.pause}
+              {...coachmarkTarget("play-first-repayment")}
+            >
+              {clockView.paused ? (
+                <Play fill="currentColor" aria-hidden="true" />
+              ) : (
+                <Pause fill="currentColor" aria-hidden="true" />
+              )}
+            </button>
+            {showFullMarket && (
+              <button className="speed-time" onClick={onCycleSpeed}>
+                <span>{clockView.speed}×</span>
+                <small>{m.speed}</small>
+              </button>
             )}
-          </button>
-          <button className="speed-time" onClick={onCycleSpeed}>
-            <span>{clockView.speed}×</span>
-            <small>{m.speed}</small>
-          </button>
-        </div>
-      </footer>
+          </div>
+        </footer>
+      )}
     </main>
   );
 }

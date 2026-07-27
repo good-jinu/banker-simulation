@@ -1,19 +1,23 @@
-import { Banknote, Equal, Landmark, Plus, Wallet, X } from "lucide-react";
+import { X } from "lucide-react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CustomerConsultation } from "./CustomerConsultation.tsx";
-import { DepositRequest } from "./DepositRequest.tsx";
+import type {
+  ConsultationProgress,
+  ConsultationQuestionId,
+} from "./market-consultation.ts";
+import type { MarketOverlay } from "./market-overlay.ts";
+import { DepositProductBuilder } from "./DepositProductBuilder.tsx";
 import { InterbankConversation } from "./InterbankConversation.tsx";
 import { ProductBuilder } from "./ProductBuilder.tsx";
 import { ProductDetails } from "./ProductDetails.tsx";
 import { MarketNewsDesk } from "./MarketNewsDesk.tsx";
 import { MarketResultReport } from "./MarketResultReport.tsx";
-import { money } from "./market-format.ts";
+import { MarketAssetsDialog } from "./MarketAssetsDialog.tsx";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
   type Customer,
-  type Depositor,
   type Funding,
   type LoanProduct,
   type LoanProductRules,
@@ -25,26 +29,16 @@ type MarketDialogsProps = {
   stage: MarketCampaignStage;
   locale: Locale;
   world: MarketWorld;
-  selected: Customer | null;
-  selectedDepositor: Depositor | null;
-  selectedProductId: string | null;
-  productBuilderOpen: boolean;
-  fundingOpen: boolean;
-  assetsOpen: boolean;
-  newsOpen: boolean;
-  onCloseSelected: () => void;
-  onCloseSelectedDepositor: () => void;
-  onCloseSelectedProduct: () => void;
-  onCloseProductBuilder: () => void;
-  onCloseFunding: () => void;
-  onCloseAssets: () => void;
-  onCloseNews: () => void;
+  overlay: MarketOverlay | null;
+  consultation: ConsultationProgress;
+  onCloseOverlay: () => void;
+  onConsultationProgress: (progress: ConsultationProgress) => void;
+  onConsultationQuestionAsked: (question: ConsultationQuestionId) => void;
   onApprove: (customer: Customer) => void;
   onReject: (customer: Customer) => void;
-  onAcceptDeposit: (depositor: Depositor) => void;
-  onRejectDeposit: (depositor: Depositor) => void;
   onNeedFunding: () => void;
   onCreateProduct: (rules: LoanProductRules) => void;
+  onCreateDepositProduct: () => void;
   onToggleProduct: (productId: string, active: boolean) => void;
   onToggleProductAlertGuard: (productId: string, enabled: boolean) => void;
   onShowNewsSegment: (segment: MarketSegment) => void;
@@ -57,26 +51,16 @@ export function MarketDialogs({
   stage,
   locale,
   world,
-  selected,
-  selectedDepositor,
-  selectedProductId,
-  productBuilderOpen,
-  fundingOpen,
-  assetsOpen,
-  newsOpen,
-  onCloseSelected,
-  onCloseSelectedDepositor,
-  onCloseSelectedProduct,
-  onCloseProductBuilder,
-  onCloseFunding,
-  onCloseAssets,
-  onCloseNews,
+  overlay,
+  consultation,
+  onCloseOverlay,
+  onConsultationProgress,
+  onConsultationQuestionAsked,
   onApprove,
   onReject,
-  onAcceptDeposit,
-  onRejectDeposit,
   onNeedFunding,
   onCreateProduct,
+  onCreateDepositProduct,
   onToggleProduct,
   onToggleProductAlertGuard,
   onShowNewsSegment,
@@ -85,40 +69,19 @@ export function MarketDialogs({
   onBack,
 }: MarketDialogsProps) {
   const m = messagesFor(locale).market;
-  const { cash, day, customers, depositors, funding, trust } = world;
-  const loanReceivables = customers
-    .filter((customer) => customer.status === "accepted")
-    .reduce((total, customer) => total + customer.amount, 0);
-  const totalAssets = cash + loanReceivables;
-  const fundingLiabilities = funding
-    .filter((lender) => lender.accepted)
-    .reduce((total, lender) => total + lender.amount, 0);
-  const depositLiabilities = depositors
-    .filter((depositor) => depositor.status === "accepted")
-    .reduce((total, depositor) => total + depositor.balance, 0);
-  const netWorth = totalAssets - fundingLiabilities - depositLiabilities;
-  const trustBand =
-    trust >= 80
-      ? "strong"
-      : trust >= 60
-        ? "steady"
-        : trust >= 30
-          ? "at-risk"
-          : "blocked";
-  const trustLabel =
-    trustBand === "strong"
-      ? m.trustStrong
-      : trustBand === "steady"
-        ? m.trustSteady
-        : trustBand === "at-risk"
-          ? m.trustAtRisk
-          : m.trustBlocked;
+  const { cash, funding } = world;
+  const selected =
+    overlay?.kind === "customer"
+      ? (world.customers.find(
+          (customer) => customer.id === overlay.customerId,
+        ) ?? null)
+      : null;
   const selectedProduct =
-    selectedProductId === null
+    overlay?.kind !== "product"
       ? null
       : (world.products.find(
           (product): product is LoanProduct =>
-            product.kind === "loan" && product.id === selectedProductId,
+            product.kind === "loan" && product.id === overlay.productId,
         ) ?? null);
 
   return (
@@ -155,89 +118,22 @@ export function MarketDialogs({
           />
         </div>
       )}
-      {assetsOpen && (
-        <div className="modal-backdrop" onMouseDown={onCloseAssets}>
-          <section
-            className="assets-modal"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <button
-              className="modal-close"
-              onClick={onCloseAssets}
-              aria-label={m.close}
-            >
-              <X />
-            </button>
-            <small>MY BANK BALANCE SHEET</small>
-            <h2>{m.bankAssets}</h2>
-            <div className="asset-summary">
-              <span>{m.netWorth}</span>
-              <strong>{money(netWorth)}</strong>
-            </div>
-            <div className={`trust-card trust-${trustBand}`}>
-              <div>
-                <span>{m.trust}</span>
-                <strong>{m.trustScore(trust)}</strong>
-              </div>
-              <div className="trust-meter" aria-hidden="true">
-                <span style={{ width: `${trust}%` }} />
-              </div>
-              <small>{trustLabel}</small>
-            </div>
-            <h3>{m.assets}</h3>
-            <dl className="asset-rows">
-              <div>
-                <dt>{m.cash}</dt>
-                <dd>{money(cash)}</dd>
-              </div>
-              <div>
-                <dt>{m.loanReceivables}</dt>
-                <dd>{money(loanReceivables)}</dd>
-              </div>
-              <div>
-                <dt>{m.depositLiabilities}</dt>
-                <dd>{money(depositLiabilities)}</dd>
-              </div>
-              <div className="total">
-                <dt>{m.totalAssets}</dt>
-                <dd>{money(totalAssets)}</dd>
-              </div>
-            </dl>
-            <div className="asset-equation" aria-hidden="true">
-              <span>
-                <Wallet />
-                <small>{m.cash}</small>
-              </span>
-              <Plus className="eq-op" />
-              <span>
-                <Banknote />
-                <small>{m.loanReceivables}</small>
-              </span>
-              <Equal className="eq-op" />
-              <span>
-                <Landmark />
-                <small>{m.totalAssets}</small>
-              </span>
-            </div>
-            <PortfolioDetails
-              customers={customers}
-              depositors={depositors}
-              funding={funding}
-              locale={locale}
-              day={day}
-            />
-          </section>
-        </div>
+      {overlay?.kind === "assets" && (
+        <MarketAssetsDialog
+          world={world}
+          locale={locale}
+          onClose={onCloseOverlay}
+        />
       )}
       {selected && (
-        <div className="modal-backdrop" onMouseDown={onCloseSelected}>
+        <div className="modal-backdrop" onMouseDown={onCloseOverlay}>
           <section
             className="consultation-modal"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <button
               className="modal-close"
-              onClick={onCloseSelected}
+              onClick={onCloseOverlay}
               aria-label={m.close}
             >
               <X />
@@ -254,64 +150,68 @@ export function MarketDialogs({
               sceneLabel={m.loanRequestTitle}
               onApprove={() => onApprove(selected)}
               onReject={() => onReject(selected)}
-              onNeedFunding={onNeedFunding}
+              {...(world.onboarding === "full" ? { onNeedFunding } : {})}
               canApprove={cash >= selected.amount}
-            />
-          </section>
-        </div>
-      )}
-      {selectedDepositor && (
-        <div className="modal-backdrop" onMouseDown={onCloseSelectedDepositor}>
-          <section
-            className="consultation-modal"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <button
-              className="modal-close"
-              onClick={onCloseSelectedDepositor}
-              aria-label={m.close}
-            >
-              <X />
-            </button>
-            <DepositRequest
-              depositor={selectedDepositor}
-              locale={locale}
-              onAccept={() => onAcceptDeposit(selectedDepositor)}
-              onReject={() => onRejectDeposit(selectedDepositor)}
+              requireQuestionsBeforeDecision={
+                (world.onboarding === "first-customer" &&
+                  selected.id === world.config.introCustomerId) ||
+                world.onboarding === "second-decision"
+              }
+              forceApproval={
+                world.onboarding === "first-customer" &&
+                selected.id === world.config.introCustomerId
+              }
+              initialProgress={consultation}
+              onProgressChange={onConsultationProgress}
+              onQuestionAsked={onConsultationQuestionAsked}
             />
           </section>
         </div>
       )}
       {selectedProduct && (
-        <div className="modal-backdrop" onMouseDown={onCloseSelectedProduct}>
+        <div className="modal-backdrop" onMouseDown={onCloseOverlay}>
           <ProductDetails
             locale={locale}
             product={selectedProduct}
-            onClose={onCloseSelectedProduct}
+            onClose={onCloseOverlay}
             onToggleActive={onToggleProduct}
             onToggleAlertGuard={onToggleProductAlertGuard}
           />
         </div>
       )}
-      {productBuilderOpen && (
-        <div className="modal-backdrop">
-          <ProductBuilder
-            locale={locale}
-            creationCost={world.config.productCreationCost}
-            onCreate={onCreateProduct}
-            onClose={onCloseProductBuilder}
-          />
-        </div>
-      )}
-      {fundingOpen && (
-        <div className="modal-backdrop" onMouseDown={onCloseFunding}>
+      {overlay?.kind === "product-builder" &&
+        overlay.productKind === "loan" && (
+          <div className="modal-backdrop">
+            <ProductBuilder
+              locale={locale}
+              creationCost={world.config.productCreationCost}
+              guided={world.onboarding === "products"}
+              onCreate={onCreateProduct}
+              onClose={onCloseOverlay}
+            />
+          </div>
+        )}
+      {overlay?.kind === "product-builder" &&
+        overlay.productKind === "deposit" && (
+          <div className="modal-backdrop">
+            <DepositProductBuilder
+              locale={locale}
+              creationCost={world.config.productCreationCost}
+              interestRate={2}
+              onCreate={onCreateDepositProduct}
+              onClose={onCloseOverlay}
+            />
+          </div>
+        )}
+      {overlay?.kind === "funding" && (
+        <div className="modal-backdrop" onMouseDown={onCloseOverlay}>
           <section
             className="funding-modal"
             onMouseDown={(event) => event.stopPropagation()}
           >
             <button
               className="modal-close"
-              onClick={onCloseFunding}
+              onClick={onCloseOverlay}
               aria-label={m.close}
             >
               <X />
@@ -324,12 +224,12 @@ export function MarketDialogs({
           </section>
         </div>
       )}
-      {newsOpen && (
-        <div className="modal-backdrop" onMouseDown={onCloseNews}>
+      {overlay?.kind === "news" && (
+        <div className="modal-backdrop" onMouseDown={onCloseOverlay}>
           <MarketNewsDesk
             locale={locale}
             world={world}
-            onClose={onCloseNews}
+            onClose={onCloseOverlay}
             onShowSegment={onShowNewsSegment}
           />
         </div>
@@ -351,83 +251,5 @@ export function MarketDialogs({
         </div>
       )}
     </>
-  );
-}
-
-function PortfolioDetails({
-  customers,
-  depositors,
-  funding,
-  locale,
-  day,
-}: {
-  customers: Customer[];
-  depositors: Depositor[];
-  funding: Funding[];
-  locale: Locale;
-  day: number;
-}) {
-  const m = messagesFor(locale).market;
-  const loans = customers.filter((customer) => customer.status === "accepted");
-  const deposits = depositors.filter(
-    (depositor) => depositor.status === "accepted",
-  );
-  const debts = funding.filter((lender) => lender.accepted);
-  return (
-    <div className="portfolio-details">
-      <h3>{m.loanBook}</h3>
-      {loans.length === 0 ? (
-        <p className="portfolio-empty">{m.noOutstandingLoans}</p>
-      ) : (
-        <div className="portfolio-list">
-          {loans.map((customer) => (
-            <article key={customer.id}>
-              <strong>{localize(customer.name, locale)}</strong>
-              <span>{money(customer.amount)}</span>
-              <small>
-                {m.dueInDays(Math.max(customer.dueDay - day, 0))} ·{" "}
-                {m.repaymentDue(
-                  money(customer.amount * (1 + customer.rate / 100)),
-                )}
-              </small>
-            </article>
-          ))}
-        </div>
-      )}
-      <h3>{m.depositBook}</h3>
-      {deposits.length === 0 ? (
-        <p className="portfolio-empty">{m.noCustomerDeposits}</p>
-      ) : (
-        <div className="portfolio-list">
-          {deposits.map((depositor) => (
-            <article key={depositor.id}>
-              <strong>{localize(depositor.name, locale)}</strong>
-              <span>{money(depositor.balance)}</span>
-              <small>{m.depositRate(depositor.rate)}</small>
-            </article>
-          ))}
-        </div>
-      )}
-      <h3>{m.fundingBook}</h3>
-      {debts.length === 0 ? (
-        <p className="portfolio-empty">{m.noFundingObligations}</p>
-      ) : (
-        <div className="portfolio-list">
-          {debts.map((lender) => (
-            <article key={lender.id}>
-              <strong>{localize(lender.name, locale)}</strong>
-              <span>{money(lender.amount)}</span>
-              <small>
-                {lender.defaulted
-                  ? m.defaultedDebt(
-                      money(lender.amount * (1 + lender.rate / 100)),
-                    )
-                  : `${m.dueInDays(Math.max(lender.dueDay - day, 0))} · ${m.repaymentDue(money(lender.amount * (1 + lender.rate / 100)))}`}
-              </small>
-            </article>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

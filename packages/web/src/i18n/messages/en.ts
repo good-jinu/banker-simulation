@@ -31,9 +31,24 @@ export const en = {
     greeting: "Hello! I urgently need some money.",
     challengeGreeting: "I need capital to keep my work going.",
     loanQuestion: "$100 loan, please?",
+    onboardingFirstStep: "FIRST STEP",
+    coachmarkNewControl: "NEW CONTROL",
+    onboardingFirstCustomer: "Meet Mina and learn why she needs the loan.",
+    onboardingFirstRepayment:
+      "Press play and watch Mina complete the first contract.",
+    onboardingSecondDecision:
+      "Meet the next customer, check the facts, and make your own decision.",
+    onboardingDepositProduct:
+      "Launch a savings product before accepting customer deposits.",
+    onboardingLoanProduct:
+      "Turn your lending judgment into a reusable loan product.",
     challengeLoanQuestion: (amount: string) => `${amount} loan, please?`,
     askPurpose: "Ask what the loan is for",
     askIncome: "Ask about their income",
+    firstLoanRejectLocked:
+      "The first contract teaches lending and repayment, so rejection is locked.",
+    firstLoanApprovalCoachmark:
+      "Lend to Mina and watch how the contract is repaid.",
     incomeAnswer: "My monthly income is about $2,400.",
     informationComplete: "Information checked · $110 due in 12 days",
     informationChecked: (amount: string, days: number) =>
@@ -222,6 +237,15 @@ export const en = {
       "The bank defaulted on too many external debts. Other banks no longer trust it enough to keep operating.",
     returnToStages: "Return to stages",
     loanProductName: "Income Guard Loan",
+    depositProductName: "Neighborhood Savings",
+    depositProductEyebrow: "OFFER SAVINGS FIRST",
+    depositProductTitle: "Launch a Savings Product",
+    depositProductCopy:
+      "Customers can deposit only after your bank publishes terms. Their money becomes working cash, but the bank must return it with interest.",
+    depositProductRate: (rate: number) => `${rate}% savings interest`,
+    createDepositProduct: (cost: string) => `Launch savings product · ${cost}`,
+    depositProductActivated:
+      "Savings product active · customer deposits are now entering the bank.",
     productActivated:
       "Loan Product active · qualifying requests will be funded automatically.",
     productLessonEyebrow: "AUTOMATE THE SAFE DECISION",

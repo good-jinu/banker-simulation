@@ -28,6 +28,21 @@ function days(count: number): MarketAction[] {
   return Array.from({ length: count }, () => ({ type: "advance-day" }));
 }
 
+function createDepositProduct(): MarketAction {
+  return {
+    type: "create-product",
+    product: {
+      id: "starter-savings",
+      kind: "deposit",
+      name: "Starter savings",
+      x: 50,
+      y: 68,
+      active: true,
+      interestRate: 2,
+    },
+  };
+}
+
 describe("determinism", () => {
   it("produces identical worlds for identical seeds and actions", () => {
     const actions: MarketAction[] = [{ type: "begin" }, ...days(30)];
@@ -101,10 +116,10 @@ describe("upcoming repayment", () => {
   it("shows a scheduled customer-withdrawal demand as an outgoing cash movement", () => {
     let world = createWorld(1);
     const depositor = world.depositors[0]!;
-    world = marketReducer(world, {
-      type: "accept-deposit",
-      depositorId: depositor.id,
-    });
+    world = marketReducer(
+      { ...world, depositors: [depositor] },
+      createDepositProduct(),
+    );
     world = {
       ...world,
       withdrawalEvent: {
@@ -184,7 +199,7 @@ describe("campaign configuration", () => {
 
 describe("customer spawning", () => {
   it("spawns a request every third day up to the visible cap", () => {
-    const world = run(createWorld(9), ...days(30));
+    const world = run(createWorld(9, "credit-under-pressure"), ...days(30));
     expect(world.customers.length).toBeLessThanOrEqual(5);
     expect(
       world.customers.filter((c) => c.status === "waiting").length,
@@ -192,7 +207,7 @@ describe("customer spawning", () => {
   });
 
   it("announces each spawned request as an event", () => {
-    const world = run(createWorld(9), ...days(3));
+    const world = run(createWorld(9, "credit-under-pressure"), ...days(3));
     const request = world.events.find((e) => e.type === "loan-request");
     expect(request).toBeDefined();
   });
@@ -200,7 +215,10 @@ describe("customer spawning", () => {
 
 describe("funding", () => {
   function worldWithThreeLoans(): MarketWorld {
-    let world = run(createWorld(5), { type: "begin" });
+    let world = run(
+      { ...createWorld(5), onboarding: "full" },
+      { type: "begin" },
+    );
     while (world.loanCount < 3) {
       world = marketReducer(world, { type: "advance-day" });
       const waiting = world.customers.find(
@@ -620,56 +638,6 @@ describe("level two credit risk", () => {
   });
 });
 
-describe("customer deposits", () => {
-  it("adds working cash and an equal customer-deposit liability", () => {
-    const start = createWorld(1);
-    const depositor = start.depositors[0]!;
-    const accepted = marketReducer(start, {
-      type: "accept-deposit",
-      depositorId: depositor.id,
-    });
-
-    expect(accepted.cash).toBe(start.cash + depositor.amount);
-    expect(summarize(accepted).depositLiabilities).toBe(depositor.amount);
-    expect(summarize(accepted).netWorth).toBe(summarize(start).netWorth);
-    expect(accepted.stats.depositsAccepted).toBe(1);
-  });
-
-  it("settles a warned withdrawal from cash and records the interest cost", () => {
-    const start = createWorld(1);
-    const depositor = start.depositors[0]!;
-    let world = marketReducer(start, {
-      type: "accept-deposit",
-      depositorId: depositor.id,
-    });
-    world = {
-      ...world,
-      withdrawalEvent: {
-        warningDay: 1,
-        withdrawalDay: 2,
-        withdrawalShare: 1,
-        status: "scheduled",
-      },
-    };
-
-    world = marketReducer(world, { type: "advance-day" });
-    expect(world.withdrawalEvent?.status).toBe("warned");
-    expect(
-      world.news.some((article) => article.threadId === "deposit-withdrawal"),
-    ).toBe(true);
-
-    world = marketReducer(world, { type: "advance-day" });
-    expect(world.depositors[0]?.status).toBe("withdrawn");
-    expect(world.stats.depositPrincipalWithdrawn).toBe(depositor.amount);
-    expect(world.stats.depositInterestPaid).toBeCloseTo(
-      depositor.amount * (depositor.rate / 100),
-    );
-    expect(world.events).toContainEqual(
-      expect.objectContaining({ type: "deposit-withdrawal" }),
-    );
-  });
-});
-
 describe("bank trust", () => {
   /** A bank that has done everything right: a broad book of repaid, fairly
    * priced contracts, healthy earnings, and no outstanding obligation. */
@@ -891,7 +859,10 @@ describe("bank trust", () => {
     // Guards the property that is easy to lose when retuning weights: a
     // composite whose pillars crest at different moments can sit at 97 forever
     // and quietly make the stage unwinnable.
-    let world = marketReducer(createWorld(1), { type: "begin" });
+    let world = marketReducer(
+      { ...createWorld(1), onboarding: "full" },
+      { type: "begin" },
+    );
     for (let day = 0; day < 200 && !world.missionCleared; day++) {
       for (const customer of world.customers) {
         if (customer.status !== "waiting") continue;

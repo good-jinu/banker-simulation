@@ -1,0 +1,90 @@
+import { describe, expect, it } from "vitest";
+import {
+  createWorld,
+  FIRST_CUSTOMER,
+  marketReducer,
+  type MarketAction,
+  type MarketWorld,
+} from "./market-world.ts";
+
+function run(world: MarketWorld, ...actions: MarketAction[]): MarketWorld {
+  return actions.reduce(marketReducer, world);
+}
+
+function days(count: number): MarketAction[] {
+  return Array.from({ length: count }, () => ({ type: "advance-day" }));
+}
+
+describe("guided first-stage onboarding flow", () => {
+  it("reveals the next system only after its teaching action", () => {
+    let world = createWorld(1);
+    const firstCustomer = world.customers[0]!;
+    expect(world.onboarding).toBe("first-customer");
+
+    world = marketReducer(world, {
+      type: "approve",
+      customerId: firstCustomer.id,
+    });
+    expect(world.onboarding).toBe("first-repayment");
+
+    world = run(world, ...days(firstCustomer.term));
+    expect(world.onboarding).toBe("second-decision");
+    const secondCustomer = world.customers.find(
+      (customer) => customer.status === "waiting",
+    );
+    expect(secondCustomer).toBeDefined();
+
+    world = marketReducer(world, {
+      type: "reject",
+      customerId: secondCustomer!.id,
+    });
+    expect(world.onboarding).toBe("deposits");
+
+    world = marketReducer(world, {
+      type: "create-product",
+      product: {
+        id: "starter-savings",
+        kind: "deposit",
+        name: "Starter savings",
+        x: 50,
+        y: 68,
+        active: true,
+        interestRate: 2,
+      },
+    });
+    expect(world.onboarding).toBe("products");
+    expect(
+      world.depositors.every((depositor) => depositor.status === "accepted"),
+    ).toBe(true);
+
+    world = marketReducer(world, {
+      type: "create-product",
+      product: {
+        id: "starter-line",
+        kind: "loan",
+        name: "Starter line",
+        x: 50,
+        y: 26,
+        active: true,
+        rules: {
+          minimumIncome: 1_500,
+          occupation: "employed",
+          interestRate: 10,
+          minimumAmount: 100,
+          maximumAmount: 1_000,
+          minimumTerm: 6,
+          maximumTerm: 12,
+        },
+      },
+    });
+    expect(world.onboarding).toBe("full");
+  });
+
+  it("protects the opening repayment from random failure", () => {
+    const first = run(createWorld(1), { type: "begin" });
+    const settled = run(first, ...days(FIRST_CUSTOMER.term));
+    expect(settled.events).toContainEqual(
+      expect.objectContaining({ type: "customer-repayment" }),
+    );
+  });
+});

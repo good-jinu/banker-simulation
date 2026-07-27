@@ -67,7 +67,8 @@ export function useMarketEffects({
               money(event.customer.amount),
             ),
           );
-          if (world.products.length === 0) onOpenProductBuilder();
+          if (!world.products.some((product) => product.kind === "loan"))
+            onOpenProductBuilder();
           break;
         case "customer-repayment":
           setNotice(
@@ -79,14 +80,6 @@ export function useMarketEffects({
           break;
         case "loan-request":
           setLoanRequestNotice(event.customer);
-          break;
-        case "deposit-request":
-          setNotice(
-            m.noticeDepositRequest(
-              localize(event.depositor.name, locale),
-              money(event.depositor.amount),
-            ),
-          );
           break;
         case "deposit-accepted":
           setNotice(
@@ -160,7 +153,7 @@ export function useMarketEffects({
     onOpenProductBuilder,
     world.events,
     world.failureReason,
-    world.products.length,
+    world.products,
   ]);
 
   useEffect(() => {

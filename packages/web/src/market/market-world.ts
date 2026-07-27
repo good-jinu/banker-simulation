@@ -19,11 +19,34 @@ import {
   type TrustContext,
 } from "./market-trust.ts";
 import {
-  hasMarketAlertForSegment,
   publishMarketNews,
   riskAdjustmentForSegment,
   type MarketNews,
 } from "./market-news.ts";
+import type {
+  DepositProduct,
+  LoanProduct,
+  OccupationRule,
+  Product,
+} from "./market-product-types.ts";
+import {
+  automateProducts,
+  createProduct,
+  productForCustomer,
+  setProductActive,
+  setProductAlertGuard,
+} from "./market-products.ts";
+import { advanceOnboarding, type OnboardingStep } from "./market-onboarding.ts";
+
+export type { OnboardingStep } from "./market-onboarding.ts";
+export type {
+  DepositProduct,
+  LoanProduct,
+  LoanProductRules,
+  OccupationRule,
+  Product,
+  ProductKind,
+} from "./market-product-types.ts";
 
 /**
  * Pure simulation core for the open-market level. The world is plain data,
@@ -37,42 +60,16 @@ export type CustomerStatus = "waiting" | "accepted";
 export type DepositStatus = "waiting" | "accepted" | "withdrawn";
 /** A stage id string. Not a closed union — new stages don't need a type edit. */
 export type MarketLevel = string;
-/** Product types are deliberately a discriminated union so deposits and
- * insurance can add their own rules and lifecycle without changing loans. */
-export type ProductKind = "loan" | "deposit" | "insurance";
-export type OccupationRule = "any" | "employed" | "self-employed";
 /** Groups that the market can describe without exposing a credit-score formula. */
 export type MarketSegment =
   "workers" | "small-business" | "delivery" | "technology" | "low-credit";
-export type LoanProductRules = {
-  minimumIncome: number;
-  occupation: OccupationRule;
-  interestRate: number;
-  minimumAmount: number;
-  maximumAmount: number;
-  minimumTerm: number;
-  maximumTerm: number;
-};
-export type LoanProduct = {
-  id: string;
-  kind: "loan";
-  name: string;
-  x: number;
-  y: number;
-  active: boolean;
-  /** A visible safety module: alert-affected customers wait until the line is safe. */
-  pauseOnMarketAlert?: boolean;
-  rules: LoanProductRules;
-};
-/** Reserved variants make the product platform additive rather than loan-only. */
-export type Product =
-  | LoanProduct
-  | { id: string; kind: "deposit"; name: string; x: number; y: number }
-  | { id: string; kind: "insurance"; name: string; x: number; y: number };
 export type CustomerExpression =
   "neutral" | "requesting" | "evaluating" | "worried" | "relieved" | "rejected";
 export type FailureReason = "cash" | "trust" | null;
-
+/**
+ * A short, action-driven introduction for the first stage. Later stages start
+ * with the complete bank because the player has already learned these verbs.
+ */
 export type CustomerEvidence = {
   purpose: LocalText;
   employment: LocalText;
@@ -117,6 +114,8 @@ export type Depositor = {
   y: number;
   avatar: string;
   status: DepositStatus;
+  /** Deposits can enter the bank only through an active deposit product. */
+  productId?: string;
 };
 
 export type WithdrawalEvent = {
@@ -196,7 +195,6 @@ export type MarketEvent =
       risk: number;
     }
   | { type: "loan-request"; customer: Customer }
-  | { type: "deposit-request"; depositor: Depositor }
   | { type: "deposit-accepted"; depositor: Depositor }
   | { type: "deposit-withdrawal"; amount: number }
   | { type: "transfer"; from: string; to: string; amount: number }
@@ -231,6 +229,7 @@ export type MarketWorld = {
   config: MarketStageConfig;
   seed: number;
   day: number;
+  onboarding: OnboardingStep;
   cash: number;
   customers: Customer[];
   depositors: Depositor[];
@@ -263,10 +262,8 @@ export type MarketAction =
   | { type: "begin" }
   | { type: "approve"; customerId: string }
   | { type: "reject"; customerId: string }
-  | { type: "accept-deposit"; depositorId: string }
-  | { type: "reject-deposit"; depositorId: string }
   | { type: "borrow"; lenderId: string }
-  | { type: "create-product"; product: LoanProduct }
+  | { type: "create-product"; product: LoanProduct | DepositProduct }
   | { type: "set-product-active"; productId: string; active: boolean }
   | { type: "set-product-alert-guard"; productId: string; enabled: boolean }
   | { type: "read-market-news" };
@@ -384,6 +381,7 @@ export function createWorld(
     config,
     seed: seed >>> 0,
     day: 0,
+    onboarding: config.onboarding === "guided" ? "first-customer" : "full",
     cash: config.startingCash,
     customers: config.customerSeeds.map((customer) => ({ ...customer })),
     depositors: config.depositSeeds.map((depositor) => ({ ...depositor })),
@@ -588,29 +586,34 @@ export function marketReducer(
     case "begin":
       return withDerivedEvents(begin(world));
     case "approve":
-      return withDerivedEvents(approve(world, action.customerId));
+      return withDerivedEvents(
+        advanceOnboardingAfterCustomerDecision(
+          world,
+          approve(world, action.customerId),
+          action.customerId,
+        ),
+      );
     case "reject":
-      return {
-        ...world,
-        customers: world.customers.filter(
-          (customer) => customer.id !== action.customerId,
-        ),
-        events: [],
-      };
-    case "accept-deposit":
-      return withDerivedEvents(acceptDeposit(world, action.depositorId));
-    case "reject-deposit":
-      return {
-        ...world,
-        depositors: world.depositors.filter(
-          (depositor) => depositor.id !== action.depositorId,
-        ),
-        events: [],
-      };
+      return advanceOnboardingAfterCustomerDecision(
+        world,
+        {
+          ...world,
+          customers: world.customers.filter(
+            (customer) => customer.id !== action.customerId,
+          ),
+          events: [],
+        },
+        action.customerId,
+      );
     case "borrow":
       return withDerivedEvents(borrow(world, action.lenderId));
     case "create-product":
-      return withDerivedEvents(createProduct(world, action.product));
+      return withDerivedEvents(
+        advanceOnboardingAfterProduct(
+          world,
+          createProduct(world, action.product),
+        ),
+      );
     case "set-product-active":
       return withDerivedEvents(
         setProductActive(world, action.productId, action.active),
@@ -644,6 +647,71 @@ function withDerivedEvents(world: MarketWorld): MarketWorld {
   return { ...world, missionCleared, fundingAnnounced, events };
 }
 
+function advanceOnboardingAfterCustomerDecision(
+  previous: MarketWorld,
+  next: MarketWorld,
+  customerId: string,
+): MarketWorld {
+  if (
+    previous.onboarding === "first-customer" &&
+    customerId === previous.config.introCustomerId &&
+    next.customers.some(
+      (customer) =>
+        customer.id === customerId && customer.status === "accepted",
+    )
+  ) {
+    return {
+      ...next,
+      onboarding: advanceOnboarding(previous.onboarding, "intro-loan-approved"),
+    };
+  }
+  if (
+    previous.onboarding === "second-decision" &&
+    customerId !== previous.config.introCustomerId
+  ) {
+    return {
+      ...next,
+      onboarding: advanceOnboarding(
+        previous.onboarding,
+        "second-decision-made",
+      ),
+    };
+  }
+  return next;
+}
+
+function advanceOnboardingAfterProduct(
+  previous: MarketWorld,
+  next: MarketWorld,
+): MarketWorld {
+  if (next.products.length <= previous.products.length) return next;
+  const created = next.products.find(
+    (product) =>
+      !previous.products.some(
+        (previousProduct) => previousProduct.id === product.id,
+      ),
+  );
+  if (previous.onboarding === "deposits" && created?.kind === "deposit") {
+    return {
+      ...next,
+      onboarding: advanceOnboarding(
+        previous.onboarding,
+        "deposit-product-created",
+      ),
+    };
+  }
+  if (previous.onboarding === "products" && created?.kind === "loan") {
+    return {
+      ...next,
+      onboarding: advanceOnboarding(
+        previous.onboarding,
+        "loan-product-created",
+      ),
+    };
+  }
+  return next;
+}
+
 function advanceDay(world: MarketWorld): MarketWorld {
   const day = world.day + 1;
   const marketReport = publishMarketNews(
@@ -661,9 +729,11 @@ function advanceDay(world: MarketWorld): MarketWorld {
   const stats = { ...world.stats };
   let withdrawalEvent = world.withdrawalEvent;
   let depositors = world.depositors;
+  let onboarding = world.onboarding;
   if (
     withdrawalEvent?.status === "scheduled" &&
-    withdrawalEvent.warningDay === day
+    withdrawalEvent.warningDay === day &&
+    depositors.some((depositor) => depositor.status === "accepted")
   ) {
     const pressure = world.config.withdrawalPressure;
     if (pressure) {
@@ -692,10 +762,15 @@ function advanceDay(world: MarketWorld): MarketWorld {
   let seed = world.seed;
   let customers = world.customers.filter((customer) => {
     if (customer.status === "accepted" && customer.dueDay === day) {
-      const risk = defaultRisk(
-        customer,
-        riskAdjustmentForSegment(news, customer.segment),
-      );
+      const risk =
+        customer.id === world.config.introCustomerId &&
+        world.onboarding === "first-repayment" &&
+        world.config.introCustomerGuaranteedRepayment
+          ? 0
+          : defaultRisk(
+              customer,
+              riskAdjustmentForSegment(news, customer.segment),
+            );
       let roll = 100;
       if (world.config.randomizeDefaultRisk) {
         let random: number;
@@ -749,6 +824,31 @@ function advanceDay(world: MarketWorld): MarketWorld {
           amount: customer.amount * (1 + customer.rate / 100),
         });
       }
+    }
+  }
+  if (
+    onboarding === "first-repayment" &&
+    repaidCustomers.some(
+      (customer) => customer.id === world.config.introCustomerId,
+    )
+  ) {
+    onboarding = advanceOnboarding(onboarding, "intro-loan-repaid");
+    const occupied = new Set(
+      [...customers, ...depositors].map((person) => `${person.x},${person.y}`),
+    );
+    const position = CUSTOMER_POSITIONS.find(
+      (candidate) => !occupied.has(`${candidate.x},${candidate.y}`),
+    );
+    if (position) {
+      let secondCustomer: Customer;
+      [secondCustomer, seed] = randomCustomer(
+        day,
+        position,
+        seed,
+        world.config,
+      );
+      customers.push(secondCustomer);
+      events.push({ type: "loan-request", customer: secondCustomer });
     }
   }
   const funding = world.funding.filter((lender) => {
@@ -825,21 +925,23 @@ function advanceDay(world: MarketWorld): MarketWorld {
         0,
       );
     const interest = payout - principal;
-    cash -= payout;
-    depositors = depositors.map((depositor) => {
-      if (depositor.status !== "accepted") return depositor;
-      const balance =
-        depositor.balance * (1 - withdrawalEvent!.withdrawalShare);
-      return {
-        ...depositor,
-        balance,
-        status: balance < 1 ? "withdrawn" : "accepted",
-      };
-    });
-    reputation.realizedProfit -= interest;
-    stats.depositPrincipalWithdrawn += principal;
-    stats.depositInterestPaid += interest;
-    events.push({ type: "deposit-withdrawal", amount: payout });
+    if (payout > 0) {
+      cash -= payout;
+      depositors = depositors.map((depositor) => {
+        if (depositor.status !== "accepted") return depositor;
+        const balance =
+          depositor.balance * (1 - withdrawalEvent!.withdrawalShare);
+        return {
+          ...depositor,
+          balance,
+          status: balance < 1 ? "withdrawn" : "accepted",
+        };
+      });
+      reputation.realizedProfit -= interest;
+      stats.depositPrincipalWithdrawn += principal;
+      stats.depositInterestPaid += interest;
+      events.push({ type: "deposit-withdrawal", amount: payout });
+    }
     withdrawalEvent = { ...withdrawalEvent, status: "settled" };
   }
   // Net assets, computed the same way summarize() does. Automated lending runs
@@ -879,6 +981,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
     trust <= TRUST_COLLAPSE ? "trust" : cash < 0 ? "cash" : null;
   if (insolvent) events.push({ type: "insolvent" });
   if (
+    onboarding === "full" &&
     day % world.config.spawnEveryDays === 0 &&
     customers.length < world.config.maxVisibleCustomers
   ) {
@@ -903,6 +1006,10 @@ function advanceDay(world: MarketWorld): MarketWorld {
     }
   }
   if (
+    onboarding === "full" &&
+    world.products.some(
+      (product) => product.kind === "deposit" && product.active,
+    ) &&
     day % world.config.depositSpawnEveryDays === 0 &&
     depositors.filter((depositor) => depositor.status !== "withdrawn").length <
       world.config.maxVisibleDepositors
@@ -924,12 +1031,12 @@ function advanceDay(world: MarketWorld): MarketWorld {
         world.config,
       );
       depositors = [...depositors, depositor];
-      events.push({ type: "deposit-request", depositor });
     }
   }
-  const automated = automateLoans({
+  const automated = automateProducts({
     ...world,
     day,
+    onboarding,
     cash,
     customers,
     depositors,
@@ -1092,18 +1199,29 @@ function begin(world: MarketWorld): MarketWorld {
     first.status !== "waiting"
   )
     return { ...world, events: [] };
-  return {
-    ...world,
-    cash: world.cash - first.amount,
-    customers: world.customers.map((customer) =>
-      customer.id === first.id ? { ...customer, status: "accepted" } : customer,
-    ),
-    loanCount: world.loanCount + 1,
-    cumulativeLent: world.cumulativeLent + first.amount,
-    events: [
-      { type: "transfer", from: "banker", to: first.id, amount: first.amount },
-    ],
-  };
+  return advanceOnboardingAfterCustomerDecision(
+    world,
+    {
+      ...world,
+      cash: world.cash - first.amount,
+      customers: world.customers.map((customer) =>
+        customer.id === first.id
+          ? { ...customer, status: "accepted" }
+          : customer,
+      ),
+      loanCount: world.loanCount + 1,
+      cumulativeLent: world.cumulativeLent + first.amount,
+      events: [
+        {
+          type: "transfer",
+          from: "banker",
+          to: first.id,
+          amount: first.amount,
+        },
+      ],
+    },
+    first.id,
+  );
 }
 
 function approve(world: MarketWorld, customerId: string): MarketWorld {
@@ -1115,29 +1233,6 @@ function approve(world: MarketWorld, customerId: string): MarketWorld {
   )
     return { ...world, events: [] };
   return lend(world, customer, undefined);
-}
-
-function acceptDeposit(world: MarketWorld, depositorId: string): MarketWorld {
-  const depositor = world.depositors.find((item) => item.id === depositorId);
-  if (!depositor || depositor.status !== "waiting")
-    return { ...world, events: [] };
-  const accepted: Depositor = {
-    ...depositor,
-    balance: depositor.amount,
-    status: "accepted",
-  };
-  return {
-    ...world,
-    cash: world.cash + accepted.amount,
-    depositors: world.depositors.map((item) =>
-      item.id === accepted.id ? accepted : item,
-    ),
-    stats: {
-      ...world.stats,
-      depositsAccepted: world.stats.depositsAccepted + 1,
-    },
-    events: [{ type: "deposit-accepted", depositor: accepted }],
-  };
 }
 
 function lend(
@@ -1175,183 +1270,6 @@ function lend(
     thirdLoanDay: loanCount === 3 ? world.day : world.thirdLoanDay,
     events: product ? [...world.events, ...events] : events,
   };
-}
-
-function customerMatchesLoanProduct(
-  customer: Customer,
-  product: LoanProduct,
-): boolean {
-  const { rules } = product;
-  const occupationMatches =
-    rules.occupation === "any" || customer.occupation === rules.occupation;
-  return (
-    customer.status === "waiting" &&
-    customer.income >= rules.minimumIncome &&
-    occupationMatches &&
-    customer.amount >= rules.minimumAmount &&
-    customer.amount <= rules.maximumAmount &&
-    customer.term >= rules.minimumTerm &&
-    customer.term <= rules.maximumTerm
-  );
-}
-
-/**
- * Processes automated loan approvals based on active loan products.
- *
- * Performance Optimization:
- * Instead of creating intermediate World objects on every loan approval,
- * this function accumulates state updates using local mutable variables
- * and constructs a single new World object at the end.
- */
-function automateLoans(world: MarketWorld): MarketWorld {
-  // Track state changes in local variables to avoid creating multiple intermediate World objects
-  let currentCash = world.cash;
-  let loanCount = world.loanCount;
-  let cumulativeLent = world.cumulativeLent;
-  let thirdLoanDay = world.thirdLoanDay;
-  let automatedIssued = 0;
-
-  // Create a single shallow copy of the customers array to mutate safely
-  const nextCustomers = [...world.customers];
-  const newEvents: MarketEvent[] = [];
-
-  for (const product of world.products) {
-    if (product.kind !== "loan") continue;
-    if (!product.active) continue;
-
-    for (let i = 0; i < nextCustomers.length; i++) {
-      const customer = nextCustomers[i]!;
-      if (!customerMatchesLoanProduct(customer, product)) continue;
-      if (
-        product.pauseOnMarketAlert &&
-        hasMarketAlertForSegment(world.news, customer.segment)
-      )
-        continue;
-      if (currentCash < customer.amount) continue;
-
-      // Update counters and cash
-      loanCount += 1;
-      currentCash -= customer.amount;
-      cumulativeLent += customer.amount;
-      automatedIssued += 1;
-      if (loanCount === 3 && thirdLoanDay === null) {
-        thirdLoanDay = world.day;
-      }
-
-      // Update individual customer state
-      const acceptedCustomer: Customer = {
-        ...customer,
-        status: "accepted",
-        dueDay: world.day + customer.term,
-        productId: product.id,
-        rate: product.rules.interestRate,
-      };
-
-      nextCustomers[i] = acceptedCustomer;
-
-      // Push events directly to the local array
-      newEvents.push(
-        {
-          type: "transfer",
-          from: product.id,
-          to: customer.id,
-          amount: customer.amount,
-        },
-        {
-          type: "product-lent",
-          product,
-          customer: acceptedCustomer,
-        },
-      );
-    }
-  }
-
-  // Referential Integrity: If no loans were issued, return the original world reference unchanged.
-  // This helps prevent unnecessary React re-renders.
-  if (newEvents.length === 0) {
-    return world;
-  }
-
-  // Construct and return the updated World object once at the end
-  return {
-    ...world,
-    cash: currentCash,
-    customers: nextCustomers,
-    loanCount,
-    cumulativeLent,
-    thirdLoanDay,
-    stats:
-      automatedIssued > 0
-        ? {
-            ...world.stats,
-            automatedIssued: world.stats.automatedIssued + automatedIssued,
-          }
-        : world.stats,
-    events: [...world.events, ...newEvents],
-  };
-}
-
-function createProduct(world: MarketWorld, product: LoanProduct): MarketWorld {
-  if (
-    world.products.some((item) => item.id === product.id) ||
-    world.cash < world.config.productCreationCost
-  )
-    return { ...world, events: [] };
-  return automateLoans({
-    ...world,
-    cash: world.cash - world.config.productCreationCost,
-    products: [...world.products, product],
-    events: [{ type: "product-created", product }],
-  });
-}
-
-function setProductActive(
-  world: MarketWorld,
-  productId: string,
-  active: boolean,
-): MarketWorld {
-  const product = world.products.find(
-    (item): item is LoanProduct =>
-      item.kind === "loan" && item.id === productId,
-  );
-  if (!product || product.active === active) return { ...world, events: [] };
-
-  const products = world.products.map((item) =>
-    item.id === productId && item.kind === "loan" ? { ...item, active } : item,
-  );
-  const nextWorld = { ...world, products, events: [] };
-  return active ? automateLoans(nextWorld) : nextWorld;
-}
-
-function setProductAlertGuard(
-  world: MarketWorld,
-  productId: string,
-  enabled: boolean,
-): MarketWorld {
-  const product = world.products.find(
-    (item): item is LoanProduct =>
-      item.kind === "loan" && item.id === productId,
-  );
-  if (!product || Boolean(product.pauseOnMarketAlert) === enabled)
-    return { ...world, events: [] };
-  return {
-    ...world,
-    products: world.products.map((item) =>
-      item.id === productId && item.kind === "loan"
-        ? { ...item, pauseOnMarketAlert: enabled }
-        : item,
-    ),
-    events: [],
-  };
-}
-
-function productForCustomer(
-  products: Product[],
-  customer: Customer,
-): LoanProduct | undefined {
-  if (!customer.productId) return undefined;
-  const product = products.find((item) => item.id === customer.productId);
-  return product?.kind === "loan" ? product : undefined;
 }
 
 function borrow(world: MarketWorld, lenderId: string): MarketWorld {
