@@ -6,7 +6,7 @@ import {
   createProduct,
   customerMatchesLoanProduct,
 } from "./market-products.ts";
-import { createWorld } from "./market-world.ts";
+import { createWorld, type Depositor } from "./market-world.ts";
 
 describe("market products", () => {
   const rules = {
@@ -41,8 +41,22 @@ describe("market products", () => {
 
   it("charges creation cost and activates matching deposits", () => {
     const baseWorld = createWorld(7, marketCampaignStages[0]!.config);
+    const waiting: Depositor = {
+      id: "test-savings",
+      name: { en: "Test Saver", ko: "테스트 예금자" },
+      job: { en: "Village pharmacist", ko: "마을 약사" },
+      amount: 260,
+      rate: 2,
+      balance: 0,
+      appears: 0,
+      x: 81,
+      y: 21,
+      avatar: "/assets/pop-art/avatars/auditor-neutral.png",
+      status: "waiting",
+    };
     const world = {
       ...baseWorld,
+      depositors: [waiting],
       cash: baseWorld.config.productCreationCost + 1_000,
     };
     const product = buildDepositProduct([], "Savings");

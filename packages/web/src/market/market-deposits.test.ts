@@ -3,6 +3,7 @@ import {
   createWorld,
   marketReducer,
   summarize,
+  type Depositor,
   type MarketAction,
   type MarketWorld,
 } from "./market-world.ts";
@@ -30,11 +31,28 @@ function createDepositProduct(): MarketAction {
   };
 }
 
+/** No stage seeds savers, so a waiting depositor is authored here. */
+function waitingDepositor(): Depositor {
+  return {
+    id: "test-savings",
+    name: { en: "Test Saver", ko: "테스트 예금자" },
+    job: { en: "Village pharmacist", ko: "마을 약사" },
+    amount: 260,
+    rate: 2,
+    balance: 0,
+    appears: 0,
+    x: 81,
+    y: 21,
+    avatar: "/assets/pop-art/avatars/auditor-neutral.png",
+    status: "waiting",
+  };
+}
+
 describe("customer deposits", () => {
   it("accepts deposits only after the bank launches a deposit product", () => {
     const start = createWorld(1);
-    const depositor = start.depositors[0]!;
-    expect(depositor.status).toBe("waiting");
+    const depositor = waitingDepositor();
+    expect(start.depositors).toHaveLength(0);
     const accepted = marketReducer(
       { ...start, depositors: [depositor] },
       createDepositProduct(),
@@ -89,9 +107,37 @@ describe("customer deposits", () => {
     expect(world.withdrawalEvent?.status).toBe("settled");
   });
 
+  it("still warns a saver who arrives after the scheduled warning day", () => {
+    let world: MarketWorld = {
+      ...createWorld(1),
+      depositors: [],
+      withdrawalEvent: {
+        warningDay: 1,
+        withdrawalDay: 4,
+        withdrawalShare: 1,
+        status: "scheduled",
+      },
+    };
+    // The warning day passes with an empty book: nobody to warn yet.
+    world = marketReducer(world, { type: "advance-day" });
+    expect(world.withdrawalEvent?.status).toBe("scheduled");
+    expect(world.news).toHaveLength(0);
+
+    // A deposit product then attracts a saver, still ahead of the withdrawal.
+    world = marketReducer(
+      { ...world, depositors: [waitingDepositor()] },
+      createDepositProduct(),
+    );
+    world = marketReducer(world, { type: "advance-day" });
+    expect(world.withdrawalEvent?.status).toBe("warned");
+    expect(
+      world.news.some((article) => article.threadId === "deposit-withdrawal"),
+    ).toBe(true);
+  });
+
   it("settles a warned withdrawal and records its interest cost", () => {
     const start = createWorld(1);
-    const depositor = start.depositors[0]!;
+    const depositor = waitingDepositor();
     let world = marketReducer(
       { ...start, depositors: [depositor] },
       createDepositProduct(),

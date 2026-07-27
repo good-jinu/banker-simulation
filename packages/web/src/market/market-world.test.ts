@@ -9,6 +9,7 @@ import {
   summarize,
   upcomingRepayment,
   worldOpinion,
+  type Depositor,
   type MarketAction,
   type MarketWorld,
 } from "./market-world.ts";
@@ -43,6 +44,23 @@ function createDepositProduct(): MarketAction {
   };
 }
 
+/** No stage seeds savers, so a waiting depositor is authored here. */
+function waitingDepositor(): Depositor {
+  return {
+    id: "test-savings",
+    name: { en: "Test Saver", ko: "테스트 예금자" },
+    job: { en: "Village pharmacist", ko: "마을 약사" },
+    amount: 260,
+    rate: 2,
+    balance: 0,
+    appears: 0,
+    x: 81,
+    y: 21,
+    avatar: "/assets/pop-art/avatars/auditor-neutral.png",
+    status: "waiting",
+  };
+}
+
 describe("determinism", () => {
   it("produces identical worlds for identical seeds and actions", () => {
     const actions: MarketAction[] = [{ type: "begin" }, ...days(30)];
@@ -62,7 +80,7 @@ describe("determinism", () => {
 describe("lending", () => {
   it("begin lends to the first customer and moves cash out", () => {
     const world = run(createWorld(1), { type: "begin" });
-    expect(world.cash).toBe(700 - FIRST_CUSTOMER.amount);
+    expect(world.cash).toBe(world.config.startingCash - FIRST_CUSTOMER.amount);
     expect(world.loanCount).toBe(1);
     expect(world.cumulativeLent).toBe(FIRST_CUSTOMER.amount);
     expect(
@@ -90,8 +108,11 @@ describe("lending", () => {
   it("books receivables and interest into net worth without double-counting cash", () => {
     const world = run(createWorld(1), { type: "begin" });
     const summary = summarize(world);
-    expect(summary.totalAssets).toBe(600 + 100);
-    expect(summary.netWorth).toBe(700);
+    const { startingCash } = world.config;
+    expect(summary.totalAssets).toBe(
+      startingCash - FIRST_CUSTOMER.amount + FIRST_CUSTOMER.amount,
+    );
+    expect(summary.netWorth).toBe(startingCash);
   });
 
   it("rejects an approval the bank cannot fund", () => {
@@ -115,7 +136,7 @@ describe("upcoming repayment", () => {
 
   it("shows a scheduled customer-withdrawal demand as an outgoing cash movement", () => {
     let world = createWorld(1);
-    const depositor = world.depositors[0]!;
+    const depositor = waitingDepositor();
     world = marketReducer(
       { ...world, depositors: [depositor] },
       createDepositProduct(),
@@ -745,9 +766,15 @@ describe("bank trust", () => {
   });
 
   it("caps trust at 80 while a recent loss is still open", () => {
+    const base = createWorld(1);
     const world: MarketWorld = {
-      ...createWorld(1),
-      reputation: { ...masteryReputation(), openLoss: 200 },
+      ...base,
+      // Comfortably past the ceiling's quarter-of-starting-cash threshold,
+      // expressed as a fraction so a stage's cash scale can be retuned.
+      reputation: {
+        ...masteryReputation(),
+        openLoss: base.config.startingCash * 0.3,
+      },
     };
     const assessment = assessWorldTrust(world);
     expect(assessment.ceilingCause).toBe("open-losses");

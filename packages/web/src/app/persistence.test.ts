@@ -6,7 +6,7 @@ import {
   type SaveEnvelope,
 } from "./persistence.ts";
 import { marketCampaignStages } from "../market/market-campaign.ts";
-import { createWorld } from "../market/market-world.ts";
+import { createWorld, type Depositor } from "../market/market-world.ts";
 
 describe("save migration", () => {
   it("returns a fresh version-one save for missing or malformed records", () => {
@@ -168,7 +168,20 @@ describe("save migration", () => {
   it("attaches legacy accepted deposits to a migrated savings product", () => {
     const stage = marketCampaignStages[0]!;
     const world = createWorld(7, stage.config);
-    const depositor = world.depositors[0]!;
+    // A saver from an older save, when deposits arrived without a product.
+    const depositor: Depositor = {
+      id: "legacy-savings",
+      name: { en: "Legacy Saver", ko: "이전 예금자" },
+      job: { en: "Village pharmacist", ko: "마을 약사" },
+      amount: 260,
+      rate: 2,
+      balance: 0,
+      appears: 0,
+      x: 81,
+      y: 21,
+      avatar: "/assets/pop-art/avatars/auditor-neutral.png",
+      status: "waiting",
+    };
     const legacyWorld = {
       ...world,
       onboarding: "full",
@@ -197,6 +210,28 @@ describe("save migration", () => {
     );
     expect(depositProduct).toBeDefined();
     expect(migrated?.world.depositors[0]?.productId).toBe(depositProduct?.id);
+  });
+
+  it("never mints a deposit product a stage did not pay for", () => {
+    // A stage whose config opens at "full" onboarding must not be mistaken for a
+    // save predating the product system: reloading would grant the deposit
+    // product, and its savers, for free.
+    for (const stage of marketCampaignStages) {
+      const world = createWorld(7, stage.config);
+      const migrated = migrateMarketSession(
+        {
+          schemaVersion: 1,
+          stageId: stage.id,
+          phase: "map",
+          world: { ...world },
+        },
+        stage.id,
+        stage.config,
+      );
+
+      expect(migrated?.world.products).toEqual([]);
+      expect(migrated?.world.cash).toBe(world.cash);
+    }
   });
 
   it("rejects a session belonging to another stage", () => {

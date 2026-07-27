@@ -325,6 +325,14 @@ const RANDOM_COLLATERAL: LocalText[] = [
   { en: "A guarantor from the workplace", ko: "직장의 보증인" },
   { en: "Nothing offered", ko: "제시한 담보 없음" },
 ];
+/**
+ * Loan customers and savers share this pool, so it has to hold both caps at
+ * once — `maxVisibleCustomers + maxVisibleDepositors` across every stage.
+ * Otherwise the shorter queue silently starves whenever the map fills up, and a
+ * stage's deposit cap becomes a number the simulation can never reach.
+ * Kept clear of the product slots at (50, 26) and (50, 68) and the lender
+ * positions at (9, 50), (50, 88) and (91, 50).
+ */
 const CUSTOMER_POSITIONS = [
   { x: 19, y: 21 },
   { x: 81, y: 21 },
@@ -333,6 +341,9 @@ const CUSTOMER_POSITIONS = [
   { x: 49, y: 14 },
   { x: 67, y: 83 },
   { x: 32, y: 83 },
+  { x: 30, y: 48 },
+  { x: 70, y: 48 },
+  { x: 66, y: 14 },
 ];
 
 /** mulberry32 step: returns a value in [0, 1) and the next seed. */
@@ -730,9 +741,16 @@ function advanceDay(world: MarketWorld): MarketWorld {
   let withdrawalEvent = world.withdrawalEvent;
   let depositors = world.depositors;
   let onboarding = world.onboarding;
+  // The warning opens on its scheduled day but stays open until the withdrawal
+  // itself, because savers arrive on the deposit product's schedule rather than
+  // at the start of the run. Checking the warning day exactly would let a saver
+  // who joined a day later take the full withdrawal with no notice at all. The
+  // `scheduled` guard keeps it one-shot; settlement runs before new depositors
+  // spawn, so a saver arriving on the withdrawal day is never caught unwarned.
   if (
     withdrawalEvent?.status === "scheduled" &&
-    withdrawalEvent.warningDay === day &&
+    day >= withdrawalEvent.warningDay &&
+    day < withdrawalEvent.withdrawalDay &&
     depositors.some((depositor) => depositor.status === "accepted")
   ) {
     const pressure = world.config.withdrawalPressure;

@@ -97,13 +97,13 @@ const firstYieldConfig: MarketStageConfig = {
   level: "first-yield",
   onboarding: "guided",
   introCustomerGuaranteedRepayment: true,
-  startingCash: 700,
+  startingCash: 1_000,
   goals: {
     trustTarget: 100,
   },
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
-  maxVisibleDepositors: 2,
+  maxVisibleDepositors: 4,
   depositSpawnEveryDays: 4,
   fundingUnlockDelayDays: 3,
   productCreationCost: 100,
@@ -195,34 +195,10 @@ const firstYieldConfig: MarketStageConfig = {
       status: "waiting",
     },
   ],
-  depositSeeds: [
-    {
-      id: "soojin-savings",
-      name: { en: "Soojin Lee", ko: "수진 이" },
-      job: { en: "Village pharmacist", ko: "마을 약사" },
-      amount: 260,
-      rate: 2,
-      balance: 0,
-      appears: 0,
-      x: 81,
-      y: 21,
-      avatar: "/assets/pop-art/avatars/auditor-neutral.png",
-      status: "waiting",
-    },
-    {
-      id: "taeho-savings",
-      name: { en: "Taeho Choi", ko: "태호 최" },
-      job: { en: "Town grocer", ko: "마을 식료품점 주인" },
-      amount: 340,
-      rate: 2,
-      balance: 0,
-      appears: 0,
-      x: 18,
-      y: 76,
-      avatar: "/assets/pop-art/avatars/fund-manager-neutral.png",
-      status: "waiting",
-    },
-  ],
+  // No seeded savers: deposits are something the player's own deposit product
+  // attracts, so the growing queue reads as a consequence of the product system
+  // rather than furniture that was always on the map.
+  depositSeeds: [],
   fundingSeeds: [
     {
       id: "civic",
@@ -318,7 +294,7 @@ const creditUnderPressureConfig: MarketStageConfig = {
   },
   maxVisibleCustomers: 5,
   spawnEveryDays: 3,
-  maxVisibleDepositors: 1,
+  maxVisibleDepositors: 3,
   depositSpawnEveryDays: 3,
   fundingUnlockDelayDays: 3,
   productCreationCost: 100,
@@ -436,21 +412,10 @@ const creditUnderPressureConfig: MarketStageConfig = {
       status: "waiting",
     },
   ],
-  depositSeeds: [
-    {
-      id: "city-savings",
-      name: { en: "Hana Moon", ko: "하나 문" },
-      job: { en: "City hospital nurse", ko: "도시 병원 간호사" },
-      amount: 420,
-      rate: 2,
-      balance: 0,
-      appears: 0,
-      x: 81,
-      y: 21,
-      avatar: "/assets/pop-art/avatars/mina-neutral.png",
-      status: "waiting",
-    },
-  ],
+  // As in the first stage, savers are attracted by the player's deposit product
+  // rather than seeded. Deposits are the capital that makes this stage's
+  // affordability squeeze survivable, so they have to be something earned.
+  depositSeeds: [],
   fundingSeeds: [
     {
       id: "civic",

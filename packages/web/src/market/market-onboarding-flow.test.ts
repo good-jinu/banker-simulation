@@ -53,9 +53,8 @@ describe("guided first-stage onboarding flow", () => {
       },
     });
     expect(world.onboarding).toBe("products");
-    expect(
-      world.depositors.every((depositor) => depositor.status === "accepted"),
-    ).toBe(true);
+    // Nothing to accept yet: savers are attracted by the product, not seeded.
+    expect(world.depositors).toHaveLength(0);
 
     world = marketReducer(world, {
       type: "create-product",
@@ -78,6 +77,14 @@ describe("guided first-stage onboarding flow", () => {
       },
     });
     expect(world.onboarding).toBe("full");
+
+    // The payoff of the product system: the open market now brings savers in on
+    // its own, already attached to the product that attracted them.
+    world = run(world, ...days(world.config.depositSpawnEveryDays));
+    expect(world.depositors[0]).toMatchObject({
+      status: "accepted",
+      productId: "starter-savings",
+    });
   });
 
   it("protects the opening repayment from random failure", () => {

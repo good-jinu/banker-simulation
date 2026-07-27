@@ -300,9 +300,13 @@ export function migrateMarketSession(
   )
     ? rawWorld.onboarding
     : "full";
+  // Deposits taken before products existed need a product to belong to, and an
+  // accepted depositor with no product is the only sound evidence of that.
+  // Onboarding state is not: a stage whose config opens at "full" would mint a
+  // free deposit product on every reload, handing the player the run's most
+  // valuable asset for none of its cost.
   if (
-    (depositors.some((depositor) => depositor.status === "accepted") ||
-      onboarding === "full") &&
+    depositors.some((depositor) => depositor.status === "accepted") &&
     !products.some((product) => product.kind === "deposit")
   ) {
     const migratedProductId = "migrated-savings-product";
