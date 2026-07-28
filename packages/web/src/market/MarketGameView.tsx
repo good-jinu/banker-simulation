@@ -14,7 +14,7 @@ import { messagesFor } from "../i18n/messages/index.ts";
 import type { CityPan } from "./city/city-scene.ts";
 import type { ClockView } from "./hooks/useMarketModalClock.ts";
 import { money } from "./market-format.ts";
-import type { FlowAnimation } from "./market-flow.ts";
+import type { FlowAnimation, FlowStamp } from "./market-flow.ts";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import { onboardingCapabilities } from "./market-onboarding.ts";
 import { coachmarkTarget } from "./market-ui-state.ts";
@@ -39,6 +39,7 @@ type MarketGameViewProps = {
   locale: Locale;
   world: MarketWorld;
   activeFlow: FlowAnimation | null;
+  stamps: FlowStamp[];
   loanRequestNotice: Customer | null;
   trustPulse: "up" | "down" | null;
   clockView: ClockView;
@@ -64,6 +65,7 @@ export function MarketGameView({
   locale,
   world,
   activeFlow,
+  stamps,
   loanRequestNotice,
   trustPulse,
   clockView,
@@ -180,8 +182,6 @@ export function MarketGameView({
         "--to-y": `${activeFlow.to.y}%`,
         "--mid-x": `${(activeFlow.from.x + activeFlow.to.x) / 2}%`,
         "--mid-y": `${(activeFlow.from.y + activeFlow.to.y) / 2}%`,
-        "--stamp-x": `${activeFlow.stampAt.x}%`,
-        "--stamp-y": `${activeFlow.stampAt.y}%`,
       } as React.CSSProperties)
     : undefined;
 
@@ -586,22 +586,36 @@ export function MarketGameView({
                 </span>
               </div>
             ))}
-          {activeFlow && (
+          {(activeFlow || stamps.length > 0) && (
             <div className="flow-layer" aria-hidden="true">
-              <div
-                key={activeFlow.id}
-                className={`flow-token flow-${activeFlow.kind}`}
-                style={flowStyle}
-              >
-                <img src="/assets/pop-art/atoms/cash-symbol.svg" alt="" />
-                <span>{money(activeFlow.amount)}</span>
-              </div>
-              <span
-                className={`flow-stamp flow-stamp-${activeFlow.kind}`}
-                style={flowStyle}
-              >
-                {activeFlow.label}
-              </span>
+              {activeFlow && (
+                <div
+                  key={activeFlow.id}
+                  className={`flow-token flow-${activeFlow.kind}`}
+                  style={flowStyle}
+                >
+                  <img src="/assets/pop-art/atoms/cash-symbol.svg" alt="" />
+                </div>
+              )}
+              {stamps.map((stamp) => (
+                <span
+                  key={stamp.id}
+                  className={`flow-stamp flow-stamp-${stamp.kind}`}
+                  style={
+                    {
+                      "--stamp-x": `${stamp.at.x}%`,
+                      "--stamp-y": `${stamp.at.y}%`,
+                      // Consecutive stamps overlap in time now, and repayments
+                      // all land on the same hub — stagger them so a stack
+                      // stays legible instead of hiding behind the newest.
+                      "--stamp-lift": `${(stamp.id % 3) * -17}px`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <strong>{money(stamp.amount)}</strong>
+                  <small>{stamp.label}</small>
+                </span>
+              ))}
             </div>
           )}
           {showFullMarket && showFundingHint && (

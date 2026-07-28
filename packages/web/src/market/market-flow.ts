@@ -26,6 +26,16 @@ export type FlowAnimation = {
   label: string;
 };
 
+/** The result stamp outlives its flow token, so it is tracked separately —
+ * several can sit on the map at once while the queue keeps moving. */
+export type FlowStamp = {
+  id: number;
+  at: MapPoint;
+  amount: number;
+  kind: FlowKind;
+  label: string;
+};
+
 export type FlowLabels = {
   funded: string;
   cashIn: string;
@@ -82,10 +92,13 @@ export function flowForEvent(
     }
     case "customer-repayment":
       if (event.customer.productId) return null;
+      // Stamped on the borrower, not the hub: the amount answers "who paid
+      // me", so it has to sit on the node that paid, even though that node
+      // is cleared from the map the moment it repays.
       return {
         from: customerPoint(event.customer),
         to: pointFor("banker"),
-        stampAt: pointFor("banker"),
+        stampAt: customerPoint(event.customer),
         amount: event.amount,
         kind: "customer-repayment",
         label: labels.repaid,
@@ -100,6 +113,9 @@ export function flowForEvent(
         label: labels.cashIn,
       };
     case "product-cash-in":
+      // Stamp the product, not the borrower: product customers never render on
+      // the map, so their coordinates are bare ground. The product node is the
+      // only thing the player can see earning here.
       return {
         from: customerPoint(event.customer),
         to: pointFor(event.product.id),

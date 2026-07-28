@@ -8,8 +8,13 @@ import {
   pointForId,
   type FlowAnimation,
   type FlowLabels,
+  type FlowStamp,
 } from "../market-flow.ts";
 import type { Customer, MarketWorld } from "../market-world.ts";
+
+/** Result stamps stay put long after their token has landed — the flow queue
+ * advances every second or so, which is far too quick to read a label. */
+const STAMP_LIFETIME_MS = 3_200;
 
 type UseMarketEffectsOptions = {
   world: MarketWorld;
@@ -31,8 +36,10 @@ export function useMarketEffects({
   );
   const [flowQueue, setFlowQueue] = useState<FlowAnimation[]>([]);
   const [activeFlow, setActiveFlow] = useState<FlowAnimation | null>(null);
+  const [stamps, setStamps] = useState<FlowStamp[]>([]);
   const [trustPulse, setTrustPulse] = useState<"up" | "down" | null>(null);
   const flowId = useRef(0);
+  const stampTimers = useRef<number[]>([]);
 
   useEffect(() => {
     for (const event of world.events) {
@@ -181,6 +188,30 @@ export function useMarketEffects({
     return () => window.clearTimeout(handle);
   }, [activeFlow]);
 
+  // Deliberately not cleaned up when activeFlow moves on: the stamp has to
+  // outlive the token that dropped it. Timers are cleared on unmount instead.
+  useEffect(() => {
+    if (!activeFlow) return;
+    const { id, stampAt, amount, kind, label } = activeFlow;
+    setStamps((current) =>
+      current.some((stamp) => stamp.id === id)
+        ? current
+        : [...current, { id, at: stampAt, amount, kind, label }],
+    );
+    const handle = window.setTimeout(() => {
+      setStamps((current) => current.filter((stamp) => stamp.id !== id));
+      stampTimers.current = stampTimers.current.filter((t) => t !== handle);
+    }, STAMP_LIFETIME_MS);
+    stampTimers.current.push(handle);
+  }, [activeFlow]);
+
+  useEffect(
+    () => () => {
+      for (const handle of stampTimers.current) window.clearTimeout(handle);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!trustPulse) return;
     const handle = window.setTimeout(() => setTrustPulse(null), 900);
@@ -204,6 +235,7 @@ export function useMarketEffects({
     loanRequestNotice,
     notice,
     setNotice,
+    stamps,
     trustPulse,
   };
 }

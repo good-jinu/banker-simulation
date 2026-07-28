@@ -150,13 +150,19 @@ export function MarketApp({
     [],
   );
   const openFunding = useCallback(() => setOverlay({ kind: "funding" }), []);
-  const { activeFlow, loanRequestNotice, notice, setNotice, trustPulse } =
-    useMarketEffects({
-      world,
-      locale,
-      onOpenProductBuilder: openProductBuilder,
-      onOpenFunding: openFunding,
-    });
+  const {
+    activeFlow,
+    loanRequestNotice,
+    notice,
+    setNotice,
+    stamps,
+    trustPulse,
+  } = useMarketEffects({
+    world,
+    locale,
+    onOpenProductBuilder: openProductBuilder,
+    onOpenFunding: openFunding,
+  });
   const modalOpen = Boolean(overlay || world.missionCleared || world.insolvent);
   const markCoachmarkIntroduced = useCallback((id: CoachmarkId) => {
     setUi((current) => introduceCoachmark(current, id));
@@ -284,6 +290,7 @@ export function MarketApp({
         locale={locale}
         world={world}
         activeFlow={activeFlow}
+        stamps={stamps}
         loanRequestNotice={loanRequestNotice}
         trustPulse={trustPulse}
         clockView={clockView}

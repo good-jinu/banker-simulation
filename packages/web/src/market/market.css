@@ -1889,13 +1889,15 @@ button {
 
 .flow-token {
   position: absolute;
-  top: 0;
-  left: 0;
+  /* Must travel via top/left, not translate(): percentages inside translate()
+     resolve against the token's own box, which parks it in the corner. */
+  top: var(--from-y);
+  left: var(--from-x);
+  transform: translate(-50%, -50%);
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-width: 66px;
-  padding: 6px 8px;
+  padding: 5px;
   color: var(--ink);
   border: 3px solid var(--ink);
   background: var(--green);
@@ -1930,29 +1932,33 @@ button {
 
 @keyframes flow-token {
   0% {
-    transform: translate(calc(var(--from-x) - 50%), calc(var(--from-y) - 50%))
-      rotate(-5deg) scale(0.55);
+    top: var(--from-y);
+    left: var(--from-x);
+    transform: translate(-50%, -50%) rotate(-5deg) scale(0.55);
     opacity: 0;
   }
   16% {
     opacity: 1;
   }
   72% {
-    transform: translate(calc(var(--to-x) - 50%), calc(var(--to-y) - 50%))
-      rotate(4deg) scale(1.05);
+    top: var(--to-y);
+    left: var(--to-x);
+    transform: translate(-50%, -50%) rotate(4deg) scale(1.05);
     opacity: 1;
   }
   100% {
-    transform: translate(calc(var(--to-x) - 50%), calc(var(--to-y) - 50%))
-      rotate(7deg) scale(0.86);
+    top: var(--to-y);
+    left: var(--to-x);
+    transform: translate(-50%, -50%) rotate(7deg) scale(0.86);
     opacity: 0;
   }
 }
 
 @keyframes flow-default {
   0% {
-    transform: translate(calc(var(--from-x) - 50%), calc(var(--from-y) - 50%))
-      rotate(-5deg) scale(0.55);
+    top: var(--from-y);
+    left: var(--from-x);
+    transform: translate(-50%, -50%) rotate(-5deg) scale(0.55);
     opacity: 0;
   }
   16% {
@@ -1960,18 +1966,21 @@ button {
   }
   48%,
   60% {
-    transform: translate(calc(var(--mid-x) - 50%), calc(var(--mid-y) - 50%))
-      rotate(-12deg) scale(1.05);
+    top: var(--mid-y);
+    left: var(--mid-x);
+    transform: translate(-50%, -50%) rotate(-12deg) scale(1.05);
     opacity: 1;
   }
   72% {
-    transform: translate(calc(var(--mid-x) - 50%), calc(var(--mid-y) - 50%))
-      rotate(18deg) scale(0.76);
+    top: var(--mid-y);
+    left: var(--mid-x);
+    transform: translate(-50%, -50%) rotate(18deg) scale(0.76);
     opacity: 0.55;
   }
   100% {
-    transform: translate(calc(var(--mid-x) - 50%), calc(var(--mid-y) - 50%))
-      rotate(30deg) scale(0.3);
+    top: var(--mid-y);
+    left: var(--mid-x);
+    transform: translate(-50%, -50%) rotate(30deg) scale(0.3);
     opacity: 0;
   }
 }
@@ -1980,17 +1989,35 @@ button {
   position: absolute;
   top: var(--stamp-y);
   left: var(--stamp-x);
+  /* Rides above the node it belongs to rather than covering its icon; the
+     lift stacks further up when several stamps land on the same spot. */
+  margin-top: calc(-42px + var(--stamp-lift, 0px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
   padding: 4px 7px;
   color: var(--ink);
   border: 3px solid var(--ink);
   background: var(--yellow);
   box-shadow: 3px 3px 0 var(--ink);
-  font-size: 9px;
   font-weight: 950;
-  letter-spacing: 0.06em;
   white-space: nowrap;
   transform: translate(-50%, -50%);
-  animation: flow-stamp 0.45s 0.66s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  /* Pops in behind the token, then holds ~2.7s so the result stays readable. */
+  animation:
+    flow-stamp 0.45s 0.5s cubic-bezier(0.2, 1.4, 0.4, 1) both,
+    flow-stamp-out 0.35s 2.85s ease-in forwards;
+}
+
+.flow-stamp strong {
+  font-size: 12px;
+}
+
+.flow-stamp small {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
 }
 
 .flow-stamp-customer-repayment,
@@ -2009,7 +2036,7 @@ button {
   color: var(--paper);
   background: var(--red);
   transform: translate(-50%, -50%) rotate(-8deg);
-  animation-delay: 0.48s;
+  animation-delay: 0.48s, 2.85s;
 }
 
 .event-edge-product-cash-in {
@@ -2028,6 +2055,12 @@ button {
   to {
     opacity: 1;
     transform: translate(-50%, -50%) rotate(-8deg) scale(1);
+  }
+}
+
+@keyframes flow-stamp-out {
+  to {
+    opacity: 0;
   }
 }
 
