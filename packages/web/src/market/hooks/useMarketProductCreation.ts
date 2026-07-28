@@ -38,7 +38,12 @@ export function useMarketProductCreation({
       }
       dispatch({
         type: "create-product",
-        product: buildLoanProduct(world.products, m.loanProductName, rules),
+        product: buildLoanProduct(
+          world.products,
+          m.loanProductName,
+          rules,
+          world.config.map,
+        ),
       });
       completeCoachmark("create-loan-product");
       closeBuilder();
@@ -56,7 +61,12 @@ export function useMarketProductCreation({
     }
     dispatch({
       type: "create-product",
-      product: buildDepositProduct(world.products, m.depositProductName),
+      product: buildDepositProduct(
+        world.products,
+        m.depositProductName,
+        2,
+        world.config.map,
+      ),
     });
     completeCoachmark("launch-deposit-product");
     closeBuilder();

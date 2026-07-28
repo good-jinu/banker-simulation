@@ -139,6 +139,32 @@ button {
   color: #a6b5c8;
   font-size: 14px;
 }
+
+.customer-exposure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: -10px 0 16px;
+  padding: 8px 10px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.customer-exposure strong {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.customer-exposure span {
+  font-size: 9px;
+}
+
+.customer-exposure.pressured {
+  background: var(--yellow);
+}
 .conversation-actions > button {
   width: 100%;
   display: flex;

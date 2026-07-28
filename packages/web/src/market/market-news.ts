@@ -1,5 +1,5 @@
 import type { LocalText } from "../i18n/local-text.ts";
-import type { MarketSegment } from "./market-world.ts";
+import type { MarketSegment } from "./market-segment.ts";
 
 /** A campaign-authored market story. Numbers affect simulation only; UI stays qualitative. */
 export type MarketNewsDefinition = {
@@ -14,6 +14,8 @@ export type MarketNewsDefinition = {
   /** Overrides the severity artwork used by the news briefing dialog. */
   image?: string;
   affectedSegments: readonly MarketSegment[];
+  /** Regions named by the story. Missing means the story is industry-wide. */
+  affectedDistrictIds?: readonly string[];
   /** Applied to affected customers' hidden default-risk estimate. */
   riskAdjustment: number;
 };
@@ -54,6 +56,19 @@ export function riskAdjustmentForSegment(
   );
 }
 
+export function riskAdjustmentForDistrict(
+  news: readonly MarketNews[],
+  districtId: string,
+): number {
+  return news.reduce(
+    (total, article) =>
+      article.affectedDistrictIds?.includes(districtId)
+        ? total + article.riskAdjustment
+        : total,
+    0,
+  );
+}
+
 /** Alerts mark the segments the map should flag as under pressure. */
 export function hasMarketAlertForSegment(
   news: readonly MarketNews[],
@@ -63,6 +78,20 @@ export function hasMarketAlertForSegment(
   const latestByThread = new Map<string, MarketNews>();
   for (const article of news) {
     if (article.affectedSegments.includes(segment))
+      latestByThread.set(article.threadId, article);
+  }
+  return [...latestByThread.values()].some(
+    (article) => article.severity === "alert" && article.riskAdjustment > 0,
+  );
+}
+
+export function hasMarketAlertForDistrict(
+  news: readonly MarketNews[],
+  districtId: string,
+): boolean {
+  const latestByThread = new Map<string, MarketNews>();
+  for (const article of news) {
+    if (article.affectedDistrictIds?.includes(districtId))
       latestByThread.set(article.threadId, article);
   }
   return [...latestByThread.values()].some(

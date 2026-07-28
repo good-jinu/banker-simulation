@@ -1,36 +1,43 @@
 import { useEffect, useRef } from "react";
-import type { CityPan, CityScene } from "./city-scene.ts";
+import type { MapProjection } from "../map/market-camera.ts";
+import type { MarketMapDefinition } from "../map/market-map.ts";
+import type { CityDistrictVisualState } from "./market-city-layout.ts";
+import type { CityScene } from "./city-scene.ts";
 
 type CityBackgroundProps = {
-  customerCount: number;
+  map: MarketMapDefinition;
+  seed: number;
+  districtStates: readonly CityDistrictVisualState[];
   zoom: number;
   dragHint: string;
   showDragHint: boolean;
-  onPanChange: (pan: CityPan) => void;
+  onProjectionChange: (projection: MapProjection) => void;
   onFirstDrag: () => void;
   onZoomChange: (zoom: number) => void;
 };
 
 /** Hosts the lazily loaded Three.js city canvas and its drag hint. */
 export function CityBackground({
-  customerCount,
+  map,
+  seed,
+  districtStates,
   zoom,
   dragHint,
   showDragHint,
-  onPanChange,
+  onProjectionChange,
   onFirstDrag,
   onZoomChange,
 }: CityBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<CityScene | null>(null);
-  const latestCustomerCount = useRef(customerCount);
   const latestZoom = useRef(zoom);
-  const onPanChangeRef = useRef(onPanChange);
+  const latestDistrictStates = useRef(districtStates);
+  const onProjectionChangeRef = useRef(onProjectionChange);
   const onFirstDragRef = useRef(onFirstDrag);
   const onZoomChangeRef = useRef(onZoomChange);
-  latestCustomerCount.current = customerCount;
   latestZoom.current = zoom;
-  onPanChangeRef.current = onPanChange;
+  latestDistrictStates.current = districtStates;
+  onProjectionChangeRef.current = onProjectionChange;
   onFirstDragRef.current = onFirstDrag;
   onZoomChangeRef.current = onZoomChange;
 
@@ -48,8 +55,11 @@ export function CityBackground({
         if (cancelled) return;
         cityScene = createCityScene(
           sceneCanvas,
-          latestCustomerCount.current,
-          (pan) => onPanChangeRef.current(pan),
+          map,
+          seed,
+          latestZoom.current,
+          latestDistrictStates.current,
+          (projection) => onProjectionChangeRef.current(projection),
           () => onFirstDragRef.current(),
           (nextZoom) => onZoomChangeRef.current(nextZoom),
         );
@@ -73,11 +83,11 @@ export function CityBackground({
       sceneRef.current = null;
       cityScene?.dispose();
     };
-  }, []);
+  }, [map, seed]);
 
   useEffect(() => {
-    sceneRef.current?.setCustomerCount(customerCount);
-  }, [customerCount]);
+    sceneRef.current?.setDistrictStates(districtStates);
+  }, [districtStates]);
 
   useEffect(() => {
     sceneRef.current?.setZoom(zoom);

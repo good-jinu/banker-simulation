@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { marketCampaignStages } from "./market-campaign.ts";
 import {
   assessWorldTrust,
+  correlatedRiskPressure,
   createWorld,
   FIRST_CUSTOMER,
   defaultRisk,
@@ -35,8 +36,8 @@ function createDepositProduct(): MarketAction {
       id: "starter-savings",
       kind: "deposit",
       name: "Starter savings",
-      x: 50,
-      y: 68,
+      locationId: "riverside-market-deposit-product",
+      districtId: "riverside",
       active: true,
       interestRate: 2,
     },
@@ -53,8 +54,8 @@ function waitingDepositor(): Depositor {
     rate: 2,
     balance: 0,
     appears: 0,
-    x: 81,
-    y: 21,
+    locationId: "riverside-lot-2",
+    districtId: "riverside",
     avatar: "/assets/pop-art/avatars/auditor-neutral.png",
     status: "waiting",
   };
@@ -82,6 +83,9 @@ describe("lending", () => {
     expect(world.cash).toBe(world.config.startingCash - FIRST_CUSTOMER.amount);
     expect(world.loanCount).toBe(1);
     expect(world.cumulativeLent).toBe(FIRST_CUSTOMER.amount);
+    expect(world.districtSales[FIRST_CUSTOMER.districtId]).toBe(
+      FIRST_CUSTOMER.amount,
+    );
     expect(
       world.customers.find((c) => c.id === FIRST_CUSTOMER.id)?.status,
     ).toBe("accepted");
@@ -257,6 +261,100 @@ describe("customer spawning", () => {
     const request = world.events.find((e) => e.type === "loan-request");
     expect(request).toBeDefined();
   });
+
+  it("grows the regional queue in deterministic multi-applicant rounds", () => {
+    const first = run(createWorld(19, "portfolio-crossroads"), ...days(2));
+    const second = run(createWorld(19, "portfolio-crossroads"), ...days(2));
+    const generated = first.customers.filter((customer) =>
+      customer.id.startsWith("customer-"),
+    );
+
+    expect(first).toEqual(second);
+    expect(generated).toHaveLength(2);
+    expect(new Set(generated.map((customer) => customer.id)).size).toBe(2);
+    expect(new Set(generated.map((customer) => customer.locationId)).size).toBe(
+      2,
+    );
+  });
+
+  it("publishes a briefing when regional demand enters a new round", () => {
+    const world = run(createWorld(19, "portfolio-crossroads"), ...days(12));
+    expect(world.news).toContainEqual(
+      expect.objectContaining({
+        id: "round-regional-expansion-12",
+        publishedDay: 12,
+      }),
+    );
+  });
+});
+
+describe("correlated default stress", () => {
+  it("fixes same-day risks before applying contagion and ignores array order", () => {
+    const stage = marketCampaignStages[2]!.config;
+    let matching:
+      | {
+          ordered: MarketWorld;
+          reversed: MarketWorld;
+          secondRisk: number;
+        }
+      | undefined;
+    for (let seed = 1; seed < 2_000 && !matching; seed += 1) {
+      const base = createWorld(seed, stage);
+      const template = base.customers[0]!;
+      const first = {
+        ...template,
+        id: "a-certain",
+        income: 0,
+        amount: 500,
+        status: "accepted" as const,
+        dueDay: 1,
+      };
+      const second = {
+        ...template,
+        id: "b-exposed",
+        income: 1_000,
+        amount: 3_000,
+        status: "accepted" as const,
+        dueDay: 1,
+      };
+      const ordered = marketReducer(
+        { ...base, customers: [first, second] },
+        { type: "advance-day" },
+      );
+      const reversed = marketReducer(
+        { ...base, customers: [second, first] },
+        { type: "advance-day" },
+      );
+      const defaults = ordered.events.filter(
+        (event) => event.type === "default",
+      );
+      if (defaults.length === 2) {
+        matching = {
+          ordered,
+          reversed,
+          secondRisk: defaultRisk(second),
+        };
+      }
+    }
+    expect(matching).toBeDefined();
+    const orderedDefaults = matching!.ordered.events
+      .filter((event) => event.type === "default")
+      .map((event) => [event.customer.id, event.risk])
+      .sort();
+    const reversedDefaults = matching!.reversed.events
+      .filter((event) => event.type === "default")
+      .map((event) => [event.customer.id, event.risk])
+      .sort();
+
+    expect(orderedDefaults).toEqual(reversedDefaults);
+    expect(orderedDefaults.find(([id]) => id === "b-exposed")?.[1]).toBe(
+      matching!.secondRisk,
+    );
+    expect(matching!.ordered.stress).toEqual(matching!.reversed.stress);
+    expect(
+      matching!.ordered.stress.districts["old-market"]?.value,
+    ).toBeGreaterThan(0);
+  });
 });
 
 describe("funding", () => {
@@ -373,8 +471,8 @@ describe("level two credit risk", () => {
           id: "income-guard",
           kind: "loan",
           name: "Income Guard",
-          x: 50,
-          y: 26,
+          locationId: "riverside-market-loan-product",
+          districtId: "riverside",
           active: true,
           rules: {
             minimumIncome: 1_500,
@@ -420,8 +518,8 @@ describe("level two credit risk", () => {
       id: "wide-net",
       kind: "loan" as const,
       name: "Wide Net",
-      x: 50,
-      y: 26,
+      locationId: "riverside-market-loan-product",
+      districtId: "riverside",
       active: true,
       rules: {
         minimumIncome: 1_500,
@@ -463,8 +561,8 @@ describe("level two credit risk", () => {
       id: "pauseable",
       kind: "loan" as const,
       name: "Pauseable",
-      x: 50,
-      y: 26,
+      locationId: "riverside-market-loan-product",
+      districtId: "riverside",
       active: true,
       rules: {
         minimumIncome: 1_500,
@@ -879,6 +977,31 @@ describe("bank trust", () => {
     expect(world.runFailed).toBe(false);
     expect(world.missionCleared).toBe(true);
     expect(world.trust).toBe(100);
+  });
+
+  it("keeps the regional portfolio stage winnable through selective lending", () => {
+    let world = createWorld(23, "portfolio-crossroads");
+    for (
+      let day = 0;
+      day < 320 && !world.missionCleared && !world.runFailed;
+      day += 1
+    ) {
+      for (const customer of world.customers) {
+        if (customer.status !== "waiting") continue;
+        const visibleRisk =
+          defaultRisk(customer) +
+          Math.max(0, correlatedRiskPressure(world, customer));
+        if (visibleRisk > 25) continue;
+        if (world.cash < customer.amount * 1.8) continue;
+        world = marketReducer(world, {
+          type: "approve",
+          customerId: customer.id,
+        });
+      }
+      world = marketReducer(world, { type: "advance-day" });
+    }
+    expect(world.runFailed).toBe(false);
+    expect(world.missionCleared).toBe(true);
   });
 
   it("no longer lets a handful of cheap repeat loans win the stage", () => {

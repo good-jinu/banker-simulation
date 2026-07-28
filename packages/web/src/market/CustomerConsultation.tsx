@@ -27,6 +27,8 @@ export function CustomerConsultation({
   learnCustomerHint,
   mode,
   sceneLabel,
+  exposureLabel,
+  correlatedPressure = 0,
   onProceed,
   onApprove,
   onReject,
@@ -46,6 +48,8 @@ export function CustomerConsultation({
   learnCustomerHint: string;
   mode: ConversationMode;
   sceneLabel: string;
+  exposureLabel?: string;
+  correlatedPressure?: number;
   onProceed?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
@@ -134,6 +138,18 @@ export function CustomerConsultation({
           <strong>{money(customer.amount)}</strong>
         </div>
         <p className="action-guide">{learnCustomerHint}</p>
+        {exposureLabel && (
+          <p
+            className={`customer-exposure${correlatedPressure > 0 ? " pressured" : ""}`}
+          >
+            <strong>{exposureLabel}</strong>
+            <span>
+              {correlatedPressure > 0
+                ? m.customerCorrelatedPressure(correlatedPressure)
+                : m.customerNoCorrelatedPressure}
+            </span>
+          </p>
+        )}
         {showCreditScore && (
           <p className="credit-score-readout">
             {m.creditScoreValue(creditScoreFor(customer))}

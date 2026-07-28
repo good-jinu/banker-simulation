@@ -28,4 +28,16 @@ describe("parseDevMarketLaunch", () => {
       stageId: "first-yield",
     });
   });
+
+  it("opens the regional portfolio stage directly", () => {
+    expect(
+      parseDevMarketLaunch(
+        "?dev=market&stage=portfolio-crossroads&phase=map&fresh=1",
+      ),
+    ).toEqual({
+      stageId: "portfolio-crossroads",
+      phase: "map",
+      fresh: true,
+    });
+  });
 });

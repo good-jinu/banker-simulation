@@ -1,5 +1,10 @@
 import type { MarketStageConfig } from "../market/market-campaign.ts";
 import {
+  mapNodeForKind,
+  type MarketLocationRef,
+  type MarketMapLocation,
+} from "../market/map/market-map.ts";
+import {
   isConsultationQuestionId,
   type ConsultationProgress,
 } from "../market/market-consultation.ts";
@@ -10,6 +15,10 @@ import {
   type MarketWorld,
   withdrawalEventFor,
 } from "../market/market-world.ts";
+import {
+  emptyMarketStress,
+  type MarketStressState,
+} from "../market/market-stress.ts";
 import { isReputation, openingReputation } from "../market/market-trust.ts";
 import { isOnboardingStep } from "../market/market-onboarding.ts";
 import {
@@ -186,9 +195,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object");
 }
 
-function migrateProducts(value: unknown): MarketWorld["products"] {
+function nearestLocationRef(
+  value: Record<string, unknown>,
+  locations: readonly MarketMapLocation[],
+  fallbackIndex: number,
+): MarketLocationRef {
+  if (
+    typeof value.locationId === "string" &&
+    typeof value.districtId === "string"
+  ) {
+    return {
+      locationId: value.locationId,
+      districtId: value.districtId,
+    };
+  }
+  const legacyX = typeof value.x === "number" ? value.x : null;
+  const legacyY = typeof value.y === "number" ? value.y : null;
+  const location =
+    legacyX === null || legacyY === null
+      ? locations[fallbackIndex % Math.max(1, locations.length)]
+      : [...locations].sort(
+          (first, second) =>
+            Math.hypot(first.point.x - legacyX, first.point.y - legacyY) -
+            Math.hypot(second.point.x - legacyX, second.point.y - legacyY),
+        )[0];
+  if (!location)
+    throw new Error("A saved market cannot be placed on an empty map");
+  return { locationId: location.id, districtId: location.districtId };
+}
+
+function migrateProducts(
+  value: unknown,
+  config: MarketStageConfig,
+): MarketWorld["products"] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((product) => {
+  return value.filter(isRecord).map((product, index) => {
     if (product.kind === "loan") {
       const rules = isRecord(product.rules)
         ? {
@@ -199,18 +240,106 @@ function migrateProducts(value: unknown): MarketWorld["products"] {
                 : 10,
           }
         : product.rules;
-      return { ...product, active: product.active !== false, rules };
+      const node =
+        mapNodeForKind(config.map, "loan-product", index) ??
+        mapNodeForKind(config.map, "bank");
+      return {
+        ...product,
+        active: product.active !== false,
+        rules,
+        ...nearestLocationRef(product, node ? [node] : config.map.lots, index),
+      };
     }
     if (product.kind === "deposit") {
+      const node =
+        mapNodeForKind(config.map, "deposit-product", index) ??
+        mapNodeForKind(config.map, "bank");
       return {
         ...product,
         active: product.active !== false,
         interestRate:
           typeof product.interestRate === "number" ? product.interestRate : 2,
+        ...nearestLocationRef(product, node ? [node] : config.map.lots, index),
       };
     }
     return product;
   }) as MarketWorld["products"];
+}
+
+function migrateCustomers(
+  value: unknown,
+  config: MarketStageConfig,
+): MarketWorld["customers"] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((customer, index) => {
+    const seeded = config.customerSeeds.find(
+      (candidate) => candidate.id === customer.id,
+    );
+    const location = seeded
+      ? {
+          locationId: seeded.locationId,
+          districtId: seeded.districtId,
+        }
+      : nearestLocationRef(customer, config.map.lots, index);
+    return { ...customer, ...location };
+  }) as MarketWorld["customers"];
+}
+
+function migrateDepositors(
+  value: unknown,
+  config: MarketStageConfig,
+): MarketWorld["depositors"] {
+  if (!Array.isArray(value))
+    return config.depositSeeds.map((depositor) => ({ ...depositor }));
+  return value.filter(isRecord).map((depositor, index) => {
+    const seeded = config.depositSeeds.find(
+      (candidate) => candidate.id === depositor.id,
+    );
+    return {
+      ...depositor,
+      ...(seeded
+        ? {
+            locationId: seeded.locationId,
+            districtId: seeded.districtId,
+          }
+        : nearestLocationRef(depositor, config.map.lots, index)),
+    };
+  }) as MarketWorld["depositors"];
+}
+
+function migrateFunding(
+  value: unknown,
+  config: MarketStageConfig,
+): MarketWorld["funding"] {
+  if (!Array.isArray(value))
+    return config.fundingSeeds.map((lender) => ({ ...lender }));
+  const nodes = config.map.nodes.filter((node) => node.kind === "funding");
+  return value.filter(isRecord).map((lender, index) => {
+    const seeded = config.fundingSeeds.find(
+      (candidate) => candidate.id === lender.id,
+    );
+    return {
+      ...lender,
+      ...(seeded
+        ? {
+            locationId: seeded.locationId,
+            districtId: seeded.districtId,
+          }
+        : nearestLocationRef(lender, nodes, index)),
+    };
+  }) as MarketWorld["funding"];
+}
+
+function migrateStress(value: unknown): MarketStressState {
+  if (!isRecord(value)) return emptyMarketStress();
+  return {
+    districts: isRecord(value.districts)
+      ? (value.districts as MarketStressState["districts"])
+      : {},
+    segments: isRecord(value.segments)
+      ? (value.segments as MarketStressState["segments"])
+      : {},
+  };
 }
 
 function migrateMarketRunStats(value: unknown): MarketRunStats {
@@ -305,12 +434,38 @@ export function migrateMarketSession(
   const speed = CLOCK_SPEEDS.includes(rawClock.speed as ClockSpeed)
     ? (rawClock.speed as ClockSpeed)
     : 1;
-  let products = migrateProducts(rawWorld.products);
-  let depositors = Array.isArray(rawWorld.depositors)
-    ? (rawWorld.depositors as MarketWorld["depositors"]).map((depositor) => ({
-        ...depositor,
-      }))
-    : config.depositSeeds.map((depositor) => ({ ...depositor }));
+  let products = migrateProducts(rawWorld.products, config);
+  const customers = migrateCustomers(rawWorld.customers, config);
+  let depositors = migrateDepositors(rawWorld.depositors, config);
+  const funding = migrateFunding(rawWorld.funding, config);
+  const districtSales = Object.fromEntries(
+    config.map.districts.map((district) => [district.id, 0]),
+  );
+  if (isRecord(rawWorld.districtSales)) {
+    for (const district of config.map.districts) {
+      const saved = rawWorld.districtSales[district.id];
+      if (typeof saved === "number" && Number.isFinite(saved) && saved >= 0)
+        districtSales[district.id] = saved;
+    }
+  } else {
+    for (const customer of customers) {
+      if (customer.status !== "accepted") continue;
+      districtSales[customer.districtId] =
+        (districtSales[customer.districtId] ?? 0) + customer.amount;
+    }
+    const knownSales = Object.values(districtSales).reduce(
+      (total, amount) => total + amount,
+      0,
+    );
+    const legacyTotal =
+      typeof rawWorld.cumulativeLent === "number"
+        ? Math.max(0, rawWorld.cumulativeLent)
+        : knownSales;
+    const residual = Math.max(0, legacyTotal - knownSales);
+    const bankDistrictId = mapNodeForKind(config.map, "bank")!.districtId;
+    districtSales[bankDistrictId] =
+      (districtSales[bankDistrictId] ?? 0) + residual;
+  }
   let onboarding: MarketWorld["onboarding"] = isOnboardingStep(
     rawWorld.onboarding,
   )
@@ -335,8 +490,12 @@ export function migrateMarketSession(
         id: migratedProductId,
         kind: "deposit",
         name: "Existing savings",
-        x: 50,
-        y: 68,
+        locationId:
+          mapNodeForKind(config.map, "deposit-product")?.id ??
+          mapNodeForKind(config.map, "bank")!.id,
+        districtId:
+          mapNodeForKind(config.map, "deposit-product")?.districtId ??
+          mapNodeForKind(config.map, "bank")!.districtId,
         active: true,
         interestRate: rate,
       },
@@ -388,7 +547,8 @@ export function migrateMarketSession(
       // Existing saved runs predate the guided lesson. Keep their earned
       // systems visible rather than moving a returning player backwards.
       onboarding,
-      funding: rawWorld.funding as MarketWorld["funding"],
+      customers,
+      funding,
       products,
       depositors,
       withdrawalEvent: isRecord(rawWorld.withdrawalEvent)
@@ -398,6 +558,12 @@ export function migrateMarketSession(
             config,
           ),
       news: Array.isArray(rawWorld.news) ? rawWorld.news : [],
+      stress: migrateStress(rawWorld.stress),
+      districtSales,
+      generationSequence:
+        typeof rawWorld.generationSequence === "number"
+          ? rawWorld.generationSequence
+          : customers.length + depositors.length,
       stats: migrateMarketRunStats(rawWorld.stats),
       events: [],
     },

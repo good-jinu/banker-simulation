@@ -99,6 +99,20 @@ export const ko: Messages = {
     dragCityHint: "드래그해서 도시 이동",
     zoomIn: "확대",
     zoomOut: "축소",
+    mapLodDistrict: "광역 현황",
+    mapLodCluster: "업종 현황",
+    mapLodDetail: "고객 현황",
+    mapWaitingApplications: (count: number) => `${count}건 대기`,
+    mapActiveLoans: (count: number) => `${count}건 운용`,
+    mapLoanExposure: (amount: string) => `${amount} 노출`,
+    mapStress: (value: number) => `압박 +${Math.round(value)}`,
+    mapStable: "안정",
+    mapAlert: "지역 경보",
+    customerExposure: (district: string, segment: string) =>
+      `${district} · ${segment}`,
+    customerCorrelatedPressure: (value: number) =>
+      `현재 상관 압박: 위험 +${Math.round(value)}`,
+    customerNoCorrelatedPressure: "현재 상관 압박 없음",
     waiting: (days: number) => `D+${days} 대기`,
     repaymentIn: (days: number) => `D-${days}`,
     mapMarker: "시장 마커",
@@ -185,6 +199,12 @@ export const ko: Messages = {
     guidedProductEligibility: "가입 조건",
     guidedProductEligibilityValue: (income: string) => `직장인, ${income}+`,
     guidedProductTerms: "대출 조건",
+    productBatchPreview: "즉시 무제한 일괄 승인",
+    productBatchApproval: (count: number, amount: string) =>
+      `조건 일치 ${count}건 · 즉시 ${amount} 대출`,
+    productBatchCashLeft: (amount: string) => `승인 후 현금 ${amount}`,
+    productBatchConcentration: (district: string, amount: string) =>
+      `최대 지역 노출: ${district} · ${amount}`,
     guidedProductTermsValue: (
       minimum: string,
       maximum: string,

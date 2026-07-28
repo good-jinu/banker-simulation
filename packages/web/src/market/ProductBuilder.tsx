@@ -1,8 +1,10 @@
 import { Coins, SlidersHorizontal, X } from "lucide-react";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
+import { localize } from "../i18n/local-text.ts";
 import { money } from "./market-format.ts";
-import type { LoanProductRules } from "./market-world.ts";
+import { customerMatchesLoanRules } from "./market-products.ts";
+import type { LoanProductRules, MarketWorld } from "./market-world.ts";
 
 /**
  * The bank's standard lending policy. Fixed, not authored: this dialog is a
@@ -30,6 +32,7 @@ const STANDARD_LOAN_RULES: LoanProductRules = {
 type ProductBuilderProps = {
   locale: Locale;
   creationCost: number;
+  world: MarketWorld;
   onCreate: (rules: LoanProductRules) => void;
   onClose: () => void;
 };
@@ -37,11 +40,39 @@ type ProductBuilderProps = {
 export function ProductBuilder({
   locale,
   creationCost,
+  world,
   onCreate,
   onClose,
 }: ProductBuilderProps) {
   const m = messagesFor(locale).market;
   const rules = STANDARD_LOAN_RULES;
+  let availableCash = Math.max(0, world.cash - creationCost);
+  const batch = [];
+  for (const customer of world.customers) {
+    if (!customerMatchesLoanRules(customer, rules)) continue;
+    if (availableCash < customer.amount) continue;
+    batch.push(customer);
+    availableCash -= customer.amount;
+  }
+  const batchAmount = batch.reduce(
+    (total, customer) => total + customer.amount,
+    0,
+  );
+  const districtExposureTotals = new Map<string, number>();
+  for (const customer of batch) {
+    districtExposureTotals.set(
+      customer.districtId,
+      (districtExposureTotals.get(customer.districtId) ?? 0) + customer.amount,
+    );
+  }
+  const districtExposure = [...districtExposureTotals]
+    .map(([districtId, amount]) => ({ districtId, amount }))
+    .sort((first, second) => second.amount - first.amount)[0];
+  const dominantDistrict = districtExposure
+    ? world.config.map.districts.find(
+        (district) => district.id === districtExposure.districtId,
+      )
+    : null;
   return (
     <section
       className="product-builder guided-product-builder"
@@ -88,6 +119,19 @@ export function ProductBuilder({
           </dd>
         </div>
       </dl>
+      <div className="product-batch-preview">
+        <strong>{m.productBatchPreview}</strong>
+        <span>{m.productBatchApproval(batch.length, money(batchAmount))}</span>
+        <span>{m.productBatchCashLeft(money(availableCash))}</span>
+        {dominantDistrict && districtExposure && (
+          <em>
+            {m.productBatchConcentration(
+              localize(dominantDistrict.name, locale),
+              money(districtExposure.amount),
+            )}
+          </em>
+        )}
+      </div>
       <button className="create-product-button" onClick={() => onCreate(rules)}>
         <SlidersHorizontal /> {m.createLoanProduct(money(creationCost))}
       </button>

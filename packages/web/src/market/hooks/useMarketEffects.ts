@@ -133,6 +133,7 @@ export function useMarketEffects({
     const pointFor = (id: string) =>
       pointForId(
         id,
+        world.config.map,
         world.customers,
         world.depositors,
         world.funding,
@@ -159,6 +160,7 @@ export function useMarketEffects({
     world.funding,
     world.customers,
     world.depositors,
+    world.config.map,
     world.products,
   ]);
 

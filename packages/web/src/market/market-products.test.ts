@@ -5,6 +5,7 @@ import {
   buildLoanProduct,
   createProduct,
   customerMatchesLoanProduct,
+  customerMatchesLoanRules,
   setProductModule,
 } from "./market-products.ts";
 import { createWorld, type Depositor } from "./market-world.ts";
@@ -32,6 +33,7 @@ describe("market products", () => {
     const customer = world.customers[0]!;
     const product = buildLoanProduct([], "Loans", rules);
     expect(customerMatchesLoanProduct(customer, product)).toBe(true);
+    expect(customerMatchesLoanRules(customer, rules)).toBe(true);
     expect(
       customerMatchesLoanProduct(customer, {
         ...product,
@@ -97,8 +99,8 @@ describe("market products", () => {
       rate: 2,
       balance: 0,
       appears: 0,
-      x: 81,
-      y: 21,
+      locationId: "riverside-lot-2",
+      districtId: "riverside",
       avatar: "/assets/pop-art/avatars/auditor-neutral.png",
       status: "waiting",
     };
@@ -117,5 +119,20 @@ describe("market products", () => {
       world.cash - world.config.productCreationCost + deposits,
     );
     expect(next.depositors[0]?.status).toBe("accepted");
+  });
+
+  it("books automated originations into the customer's district sales", () => {
+    const world = createWorld(7, "portfolio-crossroads");
+    const customer = world.customers[0]!;
+    const product = buildLoanProduct(
+      [],
+      "Regional line",
+      rules,
+      world.config.map,
+    );
+    const next = createProduct(world, product);
+
+    expect(next.customers[0]?.status).toBe("accepted");
+    expect(next.districtSales[customer.districtId]).toBe(customer.amount);
   });
 });

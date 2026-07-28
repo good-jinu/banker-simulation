@@ -18,12 +18,33 @@ import { MarketResultReport } from "./MarketResultReport.tsx";
 import { MarketAssetsDialog } from "./MarketAssetsDialog.tsx";
 import type { MarketCampaignStage } from "./market-campaign.ts";
 import {
+  correlatedRiskPressure,
   type Customer,
   type Funding,
   type LoanProductRules,
   type MarketSegment,
   type MarketWorld,
 } from "./market-world.ts";
+
+function exposureSegmentLabel(
+  segment: MarketSegment | undefined,
+  locale: Locale,
+): string {
+  const m = messagesFor(locale).market;
+  switch (segment) {
+    case "small-business":
+      return m.segmentSmallBusiness;
+    case "delivery":
+      return m.segmentDelivery;
+    case "technology":
+      return m.segmentTechnology;
+    case "low-credit":
+      return m.segmentLowCredit;
+    case "workers":
+    default:
+      return m.segmentWorkers;
+  }
+}
 
 type MarketDialogsProps = {
   stage: MarketCampaignStage;
@@ -91,6 +112,11 @@ export function MarketDialogs({
           (depositor) => depositor.productId === selectedProduct.id,
         )
       : [];
+  const selectedDistrict = selected
+    ? world.config.map.districts.find(
+        (district) => district.id === selected.districtId,
+      )
+    : null;
 
   return (
     <>
@@ -162,6 +188,18 @@ export function MarketDialogs({
               )}
               mode="request"
               sceneLabel={m.loanRequestTitle}
+              {...(selectedDistrict
+                ? {
+                    exposureLabel: m.customerExposure(
+                      localize(selectedDistrict.name, locale),
+                      exposureSegmentLabel(selected.segment, locale),
+                    ),
+                  }
+                : {})}
+              correlatedPressure={Math.max(
+                0,
+                correlatedRiskPressure(world, selected),
+              )}
               onApprove={() => onApprove(selected)}
               onReject={() => onReject(selected)}
               {...(world.onboarding === "full" ? { onNeedFunding } : {})}
@@ -205,6 +243,7 @@ export function MarketDialogs({
             <ProductBuilder
               locale={locale}
               creationCost={world.config.productCreationCost}
+              world={world}
               onCreate={onCreateProduct}
               onClose={onCloseOverlay}
             />

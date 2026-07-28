@@ -94,6 +94,17 @@ export function MarketNewsDesk({
             <h3>{localize(article.title, locale)}</h3>
             <p>{localize(article.body, locale)}</p>
             <div className="market-news-tags">
+              {article.affectedDistrictIds?.map((districtId) => {
+                const district = world.config.map.districts.find(
+                  (candidate) => candidate.id === districtId,
+                );
+                return district ? (
+                  <span key={districtId}>
+                    <MapPin aria-hidden="true" />
+                    {localize(district.name, locale)}
+                  </span>
+                ) : null;
+              })}
               {article.affectedSegments.map((segment) => (
                 <span key={segment}>{segmentLabel(segment, locale)}</span>
               ))}

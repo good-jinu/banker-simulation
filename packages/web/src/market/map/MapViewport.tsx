@@ -1,47 +1,46 @@
 import { ZoomIn, ZoomOut } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CityBackground } from "../city/CityBackground.tsx";
-import type { CityPan } from "../city/city-scene.ts";
-
-const MIN_ZOOM = 0.8;
-const MAX_ZOOM = 1.4;
-const ZOOM_STEP = 0.2;
+import type { CityDistrictVisualState } from "../city/market-city-layout.ts";
+import type { MapProjection } from "./market-camera.ts";
+import type { MarketMapDefinition } from "./market-map.ts";
 
 export function MapViewport({
-  customerCount,
+  map,
+  seed,
+  districtStates,
   dragHint,
   hasDraggedMap,
   zoomInLabel,
   zoomOutLabel,
   onFirstDrag,
-  onPanChange,
-  onZoomChange,
+  onProjectionChange,
   showNavigation = true,
 }: {
-  customerCount: number;
+  map: MarketMapDefinition;
+  seed: number;
+  districtStates: readonly CityDistrictVisualState[];
   dragHint: string;
   hasDraggedMap: boolean;
   zoomInLabel: string;
   zoomOutLabel: string;
   onFirstDrag: () => void;
-  onPanChange: (pan: CityPan) => void;
-  onZoomChange: (zoom: number) => void;
+  onProjectionChange: (projection: MapProjection) => void;
   showNavigation?: boolean;
 }) {
-  const [zoom, setZoom] = useState(1);
-
-  useEffect(() => {
-    onZoomChange(zoom);
-  }, [onZoomChange, zoom]);
+  const [zoom, setZoom] = useState(map.camera.initialZoom);
+  const zoomStep = (map.camera.maxZoom - map.camera.minZoom) / 8;
 
   return (
     <>
       <CityBackground
-        customerCount={customerCount}
+        map={map}
+        seed={seed}
+        districtStates={districtStates}
         zoom={zoom}
         dragHint={dragHint}
         showDragHint={showNavigation && !hasDraggedMap}
-        onPanChange={onPanChange}
+        onProjectionChange={onProjectionChange}
         onFirstDrag={onFirstDrag}
         onZoomChange={setZoom}
       />
@@ -49,19 +48,23 @@ export function MapViewport({
         <div className="map-zoom-controls">
           <button
             onClick={() =>
-              setZoom((current) => Math.min(current + ZOOM_STEP, MAX_ZOOM))
+              setZoom((current) =>
+                Math.min(current + zoomStep, map.camera.maxZoom),
+              )
             }
             aria-label={zoomInLabel}
-            disabled={zoom >= MAX_ZOOM}
+            disabled={zoom >= map.camera.maxZoom}
           >
             <ZoomIn aria-hidden="true" />
           </button>
           <button
             onClick={() =>
-              setZoom((current) => Math.max(current - ZOOM_STEP, MIN_ZOOM))
+              setZoom((current) =>
+                Math.max(current - zoomStep, map.camera.minZoom),
+              )
             }
             aria-label={zoomOutLabel}
-            disabled={zoom <= MIN_ZOOM}
+            disabled={zoom <= map.camera.minZoom}
           >
             <ZoomOut aria-hidden="true" />
           </button>

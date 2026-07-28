@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useState,
   type Dispatch,
   type RefObject,
@@ -48,6 +49,28 @@ export function MarketDevTools({
   clockRef,
 }: MarketDevToolsProps) {
   const [status, setStatus] = useState<string | null>(null);
+  const [renderMetrics, setRenderMetrics] = useState({
+    domNodes: 0,
+    svgEdges: 0,
+    drawCalls: 0,
+  });
+  useEffect(() => {
+    function measure() {
+      const canvas = document.querySelector<HTMLCanvasElement>(
+        ".city-background canvas",
+      );
+      setRenderMetrics({
+        domNodes: document.querySelectorAll(
+          ".map-world-layer .map-node, .map-overview-layer article",
+        ).length,
+        svgEdges: document.querySelectorAll(".connection-layer line").length,
+        drawCalls: Number(canvas?.dataset.cityDrawCalls ?? 0),
+      });
+    }
+    measure();
+    const interval = window.setInterval(measure, 750);
+    return () => window.clearInterval(interval);
+  }, []);
   const createSnapshot = useCallback(
     (): MarketSessionSave => ({
       schemaVersion: 1,
@@ -113,6 +136,20 @@ export function MarketDevTools({
         <button onClick={() => void reset()}>Reset</button>
         <button onClick={exportSnapshot}>Export JSON</button>
       </div>
+      <small>
+        LOGICAL{" "}
+        {world.config.map.lots.length +
+          world.config.map.nodes.length +
+          world.config.map.districts.length}
+        {" · "}ACTIVE{" "}
+        {world.customers.length +
+          world.depositors.length +
+          world.products.length +
+          world.funding.length}
+        {" · "}DOM {renderMetrics.domNodes}
+        {" · "}SVG {renderMetrics.svgEdges}
+        {" · "}DRAWS {renderMetrics.drawCalls}/28
+      </small>
       {status && <small>{status}</small>}
     </aside>
   );

@@ -684,6 +684,35 @@
   line-height: 1.2;
 }
 
+.product-batch-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 12px 0 16px;
+  padding: 10px;
+  color: var(--ink);
+  border: 3px solid var(--ink);
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.product-batch-preview strong {
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.product-batch-preview span,
+.product-batch-preview em {
+  font-size: 9px;
+  font-style: normal;
+}
+
+.product-batch-preview em {
+  color: #8e170f;
+  font-weight: 950;
+}
+
 .product-cost {
   display: inline-flex;
   align-items: center;

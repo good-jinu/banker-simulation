@@ -1,5 +1,11 @@
 import type { LocalText } from "../i18n/local-text.ts";
 import {
+  allocateMarketLot,
+  occupiedMarketLocations,
+  type MarketLocationRef,
+} from "./map/market-map.ts";
+import type { MarketSegment } from "./market-segment.ts";
+import {
   marketStageByLevel,
   marketStageById,
   type MarketStageConfig,
@@ -21,9 +27,25 @@ import {
 } from "./market-trust.ts";
 import {
   publishMarketNews,
+  riskAdjustmentForDistrict,
   riskAdjustmentForSegment,
   type MarketNews,
 } from "./market-news.ts";
+import {
+  isRoundTransition,
+  roundForDay,
+  scaledRoundAmount,
+  scaledRoundTerm,
+  weightedRoundChoice,
+  type MarketRound,
+} from "./market-rounds.ts";
+import {
+  addMarketDefaultStress,
+  decayMarketStress,
+  emptyMarketStress,
+  marketRiskPressure,
+  type MarketStressState,
+} from "./market-stress.ts";
 import { defaultRisk, guaranteedDefaultRisk } from "./market-credit.ts";
 import type {
   DepositProduct,
@@ -42,6 +64,7 @@ import {
 import { advanceOnboarding, type OnboardingStep } from "./market-onboarding.ts";
 
 export type { OnboardingStep } from "./market-onboarding.ts";
+export type { MarketSegment } from "./market-segment.ts";
 export type {
   DepositProduct,
   LoanProduct,
@@ -66,8 +89,6 @@ export type DepositStatus = "waiting" | "accepted" | "withdrawn";
 /** A stage id string. Not a closed union — new stages don't need a type edit. */
 export type MarketLevel = string;
 /** Groups that the market can describe without exposing a credit-score formula. */
-export type MarketSegment =
-  "workers" | "small-business" | "delivery" | "technology" | "low-credit";
 export type CustomerExpression =
   "neutral" | "requesting" | "evaluating" | "worried" | "relieved" | "rejected";
 export type FailureReason = "cash" | "trust" | null;
@@ -82,7 +103,7 @@ export type CustomerEvidence = {
   collateral: LocalText;
 };
 
-export type Customer = {
+export type Customer = MarketLocationRef & {
   id: string;
   name: LocalText;
   job: LocalText;
@@ -99,8 +120,6 @@ export type Customer = {
    * Absent on scripted customers, who wait as long as the story needs them to.
    */
   expires?: number;
-  x: number;
-  y: number;
   avatar: string;
   avatarStates?: Partial<Record<CustomerExpression, string>>;
   evidence: CustomerEvidence;
@@ -116,7 +135,7 @@ export type Customer = {
 };
 
 /** A depositor is a first-class market participant, not free cash. */
-export type Depositor = {
+export type Depositor = MarketLocationRef & {
   id: string;
   name: LocalText;
   job: LocalText;
@@ -126,8 +145,6 @@ export type Depositor = {
   /** Principal the bank currently owes this customer. */
   balance: number;
   appears: number;
-  x: number;
-  y: number;
   avatar: string;
   status: DepositStatus;
   /** Deposits can enter the bank only through an active deposit product. */
@@ -141,14 +158,12 @@ export type WithdrawalEvent = {
   status: "scheduled" | "warned" | "settled";
 };
 
-export type Funding = {
+export type Funding = MarketLocationRef & {
   id: string;
   name: LocalText;
   amount: number;
   rate: number;
   dueDay: number;
-  x: number;
-  y: number;
   accepted: boolean;
   defaulted: boolean;
 };
@@ -244,6 +259,8 @@ export type MarketWorld = {
   funding: Funding[];
   loanCount: number;
   cumulativeLent: number;
+  /** Permanent loan originations by district, used to visualize local growth. */
+  districtSales: Record<string, number>;
   thirdLoanDay: number | null;
   missionCleared: boolean;
   /** The run is over and lost — out of cash, out of trust, or out of days. */
@@ -258,6 +275,10 @@ export type MarketWorld = {
   withdrawalEvent: WithdrawalEvent | null;
   /** Published market reporting, retained so a run can be reviewed after it ends. */
   news: MarketNews[];
+  /** Decaying pressure caused by defaults in related regions and industries. */
+  stress: MarketStressState;
+  /** Monotonic suffix for multiple deterministic arrivals on the same day. */
+  generationSequence: number;
   /** Non-decaying end-of-run accounting. */
   stats: MarketRunStats;
   /** Events produced by the most recent action only. */
@@ -338,27 +359,6 @@ const RANDOM_COLLATERAL: LocalText[] = [
   { en: "A guarantor from the workplace", ko: "직장의 보증인" },
   { en: "Nothing offered", ko: "제시한 담보 없음" },
 ];
-/**
- * Loan customers and savers share this pool, so it has to hold both caps at
- * once — `maxVisibleCustomers + maxVisibleDepositors` across every stage.
- * Otherwise the shorter queue silently starves whenever the map fills up, and a
- * stage's deposit cap becomes a number the simulation can never reach.
- * Kept clear of the product slots at (50, 26) and (50, 68) and the lender
- * positions at (9, 50), (50, 88) and (91, 50).
- */
-const CUSTOMER_POSITIONS = [
-  { x: 19, y: 21 },
-  { x: 81, y: 21 },
-  { x: 84, y: 76 },
-  { x: 18, y: 76 },
-  { x: 49, y: 14 },
-  { x: 67, y: 83 },
-  { x: 32, y: 83 },
-  { x: 30, y: 48 },
-  { x: 70, y: 48 },
-  { x: 66, y: 14 },
-];
-
 /** mulberry32 step: returns a value in [0, 1) and the next seed. */
 function nextRandom(seed: number): [value: number, nextSeed: number] {
   const nextSeed = (seed + 0x6d2b79f5) | 0;
@@ -413,6 +413,9 @@ export function createWorld(
     funding: config.fundingSeeds.map((lender) => ({ ...lender })),
     loanCount: 0,
     cumulativeLent: 0,
+    districtSales: Object.fromEntries(
+      config.map.districts.map((district) => [district.id, 0]),
+    ),
     thirdLoanDay: null,
     missionCleared: false,
     runFailed: false,
@@ -424,6 +427,8 @@ export function createWorld(
     fundingAnnounced: false,
     withdrawalEvent,
     news: [],
+    stress: emptyMarketStress(),
+    generationSequence: 0,
     stats: emptyMarketRunStats(),
     events: [],
   };
@@ -448,6 +453,17 @@ export function trustContext(world: MarketWorld): TrustContext {
 
 export function assessWorldTrust(world: MarketWorld): TrustAssessment {
   return assessTrust(world.reputation, trustContext(world));
+}
+
+export function correlatedRiskPressure(
+  world: MarketWorld,
+  customer: Pick<Customer, "districtId" | "segment">,
+): number {
+  return (
+    riskAdjustmentForSegment(world.news, customer.segment) +
+    riskAdjustmentForDistrict(world.news, customer.districtId) +
+    marketRiskPressure(world.stress, customer, world.config.stressRules)
+  );
 }
 
 export function avatarFor(
@@ -738,12 +754,34 @@ function advanceDay(world: MarketWorld): MarketWorld {
     type: "market-news",
     news,
   }));
+  const round = roundForDay(world.config.rounds, day);
+  if (isRoundTransition(world.config.rounds, world.day, day)) {
+    const roundNews: MarketNews = {
+      id: `round-${round.id}-${day}`,
+      threadId: `round-${round.id}`,
+      day,
+      publishedDay: day,
+      phase: "signal",
+      severity: round.briefing.severity,
+      title: round.briefing.title,
+      body: round.briefing.body,
+      action: round.briefing.action,
+      affectedSegments: Object.keys(round.segmentDemand) as MarketSegment[],
+      affectedDistrictIds: Object.keys(round.districtDemand),
+      riskAdjustment: 0,
+      read: false,
+    };
+    news = [...news, roundNews];
+    events.push({ type: "market-news", news: roundNews });
+  }
   let repayment = 0;
   const repaidCustomers: Customer[] = [];
   const stats = { ...world.stats };
   let withdrawalEvent = world.withdrawalEvent;
   let depositors = world.depositors;
   let onboarding = world.onboarding;
+  let stress = decayMarketStress(world.stress, day, world.config.stressRules);
+  let generationSequence = world.generationSequence;
   // The warning arms on the first day the bank actually holds savings, on or
   // after its scheduled day, and fixes the withdrawal to the notice period from
   // that moment. Savers arrive on the deposit product's own schedule, so a
@@ -786,6 +824,35 @@ function advanceDay(world: MarketWorld): MarketWorld {
   if (world.onboarding !== "full")
     reputation.activity = world.reputation.activity;
   let seed = world.seed;
+  const dueOutcomes = new Map<string, { defaulted: boolean; risk: number }>();
+  for (const customer of world.customers
+    .filter(
+      (candidate) =>
+        candidate.status === "accepted" && candidate.dueDay === day,
+    )
+    .sort((first, second) => first.id.localeCompare(second.id))) {
+    const marketAdjustment =
+      riskAdjustmentForSegment(news, customer.segment) +
+      riskAdjustmentForDistrict(news, customer.districtId) +
+      marketRiskPressure(stress, customer, world.config.stressRules);
+    const baseRisk =
+      customer.id === world.config.introCustomerId &&
+      world.onboarding === "first-repayment" &&
+      world.config.introCustomerGuaranteedRepayment
+        ? 0
+        : defaultRisk(customer, marketAdjustment);
+    const risk = customer.guaranteed
+      ? guaranteedDefaultRisk(baseRisk)
+      : baseRisk;
+    let roll = 100;
+    if (world.config.randomizeDefaultRisk) {
+      let random: number;
+      [random, seed] = nextRandom(seed);
+      roll = random * 100;
+    }
+    dueOutcomes.set(customer.id, { defaulted: roll < risk, risk });
+  }
+  const defaultedCustomers: Customer[] = [];
   let customers = world.customers.filter((customer) => {
     // An applicant nobody funded eventually goes elsewhere. Held back until the
     // full market opens so a tutorial customer can never walk out mid-lesson.
@@ -799,25 +866,8 @@ function advanceDay(world: MarketWorld): MarketWorld {
       return false;
     }
     if (customer.status === "accepted" && customer.dueDay === day) {
-      const baseRisk =
-        customer.id === world.config.introCustomerId &&
-        world.onboarding === "first-repayment" &&
-        world.config.introCustomerGuaranteedRepayment
-          ? 0
-          : defaultRisk(
-              customer,
-              riskAdjustmentForSegment(news, customer.segment),
-            );
-      const risk = customer.guaranteed
-        ? guaranteedDefaultRisk(baseRisk)
-        : baseRisk;
-      let roll = 100;
-      if (world.config.randomizeDefaultRisk) {
-        let random: number;
-        [random, seed] = nextRandom(seed);
-        roll = random * 100;
-      }
-      if (roll < risk) {
+      const outcome = dueOutcomes.get(customer.id);
+      if (outcome?.defaulted) {
         // Severity, not a flat penalty: the write-off hits realized profit and
         // open losses in proportion to the principal actually lost.
         reputation.defaulted += 1;
@@ -827,7 +877,8 @@ function advanceDay(world: MarketWorld): MarketWorld {
         if (customer.productId) reputation.productDefaulted += 1;
         stats.defaulted += 1;
         if (customer.productId) stats.automatedDefaulted += 1;
-        events.push({ type: "default", customer, risk });
+        events.push({ type: "default", customer, risk: outcome.risk });
+        defaultedCustomers.push(customer);
       } else {
         const amount = customer.amount * (1 + customer.rate / 100);
         repayment += amount;
@@ -837,6 +888,16 @@ function advanceDay(world: MarketWorld): MarketWorld {
     }
     return true;
   });
+  // Today's due contracts all used the same opening snapshot. Their contagion
+  // becomes visible only after every outcome for the day has been fixed.
+  for (const customer of defaultedCustomers) {
+    stress = addMarketDefaultStress(
+      stress,
+      day,
+      customer,
+      world.config.stressRules,
+    );
+  }
   let cash = world.cash;
   if (repayment > 0) {
     cash += repayment;
@@ -875,20 +936,18 @@ function advanceDay(world: MarketWorld): MarketWorld {
     )
   ) {
     onboarding = advanceOnboarding(onboarding, "intro-loan-repaid");
-    const occupied = new Set(
-      [...customers, ...depositors].map((person) => `${person.x},${person.y}`),
+    let secondCustomer: Customer | null;
+    [secondCustomer, seed] = generateApplicant(
+      day,
+      generationSequence,
+      customers,
+      depositors,
+      seed,
+      world.config,
+      round,
     );
-    const position = CUSTOMER_POSITIONS.find(
-      (candidate) => !occupied.has(`${candidate.x},${candidate.y}`),
-    );
-    if (position) {
-      let secondCustomer: Customer;
-      [secondCustomer, seed] = randomCustomer(
-        day,
-        position,
-        seed,
-        world.config,
-      );
+    if (secondCustomer) {
+      generationSequence += 1;
       customers.push(secondCustomer);
       events.push({ type: "loan-request", customer: secondCustomer });
     }
@@ -1025,27 +1084,25 @@ function advanceDay(world: MarketWorld): MarketWorld {
   const failureReason: FailureReason =
     trust <= TRUST_COLLAPSE ? "trust" : cash < 0 ? "cash" : null;
   if (runFailed) events.push({ type: "run-failed" });
-  if (
-    onboarding === "full" &&
-    day % world.config.spawnEveryDays === 0 &&
-    customers.length < world.config.maxVisibleCustomers
-  ) {
-    const occupied = new Set(
-      [...customers, ...depositors].map((person) => `${person.x},${person.y}`),
+  if (onboarding === "full" && day % round.spawnEveryDays === 0) {
+    const capacity = Math.max(
+      0,
+      world.config.maxVisibleCustomers - customers.length,
     );
-    const available = CUSTOMER_POSITIONS.filter(
-      (position) => !occupied.has(`${position.x},${position.y}`),
-    );
-    if (available.length > 0) {
-      let index: number;
-      [index, seed] = randomInt(seed, available.length);
-      let customer: Customer;
-      [customer, seed] = randomCustomer(
+    const applicantCount = Math.min(round.applicantsPerSpawn, capacity);
+    for (let index = 0; index < applicantCount; index += 1) {
+      let customer: Customer | null;
+      [customer, seed] = generateApplicant(
         day,
-        available[index]!,
+        generationSequence,
+        customers,
+        depositors,
         seed,
         world.config,
+        round,
       );
+      if (!customer) break;
+      generationSequence += 1;
       customers.push(customer);
       events.push({ type: "loan-request", customer });
     }
@@ -1059,22 +1116,18 @@ function advanceDay(world: MarketWorld): MarketWorld {
     depositors.filter((depositor) => depositor.status !== "withdrawn").length <
       world.config.maxVisibleDepositors
   ) {
-    const occupied = new Set(
-      [...customers, ...depositors].map((person) => `${person.x},${person.y}`),
+    let depositor: Depositor | null;
+    [depositor, seed] = generateDepositor(
+      day,
+      generationSequence,
+      customers,
+      depositors,
+      seed,
+      world.config,
+      round,
     );
-    const available = CUSTOMER_POSITIONS.filter(
-      (position) => !occupied.has(`${position.x},${position.y}`),
-    );
-    if (available.length > 0) {
-      let index: number;
-      [index, seed] = randomInt(seed, available.length);
-      let depositor: Depositor;
-      [depositor, seed] = randomDepositor(
-        day,
-        available[index]!,
-        seed,
-        world.config,
-      );
+    if (depositor) {
+      generationSequence += 1;
       depositors = [...depositors, depositor];
     }
   }
@@ -1092,6 +1145,8 @@ function advanceDay(world: MarketWorld): MarketWorld {
     trust,
     reputation,
     news,
+    stress,
+    generationSequence,
     stats,
     withdrawalEvent,
     events,
@@ -1117,9 +1172,12 @@ function withdrawalAmount(
 
 function randomCustomer(
   day: number,
-  position: { x: number; y: number },
+  sequence: number,
+  location: MarketLocationRef,
+  segment: MarketSegment,
   initialSeed: number,
   config: MarketStageConfig,
+  round: MarketRound,
 ): [Customer, number] {
   let seed = initialSeed;
   const roll = (bound: number): number => {
@@ -1128,32 +1186,37 @@ function randomCustomer(
     return value;
   };
   const generation = config.customerGeneration;
-  const term = generation.termMin + roll(generation.termRange);
-  const jobIndex = roll(RANDOM_JOBS.length);
+  const term = scaledRoundTerm(
+    generation.termMin + roll(generation.termRange),
+    round,
+  );
+  const jobIndexes = jobIndexesForSegment(segment);
+  const jobIndex = jobIndexes[roll(jobIndexes.length)]!;
   const collateralIndex = roll(RANDOM_COLLATERAL.length);
   const guarantor =
     collateralIndex === 2
       ? { en: "Workplace guarantor", ko: "직장 보증인" }
       : undefined;
   const customer: Customer = {
-    id: `customer-${day}`,
+    id: `customer-${day}-${sequence}`,
     name: RANDOM_NAMES[roll(RANDOM_NAMES.length)]!,
     job: RANDOM_JOBS[jobIndex]!,
     occupation: "employed",
-    segment: randomSegmentForJob(jobIndex),
+    segment,
     income:
       generation.incomeMin +
       roll(generation.incomeRange) * generation.incomeStep,
-    amount:
+    amount: scaledRoundAmount(
       generation.amountMin +
-      roll(generation.amountRange) * generation.amountStep,
+        roll(generation.amountRange) * generation.amountStep,
+      round,
+    ),
     rate: generation.rateMin + roll(generation.rateRange),
     term,
     dueDay: day + term,
     appears: day,
     expires: day + generation.patienceDays,
-    x: position.x,
-    y: position.y,
+    ...location,
     avatar: RANDOM_AVATARS[roll(RANDOM_AVATARS.length)]!,
     evidence: {
       purpose: RANDOM_PURPOSES[roll(RANDOM_PURPOSES.length)]!,
@@ -1169,7 +1232,8 @@ function randomCustomer(
 
 function randomDepositor(
   day: number,
-  position: { x: number; y: number },
+  sequence: number,
+  location: MarketLocationRef,
   initialSeed: number,
   config: MarketStageConfig,
 ): [Depositor, number] {
@@ -1181,7 +1245,7 @@ function randomDepositor(
   };
   const generation = config.depositGeneration;
   const depositor: Depositor = {
-    id: `depositor-${day}`,
+    id: `depositor-${day}-${sequence}`,
     name: RANDOM_NAMES[roll(RANDOM_NAMES.length)]!,
     job: RANDOM_JOBS[roll(RANDOM_JOBS.length)]!,
     amount:
@@ -1190,29 +1254,141 @@ function randomDepositor(
     rate: generation.rateMin + roll(generation.rateRange),
     balance: 0,
     appears: day,
-    x: position.x,
-    y: position.y,
+    ...location,
     avatar: RANDOM_AVATARS[roll(RANDOM_AVATARS.length)]!,
     status: "waiting",
   };
   return [depositor, seed];
 }
 
-function randomSegmentForJob(jobIndex: number): MarketSegment {
-  switch (jobIndex) {
-    case 0:
-      return "delivery";
-    case 1:
-    case 2:
-    case 4:
-    case 5:
-    case 7:
-      return "small-business";
-    case 6:
-      return "technology";
-    default:
-      return "workers";
+function jobIndexesForSegment(segment: MarketSegment): readonly number[] {
+  switch (segment) {
+    case "delivery":
+      return [0];
+    case "technology":
+      return [1, 6];
+    case "small-business":
+      return [1, 2, 5, 7];
+    case "low-credit":
+      return [0, 4, 5];
+    case "workers":
+      return [3, 4];
   }
+}
+
+function chooseDemandDistrict(
+  config: MarketStageConfig,
+  round: MarketRound,
+  initialSeed: number,
+): [districtId: string, nextSeed: number] {
+  let random: number;
+  let seed: number;
+  [random, seed] = nextRandom(initialSeed);
+  const weights = Object.fromEntries(
+    config.map.districts.map((district) => [
+      district.id,
+      round.districtDemand[district.id] ?? district.demandWeight,
+    ]),
+  );
+  return [
+    weightedRoundChoice(weights, round.concentration, random) ??
+      config.map.districts[0]!.id,
+    seed,
+  ];
+}
+
+function chooseDemandSegment(
+  config: MarketStageConfig,
+  round: MarketRound,
+  districtId: string,
+  initialSeed: number,
+): [segment: MarketSegment, nextSeed: number] {
+  let random: number;
+  let seed: number;
+  [random, seed] = nextRandom(initialSeed);
+  const district = config.map.districts.find(
+    (candidate) => candidate.id === districtId,
+  );
+  const candidates = district?.segments ?? ["workers"];
+  const weights = Object.fromEntries(
+    candidates.map((segment) => [segment, round.segmentDemand[segment] ?? 1]),
+  );
+  return [
+    (weightedRoundChoice(
+      weights,
+      round.concentration,
+      random,
+    ) as MarketSegment | null) ?? candidates[0]!,
+    seed,
+  ];
+}
+
+function generateApplicant(
+  day: number,
+  sequence: number,
+  customers: readonly Customer[],
+  depositors: readonly Depositor[],
+  initialSeed: number,
+  config: MarketStageConfig,
+  round: MarketRound,
+): [Customer | null, number] {
+  let districtId: string;
+  let seed: number;
+  [districtId, seed] = chooseDemandDistrict(config, round, initialSeed);
+  const allocation = allocateMarketLot(config.map, seed, {
+    occupiedLocationIds: occupiedMarketLocations([...customers, ...depositors]),
+    preferredDistrictIds: [districtId],
+  });
+  seed = allocation.nextSeed;
+  if (!allocation.lot) return [null, seed];
+  let segment: MarketSegment;
+  [segment, seed] = chooseDemandSegment(
+    config,
+    round,
+    allocation.lot.districtId,
+    seed,
+  );
+  return randomCustomer(
+    day,
+    sequence,
+    {
+      locationId: allocation.lot.id,
+      districtId: allocation.lot.districtId,
+    },
+    segment,
+    seed,
+    config,
+    round,
+  );
+}
+
+function generateDepositor(
+  day: number,
+  sequence: number,
+  customers: readonly Customer[],
+  depositors: readonly Depositor[],
+  initialSeed: number,
+  config: MarketStageConfig,
+  round: MarketRound,
+): [Depositor | null, number] {
+  let districtId: string;
+  let seed: number;
+  [districtId, seed] = chooseDemandDistrict(config, round, initialSeed);
+  const allocation = allocateMarketLot(config.map, seed, {
+    occupiedLocationIds: occupiedMarketLocations([...customers, ...depositors]),
+    preferredDistrictIds: [districtId],
+  });
+  if (!allocation.lot) return [null, allocation.nextSeed];
+  return randomDepositor(
+    day,
+    sequence,
+    {
+      locationId: allocation.lot.id,
+      districtId: allocation.lot.districtId,
+    },
+    allocation.nextSeed,
+    config,
+  );
 }
 
 /** The scripted intro loan to the first customer. */
@@ -1282,6 +1458,11 @@ function lend(
     reputation: recordActivity(world.reputation),
     loanCount,
     cumulativeLent: world.cumulativeLent + customer.amount,
+    districtSales: {
+      ...world.districtSales,
+      [customer.districtId]:
+        (world.districtSales[customer.districtId] ?? 0) + customer.amount,
+    },
     thirdLoanDay: loanCount === 3 ? world.day : world.thirdLoanDay,
     events: product ? [...world.events, ...events] : events,
   };

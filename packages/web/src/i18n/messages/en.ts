@@ -99,6 +99,20 @@ export const en = {
     dragCityHint: "DRAG TO MOVE THE CITY",
     zoomIn: "Zoom in",
     zoomOut: "Zoom out",
+    mapLodDistrict: "REGIONAL VIEW",
+    mapLodCluster: "INDUSTRY VIEW",
+    mapLodDetail: "CUSTOMER VIEW",
+    mapWaitingApplications: (count: number) => `${count} waiting`,
+    mapActiveLoans: (count: number) => `${count} active`,
+    mapLoanExposure: (amount: string) => `${amount} exposed`,
+    mapStress: (value: number) => `Pressure +${Math.round(value)}`,
+    mapStable: "Stable",
+    mapAlert: "Regional alert",
+    customerExposure: (district: string, segment: string) =>
+      `${district} · ${segment}`,
+    customerCorrelatedPressure: (value: number) =>
+      `Visible correlated pressure: +${Math.round(value)} risk`,
+    customerNoCorrelatedPressure: "No correlated pressure is active",
     waiting: (days: number) => `D+${days} waiting`,
     repaymentIn: (days: number) => `D-${days}`,
     mapMarker: "market marker",
@@ -186,6 +200,12 @@ export const en = {
     guidedProductEligibility: "Eligibility",
     guidedProductEligibilityValue: (income: string) => `Employed, ${income}+`,
     guidedProductTerms: "Loan terms",
+    productBatchPreview: "Immediate unlimited batch",
+    productBatchApproval: (count: number, amount: string) =>
+      `${count} matching applications · ${amount} lent immediately`,
+    productBatchCashLeft: (amount: string) => `${amount} cash remains`,
+    productBatchConcentration: (district: string, amount: string) =>
+      `Largest regional exposure: ${district} · ${amount}`,
     guidedProductTermsValue: (
       minimum: string,
       maximum: string,

@@ -54,8 +54,8 @@ describe("market flow coordinates", () => {
           id: "loan-product-1",
           kind: "loan",
           name: "Income Guard",
-          x: 50,
-          y: 26,
+          locationId: "riverside-market-loan-product",
+          districtId: "riverside",
           active: true,
           rules: {
             minimumIncome: 1_500,

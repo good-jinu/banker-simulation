@@ -1,4 +1,10 @@
 import { creditScoreFor } from "./market-credit.ts";
+import { RIVERSIDE_MAP } from "./map/market-map-data.ts";
+import {
+  mapNodeForKind,
+  type MarketMapDefinition,
+  type MarketMapNodeKind,
+} from "./map/market-map.ts";
 import type {
   DepositProduct,
   LoanProduct,
@@ -19,13 +25,14 @@ export function buildLoanProduct(
   products: readonly Product[],
   name: string,
   rules: LoanProductRules,
+  map: MarketMapDefinition = RIVERSIDE_MAP,
 ): LoanProduct {
+  const location = productLocation(map, "loan-product");
   return {
     id: `loan-product-${products.filter((product) => product.kind === "loan").length + 1}`,
     kind: "loan",
     name,
-    x: 50,
-    y: 26,
+    ...location,
     active: true,
     rules,
   };
@@ -35,16 +42,30 @@ export function buildDepositProduct(
   products: readonly Product[],
   name: string,
   interestRate = 2,
+  map: MarketMapDefinition = RIVERSIDE_MAP,
 ): DepositProduct {
+  const location = productLocation(map, "deposit-product");
   return {
     id: `deposit-product-${products.filter((product) => product.kind === "deposit").length + 1}`,
     kind: "deposit",
     name,
-    x: 50,
-    y: 68,
+    ...location,
     active: true,
     interestRate,
   };
+}
+
+function productLocation(
+  map: MarketMapDefinition,
+  kind: MarketMapNodeKind,
+): { locationId: string; districtId: string } {
+  const node = mapNodeForKind(map, kind);
+  if (!node) {
+    const fallback = map.nodes.find((candidate) => candidate.kind === "bank");
+    if (!fallback) throw new Error(`Map ${map.id} has no ${kind} location`);
+    return { locationId: fallback.id, districtId: fallback.districtId };
+  }
+  return { locationId: node.id, districtId: node.districtId };
 }
 
 export function customerMatchesLoanProduct(
@@ -65,6 +86,21 @@ export function customerMatchesLoanProduct(
     (customer.income >= rules.minimumIncome || hasGuarantor) &&
     occupationMatches &&
     scorePasses &&
+    customer.amount >= rules.minimumAmount &&
+    customer.amount <= rules.maximumAmount &&
+    customer.term >= rules.minimumTerm &&
+    customer.term <= rules.maximumTerm
+  );
+}
+
+export function customerMatchesLoanRules(
+  customer: Customer,
+  rules: LoanProductRules,
+): boolean {
+  return (
+    customer.status === "waiting" &&
+    customer.income >= rules.minimumIncome &&
+    (rules.occupation === "any" || customer.occupation === rules.occupation) &&
     customer.amount >= rules.minimumAmount &&
     customer.amount <= rules.maximumAmount &&
     customer.term >= rules.minimumTerm &&
@@ -130,6 +166,7 @@ function automateLoans(world: MarketWorld): MarketWorld {
   let currentCash = world.cash;
   let loanCount = world.loanCount;
   let cumulativeLent = world.cumulativeLent;
+  const districtSales = { ...world.districtSales };
   let thirdLoanDay = world.thirdLoanDay;
   let automatedIssued = 0;
   const nextCustomers = [...world.customers];
@@ -145,6 +182,8 @@ function automateLoans(world: MarketWorld): MarketWorld {
       loanCount += 1;
       currentCash -= customer.amount;
       cumulativeLent += customer.amount;
+      districtSales[customer.districtId] =
+        (districtSales[customer.districtId] ?? 0) + customer.amount;
       automatedIssued += 1;
       if (loanCount === 3 && thirdLoanDay === null) thirdLoanDay = world.day;
 
@@ -182,6 +221,7 @@ function automateLoans(world: MarketWorld): MarketWorld {
     reputation: recordActivity(world.reputation, automatedIssued),
     loanCount,
     cumulativeLent,
+    districtSales,
     thirdLoanDay,
     stats: {
       ...world.stats,

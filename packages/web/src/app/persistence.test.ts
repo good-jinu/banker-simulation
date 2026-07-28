@@ -201,8 +201,8 @@ describe("save migration", () => {
       rate: 2,
       balance: 0,
       appears: 0,
-      x: 81,
-      y: 21,
+      locationId: "riverside-lot-2",
+      districtId: "riverside",
       avatar: "/assets/pop-art/avatars/auditor-neutral.png",
       status: "waiting",
     };
@@ -307,5 +307,47 @@ describe("save migration", () => {
     // instead of the standing of a bank that has not traded in weeks.
     expect(migrated).not.toBeNull();
     expect(migrated?.world.reputation.activity).toBeGreaterThan(0);
+  });
+
+  it("places legacy coordinates and initializes new portfolio risk fields", () => {
+    const stage = marketCampaignStages[0]!;
+    const world = createWorld(7, stage.config);
+    const legacyCustomer = {
+      ...world.customers[0]!,
+      x: 19,
+      y: 21,
+    } as Record<string, unknown>;
+    delete legacyCustomer.locationId;
+    delete legacyCustomer.districtId;
+    const legacyWorld = { ...world, customers: [legacyCustomer] } as Record<
+      string,
+      unknown
+    >;
+    delete legacyWorld.stress;
+    delete legacyWorld.generationSequence;
+    delete legacyWorld.districtSales;
+
+    const migrated = migrateMarketSession(
+      {
+        schemaVersion: 1,
+        stageId: stage.id,
+        phase: "map",
+        world: legacyWorld,
+        savedAt: 1,
+      },
+      stage.id,
+      stage.config,
+    );
+
+    expect(migrated?.world.customers[0]).toMatchObject({
+      locationId: "riverside-lot-1",
+      districtId: "riverside",
+    });
+    expect(migrated?.world.stress).toEqual({
+      districts: {},
+      segments: {},
+    });
+    expect(migrated?.world.generationSequence).toBeGreaterThan(0);
+    expect(migrated?.world.districtSales.riverside).toBe(world.cumulativeLent);
   });
 });

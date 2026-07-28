@@ -15,27 +15,24 @@ export type LoanProductRules = {
   maximumTerm: number;
 };
 
-export type LoanProduct = {
+export type LoanProduct = MarketLocationRef & {
   id: string;
   kind: "loan";
   name: string;
-  x: number;
-  y: number;
   active: boolean;
   /** Installed policy modules affect only contracts originated by this line. */
   modules?: LoanProductModule[];
   rules: LoanProductRules;
 };
 
-export type DepositProduct = {
+export type DepositProduct = MarketLocationRef & {
   id: string;
   kind: "deposit";
   name: string;
-  x: number;
-  y: number;
   active: boolean;
   /** Annual interest promised to depositors who join this product. */
   interestRate: number;
 };
 
 export type Product = LoanProduct | DepositProduct;
+import type { MarketLocationRef } from "./map/market-map.ts";

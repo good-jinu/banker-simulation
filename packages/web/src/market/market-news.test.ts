@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  hasMarketAlertForDistrict,
   hasMarketAlertForSegment,
   publishMarketNews,
+  riskAdjustmentForDistrict,
   riskAdjustmentForSegment,
   unreadMarketNewsCount,
   type MarketNewsDefinition,
@@ -37,6 +39,18 @@ describe("market news", () => {
     expect(riskAdjustmentForSegment(news, "workers")).toBe(0);
     expect(hasMarketAlertForSegment(news, "delivery")).toBe(true);
     expect(hasMarketAlertForSegment(news, "workers")).toBe(false);
+  });
+
+  it("applies authored pressure to the named district only", () => {
+    const regional = {
+      ...deliveryWarning,
+      affectedDistrictIds: ["freight-basin"],
+    };
+    const { news } = publishMarketNews([], [regional], 4);
+
+    expect(riskAdjustmentForDistrict(news, "freight-basin")).toBe(12);
+    expect(hasMarketAlertForDistrict(news, "freight-basin")).toBe(true);
+    expect(riskAdjustmentForDistrict(news, "old-market")).toBe(0);
   });
 
   it("lets a recovery article release a line from the earlier alert", () => {

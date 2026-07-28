@@ -5,6 +5,11 @@ import type {
   MarketEvent,
   Product,
 } from "./market-world.ts";
+import {
+  mapNodeForKind,
+  marketPoint,
+  type MarketMapDefinition,
+} from "./map/market-map.ts";
 
 export type MapPoint = { x: number; y: number };
 export type FlowKind =
@@ -49,18 +54,24 @@ export type FlowLabels = {
 
 export function pointForId(
   id: string,
+  map: MarketMapDefinition,
   customers: Customer[],
   depositors: Depositor[],
   funding: Funding[],
   products: Product[],
 ): MapPoint {
-  if (id === "banker") return { x: 50, y: 49 };
-  return (
+  if (id === "banker") {
+    const bank = mapNodeForKind(map, "bank");
+    return bank?.point ?? map.camera.initialCenter;
+  }
+  const entity =
     customers.find((customer) => customer.id === id) ??
     depositors.find((depositor) => depositor.id === id) ??
     funding.find((lender) => lender.id === id) ??
-    products.find((product) => product.id === id) ?? { x: 50, y: 50 }
-  );
+    products.find((product) => product.id === id);
+  return entity
+    ? marketPoint(map, entity.locationId)
+    : map.camera.initialCenter;
 }
 
 export function flowForEvent(
@@ -68,11 +79,12 @@ export function flowForEvent(
   pointFor: (id: string) => MapPoint,
   labels: FlowLabels,
 ): Omit<FlowAnimation, "id"> | null {
-  const customerPoint = (customer: Customer): MapPoint => customer;
+  const customerPoint = (customer: Customer): MapPoint => pointFor(customer.id);
   const productCustomerPoint = (customer: Customer): MapPoint =>
-    customer.productId ? pointFor(customer.productId) : customer;
-  const depositorPoint = (depositor: Depositor): MapPoint => depositor;
-  const lenderPoint = (lender: Funding): MapPoint => lender;
+    customer.productId ? pointFor(customer.productId) : pointFor(customer.id);
+  const depositorPoint = (depositor: Depositor): MapPoint =>
+    pointFor(depositor.id);
+  const lenderPoint = (lender: Funding): MapPoint => pointFor(lender.id);
   switch (event.type) {
     case "transfer": {
       const fundingIn = event.to === "banker";

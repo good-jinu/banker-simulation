@@ -1,4 +1,12 @@
 import type { LocalText } from "../i18n/local-text.ts";
+import {
+  METRO_REGION_MAP,
+  NORTH_YARD_MAP,
+  RIVERSIDE_MAP,
+} from "./map/market-map-data.ts";
+import type { MarketMapDefinition } from "./map/market-map.ts";
+import type { MarketRound } from "./market-rounds.ts";
+import type { MarketStressRules } from "./market-stress.ts";
 import type {
   Customer,
   Depositor,
@@ -86,6 +94,12 @@ export type MarketStageConfig = {
   introApprovesAutomatically: boolean;
   randomizeDefaultRisk: boolean;
   fundingRepaymentsEnabled: boolean;
+  /** One coordinate source shared by simulation placement, DOM, and Three.js. */
+  map: MarketMapDefinition;
+  /** Authored demand phases. The latest `startsDay` at a date is active. */
+  rounds: readonly MarketRound[];
+  /** Bounded, decaying contagion created by defaults in shared exposures. */
+  stressRules: MarketStressRules;
   /** Campaign-authored market reporting and its hidden segment pressure. */
   newsSchedule: readonly MarketNewsDefinition[];
   customerSeeds: readonly Customer[];
@@ -107,6 +121,45 @@ export type MarketCampaignStage = {
   config: MarketStageConfig;
 };
 
+const NO_CORRELATION_STRESS: MarketStressRules = {
+  districtIncrease: 0,
+  segmentIncrease: 0,
+  decayPerDay: 0,
+  maxPerExposure: 0,
+  maxRiskAdjustment: 0,
+};
+
+function steadyRound(
+  districtId: string,
+  spawnEveryDays: number,
+): readonly MarketRound[] {
+  return [
+    {
+      id: "steady-market",
+      startsDay: 0,
+      spawnEveryDays,
+      applicantsPerSpawn: 1,
+      amountMultiplier: 1,
+      termMultiplier: 1,
+      concentration: 1,
+      districtDemand: { [districtId]: 1 },
+      segmentDemand: {},
+      briefing: {
+        severity: "opportunity",
+        title: { en: "The market is open", ko: "시장이 열렸습니다" },
+        body: {
+          en: "Demand is moving at its usual pace.",
+          ko: "수요가 평소 속도로 움직이고 있습니다.",
+        },
+        action: {
+          en: "Keep listening to each applicant.",
+          ko: "각 신청자의 이야기를 계속 들어보세요.",
+        },
+      },
+    },
+  ];
+}
+
 const firstYieldConfig: MarketStageConfig = {
   level: "first-yield",
   onboarding: "guided",
@@ -127,6 +180,9 @@ const firstYieldConfig: MarketStageConfig = {
   // deposit choices can be learned without credit-loss pressure.
   randomizeDefaultRisk: false,
   fundingRepaymentsEnabled: true,
+  map: RIVERSIDE_MAP,
+  rounds: steadyRound("riverside", 3),
+  stressRules: NO_CORRELATION_STRESS,
   newsSchedule: [
     {
       id: "riverside-orders-signal",
@@ -184,8 +240,8 @@ const firstYieldConfig: MarketStageConfig = {
       term: 12,
       dueDay: 12,
       appears: 0,
-      x: 19,
-      y: 21,
+      locationId: "riverside-lot-1",
+      districtId: "riverside",
       avatar: "/assets/pop-art/avatars/mina-request.png",
       avatarStates: {
         neutral: "/assets/pop-art/avatars/mina-neutral.png",
@@ -224,8 +280,8 @@ const firstYieldConfig: MarketStageConfig = {
       amount: 500,
       rate: 5,
       dueDay: 30,
-      x: 9,
-      y: 50,
+      locationId: "riverside-market-funding-west",
+      districtId: "riverside",
       accepted: false,
       defaulted: false,
     },
@@ -235,8 +291,8 @@ const firstYieldConfig: MarketStageConfig = {
       amount: 800,
       rate: 8,
       dueDay: 35,
-      x: 50,
-      y: 88,
+      locationId: "riverside-market-funding-south",
+      districtId: "riverside",
       accepted: false,
       defaulted: false,
     },
@@ -246,8 +302,8 @@ const firstYieldConfig: MarketStageConfig = {
       amount: 1_200,
       rate: 12,
       dueDay: 40,
-      x: 91,
-      y: 50,
+      locationId: "riverside-market-funding-east",
+      districtId: "riverside",
       accepted: false,
       defaulted: false,
     },
@@ -325,6 +381,9 @@ const creditUnderPressureConfig: MarketStageConfig = {
   introApprovesAutomatically: false,
   randomizeDefaultRisk: true,
   fundingRepaymentsEnabled: true,
+  map: NORTH_YARD_MAP,
+  rounds: steadyRound("north-yard", 3),
+  stressRules: NO_CORRELATION_STRESS,
   newsSchedule: [
     {
       id: "yard-gigs-signal",
@@ -403,8 +462,8 @@ const creditUnderPressureConfig: MarketStageConfig = {
       term: 4,
       dueDay: 4,
       appears: 0,
-      x: 19,
-      y: 21,
+      locationId: "north-yard-lot-1",
+      districtId: "north-yard",
       avatar: "/assets/pop-art/avatars/jun-evaluating.png",
       avatarStates: {
         neutral: "/assets/pop-art/avatars/jun-neutral.png",
@@ -446,8 +505,8 @@ const creditUnderPressureConfig: MarketStageConfig = {
       amount: 600,
       rate: 6,
       dueDay: 12,
-      x: 9,
-      y: 50,
+      locationId: "north-yard-market-funding-west",
+      districtId: "north-yard",
       accepted: false,
       defaulted: false,
     },
@@ -457,8 +516,8 @@ const creditUnderPressureConfig: MarketStageConfig = {
       amount: 900,
       rate: 9,
       dueDay: 16,
-      x: 50,
-      y: 88,
+      locationId: "north-yard-market-funding-south",
+      districtId: "north-yard",
       accepted: false,
       defaulted: false,
     },
@@ -468,8 +527,8 @@ const creditUnderPressureConfig: MarketStageConfig = {
       amount: 1_200,
       rate: 13,
       dueDay: 20,
-      x: 91,
-      y: 50,
+      locationId: "north-yard-market-funding-east",
+      districtId: "north-yard",
       accepted: false,
       defaulted: false,
     },
@@ -516,6 +575,376 @@ const creditUnderPressureConfig: MarketStageConfig = {
   },
 };
 
+const portfolioCrossroadsConfig: MarketStageConfig = {
+  level: "portfolio-crossroads",
+  onboarding: "full",
+  introCustomerGuaranteedRepayment: false,
+  startingCash: 4_200,
+  goals: {
+    trustTarget: 100,
+  },
+  maxVisibleCustomers: 60,
+  spawnEveryDays: 2,
+  maxVisibleDepositors: 18,
+  depositSpawnEveryDays: 3,
+  fundingUnlockDelayDays: 2,
+  productCreationCost: 150,
+  introCustomerId: "hana",
+  introApprovesAutomatically: false,
+  randomizeDefaultRisk: true,
+  fundingRepaymentsEnabled: true,
+  map: METRO_REGION_MAP,
+  rounds: [
+    {
+      id: "district-opening",
+      startsDay: 0,
+      spawnEveryDays: 2,
+      applicantsPerSpawn: 2,
+      amountMultiplier: 1,
+      termMultiplier: 1,
+      concentration: 1,
+      districtDemand: {
+        "old-market": 1.2,
+        "tech-quarter": 1,
+        "freight-basin": 0.9,
+        "cedar-homes": 1.15,
+        "civic-heights": 0.85,
+        "south-works": 1,
+      },
+      segmentDemand: {
+        workers: 1.1,
+        "small-business": 1.2,
+        delivery: 0.9,
+        technology: 0.9,
+        "low-credit": 0.8,
+      },
+      briefing: {
+        severity: "opportunity",
+        title: {
+          en: "Six districts enter the market",
+          ko: "여섯 지역이 시장에 들어옵니다",
+        },
+        body: {
+          en: "Demand is broad and manageable, but every district carries a different exposure.",
+          ko: "수요는 넓고 감당할 만하지만 각 지역이 서로 다른 노출을 안고 있습니다.",
+        },
+        action: {
+          en: "Build a diversified opening book.",
+          ko: "분산된 초기 포트폴리오를 만드세요.",
+        },
+      },
+    },
+    {
+      id: "regional-expansion",
+      startsDay: 12,
+      spawnEveryDays: 1,
+      applicantsPerSpawn: 3,
+      amountMultiplier: 1.3,
+      termMultiplier: 1.1,
+      concentration: 1.55,
+      districtDemand: {
+        "old-market": 1,
+        "tech-quarter": 1.8,
+        "freight-basin": 1.5,
+        "cedar-homes": 0.9,
+        "civic-heights": 0.8,
+        "south-works": 1.2,
+      },
+      segmentDemand: {
+        "small-business": 1.25,
+        delivery: 1.5,
+        technology: 1.8,
+      },
+      briefing: {
+        severity: "watch",
+        title: {
+          en: "Regional expansion accelerates",
+          ko: "지역 확장이 빨라집니다",
+        },
+        body: {
+          en: "Technology and freight applications are arriving in larger batches and for larger amounts.",
+          ko: "기술업과 화물업 신청이 더 큰 금액과 묶음으로 들어오고 있습니다.",
+        },
+        action: {
+          en: "Compare new demand with the exposure already on your book.",
+          ko: "새 수요를 이미 보유한 노출과 비교하세요.",
+        },
+      },
+    },
+    {
+      id: "concentration-cycle",
+      startsDay: 26,
+      spawnEveryDays: 1,
+      applicantsPerSpawn: 5,
+      amountMultiplier: 1.65,
+      termMultiplier: 1.2,
+      concentration: 2.4,
+      districtDemand: {
+        "old-market": 0.7,
+        "tech-quarter": 2.6,
+        "freight-basin": 2.2,
+        "cedar-homes": 0.7,
+        "civic-heights": 0.6,
+        "south-works": 1.8,
+      },
+      segmentDemand: {
+        delivery: 2.2,
+        technology: 2.7,
+        "low-credit": 1.5,
+      },
+      briefing: {
+        severity: "alert",
+        title: {
+          en: "Growth is becoming concentrated",
+          ko: "성장이 집중되기 시작합니다",
+        },
+        body: {
+          en: "The busiest districts now dominate the queue. A default there can pressure many related contracts.",
+          ko: "가장 바쁜 지역이 대기열을 지배하고 있습니다. 그곳의 부도는 여러 관련 계약을 압박할 수 있습니다.",
+        },
+        action: {
+          en: "Choose whether the yield is worth the correlated risk.",
+          ko: "수익이 상관 리스크를 감수할 가치가 있는지 판단하세요.",
+        },
+      },
+    },
+  ],
+  stressRules: {
+    districtIncrease: 5,
+    segmentIncrease: 7,
+    decayPerDay: 1.5,
+    maxPerExposure: 18,
+    maxRiskAdjustment: 24,
+  },
+  newsSchedule: [
+    {
+      id: "freight-delays-warning",
+      threadId: "freight-delays",
+      day: 7,
+      phase: "warning",
+      severity: "alert",
+      title: {
+        en: "Freight Basin deliveries are backing up",
+        ko: "화물 분지 배송이 밀리고 있습니다",
+      },
+      body: {
+        en: "Warehouse queues are squeezing delivery and small-business cash flow.",
+        ko: "창고 대기열이 배달업과 자영업의 현금흐름을 압박하고 있습니다.",
+      },
+      action: {
+        en: "Review Freight Basin and delivery exposure before lending again.",
+        ko: "추가 대출 전 화물 분지와 배달업 노출을 확인하세요.",
+      },
+      affectedSegments: ["delivery", "small-business"],
+      affectedDistrictIds: ["freight-basin"],
+      riskAdjustment: 8,
+    },
+    {
+      id: "freight-delays-recovery",
+      threadId: "freight-delays",
+      day: 18,
+      phase: "recovery",
+      severity: "opportunity",
+      title: {
+        en: "Freight queues are clearing",
+        ko: "화물 대기열이 해소되고 있습니다",
+      },
+      body: {
+        en: "Deliveries are moving again, easing the immediate regional pressure.",
+        ko: "배송이 다시 움직이면서 지역의 즉각적인 압박이 줄고 있습니다.",
+      },
+      action: {
+        en: "Reopen exposure gradually rather than chasing the rebound.",
+        ko: "반등을 좇기보다 노출을 점진적으로 다시 여세요.",
+      },
+      affectedSegments: ["delivery", "small-business"],
+      affectedDistrictIds: ["freight-basin"],
+      riskAdjustment: -8,
+    },
+    {
+      id: "tech-funding-warning",
+      threadId: "tech-funding",
+      day: 23,
+      phase: "warning",
+      severity: "alert",
+      title: {
+        en: "Tech Quarter funding rounds are stalling",
+        ko: "테크 쿼터 투자 라운드가 멈추고 있습니다",
+      },
+      body: {
+        en: "Startups are stretching payroll while investors delay commitments.",
+        ko: "투자자들의 약정이 지연되면서 스타트업이 급여 자금을 늘리고 있습니다.",
+      },
+      action: {
+        en: "Watch technology concentration and short-reserve borrowers.",
+        ko: "기술업 집중도와 준비금이 적은 차입자를 주시하세요.",
+      },
+      affectedSegments: ["technology"],
+      affectedDistrictIds: ["tech-quarter"],
+      riskAdjustment: 10,
+    },
+    {
+      id: "tech-funding-recovery",
+      threadId: "tech-funding",
+      day: 36,
+      phase: "recovery",
+      severity: "watch",
+      title: {
+        en: "Selective funding returns to Tech Quarter",
+        ko: "테크 쿼터에 선별적 투자가 돌아옵니다",
+      },
+      body: {
+        en: "Stronger firms are closing rounds, though weaker borrowers remain exposed.",
+        ko: "우량 기업은 투자를 마무리하고 있지만 취약 차입자의 노출은 남아 있습니다.",
+      },
+      action: {
+        en: "Use applicant evidence instead of treating the whole district alike.",
+        ko: "지역 전체를 같게 보지 말고 신청자의 증거를 활용하세요.",
+      },
+      affectedSegments: ["technology"],
+      affectedDistrictIds: ["tech-quarter"],
+      riskAdjustment: -10,
+    },
+  ],
+  customerSeeds: [
+    {
+      id: "hana",
+      name: { en: "Hana Lee", ko: "하나 이" },
+      job: { en: "Old Market restaurant owner", ko: "구시장 식당 운영자" },
+      occupation: "self-employed",
+      segment: "small-business",
+      income: 3_600,
+      amount: 620,
+      rate: 12,
+      term: 8,
+      dueDay: 8,
+      appears: 0,
+      locationId: "old-market-lot-3-4",
+      districtId: "old-market",
+      avatar: "/assets/pop-art/avatars/mina-request.png",
+      avatarStates: {
+        neutral: "/assets/pop-art/avatars/mina-neutral.png",
+        requesting: "/assets/pop-art/avatars/mina-request.png",
+        evaluating: "/assets/pop-art/avatars/mina-neutral.png",
+        worried: "/assets/pop-art/avatars/mina-request.png",
+        relieved: "/assets/pop-art/avatars/mina-neutral.png",
+        rejected: "/assets/pop-art/avatars/mina-request.png",
+      },
+      evidence: {
+        purpose: {
+          en: "Replace two failing kitchen refrigerators",
+          ko: "고장 난 주방 냉장고 두 대 교체",
+        },
+        employment: {
+          en: "Seven years operating the same restaurant",
+          ko: "같은 식당을 7년째 운영 중",
+        },
+        debt: {
+          en: "One equipment lease with four payments remaining",
+          ko: "4회 납부가 남은 장비 리스 한 건",
+        },
+        collateral: {
+          en: "Restaurant equipment and a signed catering contract",
+          ko: "식당 장비와 서명된 케이터링 계약",
+        },
+      },
+      status: "waiting",
+    },
+  ],
+  depositSeeds: [],
+  fundingSeeds: [
+    {
+      id: "regional-reserve",
+      name: { en: "Regional Reserve", ko: "지역 준비은행" },
+      amount: 1_800,
+      rate: 6,
+      dueDay: 18,
+      locationId: "metro-funding-west",
+      districtId: "cedar-homes",
+      accepted: false,
+      defaulted: false,
+    },
+    {
+      id: "city-clearing",
+      name: { en: "City Clearing Bank", ko: "도시 결제은행" },
+      amount: 2_600,
+      rate: 9,
+      dueDay: 24,
+      locationId: "metro-funding-south",
+      districtId: "civic-heights",
+      accepted: false,
+      defaulted: false,
+    },
+    {
+      id: "growth-capital",
+      name: { en: "Growth Capital", ko: "성장 캐피탈" },
+      amount: 3_600,
+      rate: 13,
+      dueDay: 30,
+      locationId: "metro-funding-east",
+      districtId: "south-works",
+      accepted: false,
+      defaulted: false,
+    },
+  ],
+  customerGeneration: {
+    termMin: 6,
+    termRange: 9,
+    patienceDays: 6,
+    incomeMin: 1_600,
+    incomeStep: 250,
+    incomeRange: 20,
+    amountMin: 240,
+    amountStep: 80,
+    amountRange: 18,
+    rateMin: 9,
+    rateRange: 12,
+  },
+  depositGeneration: {
+    amountMin: 300,
+    amountStep: 100,
+    amountRange: 17,
+    rateMin: 1,
+    rateRange: 4,
+  },
+  withdrawalPressure: {
+    earliestDay: 24,
+    dayRange: 8,
+    warningDays: 3,
+    withdrawalShare: 0.6,
+    title: {
+      en: "Households are moving savings between districts",
+      ko: "가계가 지역 간에 예금을 옮기고 있습니다",
+    },
+    body: {
+      en: "Regional risk reports have depositors preparing a coordinated withdrawal.",
+      ko: "지역 위험 보도로 예금자들이 동시 인출을 준비하고 있습니다.",
+    },
+    action: {
+      en: "Keep liquid cash behind the growing loan book.",
+      ko: "성장하는 대출 자산 뒤에 유동 현금을 남겨두세요.",
+    },
+  },
+  copy: {
+    districtLabel: {
+      en: "METRO REGIONAL MARKET",
+      ko: "메트로 광역 시장",
+    },
+    missionCompleteLabel: {
+      en: "A diversified regional bank earned the market's complete trust.",
+      ko: "분산된 지역 은행이 시장의 완전한 신뢰를 얻었습니다.",
+    },
+    learnCustomerHint: {
+      en: "Judge the applicant and the exposure already concentrated around them.",
+      ko: "신청자와 그 주변에 이미 집중된 노출을 함께 판단하세요.",
+    },
+    introBody: {
+      en: "Your bank now serves six connected districts. Demand will accelerate and defaults can pressure borrowers in the same industry or neighborhood. Zoom from the regional picture into individual conversations, and diversify before growth chooses your portfolio for you.",
+      ko: "이제 은행은 서로 연결된 여섯 지역을 담당합니다. 수요는 빨라지고 부도는 같은 업종이나 지역의 차입자를 압박할 수 있습니다. 광역 현황에서 개별 대화까지 확대해 살펴보고, 성장이 포트폴리오를 대신 결정하기 전에 분산하세요.",
+    },
+  },
+};
+
 export const marketCampaignStages: readonly MarketCampaignStage[] = [
   {
     id: "first-yield",
@@ -540,6 +969,18 @@ export const marketCampaignStages: readonly MarketCampaignStage[] = [
     rewardId: "level-two-complete",
     image: "/assets/pop-art/backgrounds/underwriting-room.png",
     config: creditUnderPressureConfig,
+  },
+  {
+    id: "portfolio-crossroads",
+    number: 3,
+    title: { en: "Portfolio Crossroads", ko: "포트폴리오의 갈림길" },
+    subtitle: {
+      en: "Diversify a growing regional loan book",
+      ko: "성장하는 지역 포트폴리오를 분산하세요",
+    },
+    rewardId: "level-three-complete",
+    image: "/assets/pop-art/backgrounds/market-map.png",
+    config: portfolioCrossroadsConfig,
   },
 ];
 

@@ -1,27 +1,33 @@
 import * as THREE from "three";
-import { buildCity } from "./city-layout.ts";
-import { INK, PAPER, setUnitProgress } from "./city-materials.ts";
-
-const VIEW_SIZE = 102;
-const COLOR_DURATION_SECONDS = 0.55;
-
-export type CityPan = {
-  x: number;
-  y: number;
-};
+import {
+  CAMERA_DIRECTION,
+  clampMarketCamera,
+  panMarketCamera,
+  type MapProjection,
+  type MarketCamera,
+} from "../map/market-camera.ts";
+import type { MarketMapDefinition } from "../map/market-map.ts";
+import { INK, PAPER } from "./city-materials.ts";
+import {
+  buildMarketCity,
+  type CityDistrictVisualState,
+} from "./market-city-layout.ts";
 
 export type CityScene = {
   dispose: () => void;
   resize: (width: number, height: number) => void;
   setZoom: (zoom: number) => void;
-  setCustomerCount: (count: number) => void;
+  setDistrictStates: (states: readonly CityDistrictVisualState[]) => void;
 };
 
-/** Owns rendering, synchronized map panning, progression, and disposal. */
+/** Owns the Three.js renderer while reporting the exact shared map projection. */
 export function createCityScene(
   canvas: HTMLCanvasElement,
-  initialCustomerCount: number,
-  onPanChange: (pan: CityPan) => void,
+  map: MarketMapDefinition,
+  seed: number,
+  initialZoom: number,
+  initialDistrictStates: readonly CityDistrictVisualState[],
+  onProjectionChange: (projection: MapProjection) => void,
   onFirstDrag: () => void,
   onZoomChange: (zoom: number) => void,
 ): CityScene {
@@ -37,12 +43,9 @@ export function createCityScene(
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(PAPER, 480, 650);
-  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 650);
-  camera.position.set(92, 112, 92);
-  camera.lookAt(0, 0, 0);
-  camera.updateMatrixWorld(true);
-
+  scene.fog = new THREE.Fog(PAPER, 150, 260);
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 500);
+  camera.up.set(0, 1, 0);
   const gradient = new THREE.DataTexture(
     new Uint8Array([78, 150, 235]),
     3,
@@ -52,78 +55,86 @@ export function createCityScene(
   gradient.minFilter = THREE.NearestFilter;
   gradient.magFilter = THREE.NearestFilter;
   gradient.needsUpdate = true;
-
   const ink = new THREE.LineBasicMaterial({ color: INK });
-  scene.add(new THREE.HemisphereLight(0xfff6dc, 0xa9a79f, 2.2));
-  const sun = new THREE.DirectionalLight(0xfff8e6, 3.4);
-  sun.position.set(58, 110, 45);
+  scene.add(new THREE.HemisphereLight(0xfff6dc, 0xa9a79f, 2.1));
+  const sun = new THREE.DirectionalLight(0xfff8e6, 3.1);
+  sun.position.set(55, 105, 48);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
-  sun.shadow.camera.left = -250;
-  sun.shadow.camera.right = 250;
-  sun.shadow.camera.top = 250;
-  sun.shadow.camera.bottom = -250;
+  sun.shadow.camera.left = -100;
+  sun.shadow.camera.right = 100;
+  sun.shadow.camera.top = 100;
+  sun.shadow.camera.bottom = -100;
   scene.add(sun);
+  const city = buildMarketCity(
+    scene,
+    map,
+    seed,
+    initialDistrictStates,
+    gradient,
+    ink,
+  );
 
-  const { city, units } = buildCity(scene, gradient, ink);
-  let requestedCount = Math.min(
-    Math.max(initialCustomerCount, 0),
-    units.length,
-  );
-  let completedCount = requestedCount;
-  let activeProgress = 0;
-  for (let index = 0; index < units.length; index += 1) {
-    setUnitProgress(units[index]!, index < completedCount ? 1 : 0);
-  }
-
-  const cameraUp = new THREE.Vector3().setFromMatrixColumn(
-    camera.matrixWorld,
-    1,
-  );
-  const screenRight = new THREE.Vector3().setFromMatrixColumn(
-    camera.matrixWorld,
-    0,
-  );
-  screenRight.y = 0;
-  screenRight.normalize();
-  const screenDown = new THREE.Vector3(-cameraUp.x, 0, -cameraUp.z).normalize();
-  const screenDownProjection = Math.abs(screenDown.dot(cameraUp));
-  let targetScreenX = 0;
-  let targetScreenY = 0;
-  let displayedScreenX = 0;
-  let displayedScreenY = 0;
-  let panLimitX = 120;
-  let panLimitY = 80;
   let viewportWidth = 1;
   let viewportHeight = 1;
-  let zoom = 1;
-  let reportedScreenX = Number.NaN;
-  let reportedScreenY = Number.NaN;
+  let targetCamera: MarketCamera = clampMarketCamera(map, {
+    center: { ...map.camera.initialCenter },
+    zoom: initialZoom,
+  });
+  let displayedCamera: MarketCamera = {
+    center: { ...targetCamera.center },
+    zoom: targetCamera.zoom,
+  };
   let dragging = false;
-  let pointerId = -1;
+  let primaryPointerId = -1;
   let lastX = 0;
   let lastY = 0;
   let hasDragged = false;
   const pointers = new Map<number, { x: number; y: number }>();
   let pinchStartDistance = 0;
-  let pinchStartZoom = 1;
+  let pinchStartZoom = displayedCamera.zoom;
+  let lastReport = "";
 
-  function updateProjection(): void {
+  function currentProjection(): MapProjection {
+    return {
+      camera: displayedCamera,
+      viewport: { width: viewportWidth, height: viewportHeight },
+    };
+  }
+
+  function updateThreeCamera(): void {
+    const visibleHeight = map.camera.baseViewSize / displayedCamera.zoom;
     const aspect = viewportWidth / viewportHeight;
-    const visibleSize = VIEW_SIZE / zoom;
-    camera.left = (-visibleSize * aspect) / 2;
-    camera.right = (visibleSize * aspect) / 2;
-    camera.top = visibleSize / 2;
-    camera.bottom = -visibleSize / 2;
+    camera.left = (-visibleHeight * aspect) / 2;
+    camera.right = (visibleHeight * aspect) / 2;
+    camera.top = visibleHeight / 2;
+    camera.bottom = -visibleHeight / 2;
+    const focusX = displayedCamera.center.x - map.size.width / 2;
+    const focusZ = displayedCamera.center.y - map.size.height / 2;
+    const distance = 165;
+    camera.position.set(
+      focusX + CAMERA_DIRECTION.x * distance,
+      CAMERA_DIRECTION.y * distance,
+      focusZ + CAMERA_DIRECTION.z * distance,
+    );
+    camera.lookAt(focusX, 0, focusZ);
     camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+  }
+
+  function reportProjection(): void {
+    const key = `${displayedCamera.center.x.toFixed(3)}:${displayedCamera.center.y.toFixed(3)}:${displayedCamera.zoom.toFixed(4)}:${viewportWidth}:${viewportHeight}`;
+    if (key === lastReport) return;
+    lastReport = key;
+    onProjectionChange(currentProjection());
   }
 
   function setZoom(nextZoom: number, reportChange = false): void {
-    const boundedZoom = THREE.MathUtils.clamp(nextZoom, 0.8, 1.4);
-    if (zoom === boundedZoom) return;
-    zoom = boundedZoom;
-    updateProjection();
-    if (reportChange) onZoomChange(zoom);
+    targetCamera = clampMarketCamera(map, {
+      ...targetCamera,
+      zoom: nextZoom,
+    });
+    if (reportChange) onZoomChange(targetCamera.zoom);
   }
 
   function distanceBetweenPointers(): number {
@@ -138,14 +149,14 @@ export function createCityScene(
     if (event.button !== 0) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     dragging = true;
-    pointerId = event.pointerId;
+    primaryPointerId = event.pointerId;
     lastX = event.clientX;
     lastY = event.clientY;
-    canvas.setPointerCapture(pointerId);
+    canvas.setPointerCapture(event.pointerId);
     canvas.classList.add("is-dragging");
     if (pointers.size === 2) {
       pinchStartDistance = distanceBetweenPointers();
-      pinchStartZoom = zoom;
+      pinchStartZoom = targetCamera.zoom;
     }
   }
 
@@ -154,27 +165,24 @@ export function createCityScene(
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size >= 2) {
       const distance = distanceBetweenPointers();
-      if (pinchStartDistance > 0) {
+      if (pinchStartDistance > 0)
         setZoom(pinchStartZoom * (distance / pinchStartDistance), true);
-      }
       return;
     }
-    if (!dragging || event.pointerId !== pointerId) return;
+    if (!dragging || event.pointerId !== primaryPointerId) return;
     const deltaX = event.clientX - lastX;
     const deltaY = event.clientY - lastY;
     if (!hasDragged && Math.hypot(deltaX, deltaY) >= 4) {
       hasDragged = true;
       onFirstDrag();
     }
-    targetScreenX = THREE.MathUtils.clamp(
-      targetScreenX + deltaX,
-      -panLimitX,
-      panLimitX,
-    );
-    targetScreenY = THREE.MathUtils.clamp(
-      targetScreenY + deltaY,
-      -panLimitY,
-      panLimitY,
+    targetCamera = panMarketCamera(
+      map,
+      {
+        camera: targetCamera,
+        viewport: { width: viewportWidth, height: viewportHeight },
+      },
+      { x: deltaX, y: deltaY },
     );
     lastX = event.clientX;
     lastY = event.clientY;
@@ -183,23 +191,24 @@ export function createCityScene(
   function endDrag(event: PointerEvent): void {
     pointers.delete(event.pointerId);
     pinchStartDistance = 0;
-    const remainingPointer = pointers.entries().next().value;
+    const remainingPointer = pointers.entries().next().value as
+      [number, { x: number; y: number }] | undefined;
     if (remainingPointer) {
-      const [nextPointerId, point] = remainingPointer;
+      const [pointerId, point] = remainingPointer;
       dragging = true;
-      pointerId = nextPointerId;
+      primaryPointerId = pointerId;
       lastX = point.x;
       lastY = point.y;
       return;
     }
     dragging = false;
-    pointerId = -1;
+    primaryPointerId = -1;
     canvas.classList.remove("is-dragging");
   }
 
   function onWheel(event: WheelEvent): void {
     event.preventDefault();
-    setZoom(zoom * (event.deltaY < 0 ? 1.1 : 0.9), true);
+    setZoom(targetCamera.zoom * (event.deltaY < 0 ? 1.12 : 0.88), true);
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);
@@ -211,63 +220,39 @@ export function createCityScene(
   const reducedMotion = window.matchMedia(
     "(prefers-reduced-motion: reduce)",
   ).matches;
-  let previousFrameTime = window.performance.now();
   let animationFrame = 0;
   let disposed = false;
+  let previousFrameTime = window.performance.now();
 
   function animate(frameTime: number): void {
     if (disposed) return;
-    const delta = Math.min((frameTime - previousFrameTime) / 1_000, 0.05);
+    const deltaSeconds = Math.min(
+      Math.max(0, frameTime - previousFrameTime) / 1_000,
+      0.05,
+    );
     previousFrameTime = frameTime;
-    const panEase = reducedMotion ? 1 : 0.2;
-    displayedScreenX = THREE.MathUtils.lerp(
-      displayedScreenX,
-      targetScreenX,
-      panEase,
-    );
-    displayedScreenY = THREE.MathUtils.lerp(
-      displayedScreenY,
-      targetScreenY,
-      panEase,
-    );
-    const worldUnitsPerPixel =
-      VIEW_SIZE / (zoom * Math.max(canvas.clientHeight, 1));
-    city.position
-      .set(0, 0, 0)
-      .addScaledVector(screenRight, displayedScreenX * worldUnitsPerPixel)
-      .addScaledVector(
-        screenDown,
-        (displayedScreenY * worldUnitsPerPixel) / screenDownProjection,
-      );
-    if (
-      Number.isNaN(reportedScreenX) ||
-      Number.isNaN(reportedScreenY) ||
-      Math.abs(displayedScreenX - reportedScreenX) > 0.05 ||
-      Math.abs(displayedScreenY - reportedScreenY) > 0.05
-    ) {
-      reportedScreenX = displayedScreenX;
-      reportedScreenY = displayedScreenY;
-      onPanChange({ x: displayedScreenX, y: displayedScreenY });
-    }
-
-    if (requestedCount < completedCount) {
-      for (let index = requestedCount; index < units.length; index += 1) {
-        setUnitProgress(units[index]!, 0);
-      }
-      completedCount = requestedCount;
-      activeProgress = 0;
-    } else if (completedCount < requestedCount) {
-      activeProgress = reducedMotion
-        ? 1
-        : Math.min(1, activeProgress + delta / COLOR_DURATION_SECONDS);
-      setUnitProgress(units[completedCount]!, activeProgress);
-      if (activeProgress >= 1) {
-        completedCount += 1;
-        activeProgress = 0;
-      }
-    }
-
+    const ease = reducedMotion ? 1 : 0.2;
+    displayedCamera = {
+      center: {
+        x: THREE.MathUtils.lerp(
+          displayedCamera.center.x,
+          targetCamera.center.x,
+          ease,
+        ),
+        y: THREE.MathUtils.lerp(
+          displayedCamera.center.y,
+          targetCamera.center.y,
+          ease,
+        ),
+      },
+      zoom: THREE.MathUtils.lerp(displayedCamera.zoom, targetCamera.zoom, ease),
+    };
+    updateThreeCamera();
+    reportProjection();
+    city.update(deltaSeconds, reducedMotion);
     renderer.render(scene, camera);
+    canvas.dataset.cityDrawCalls = String(renderer.info.render.calls);
+    canvas.dataset.cityTriangles = String(renderer.info.render.triangles);
     animationFrame = window.requestAnimationFrame(animate);
   }
   animationFrame = window.requestAnimationFrame(animate);
@@ -276,26 +261,15 @@ export function createCityScene(
     resize(width, height) {
       viewportWidth = Math.max(width, 1);
       viewportHeight = Math.max(height, 1);
-      panLimitX = Math.min(viewportWidth * 0.2, 140);
-      panLimitY = Math.min(viewportHeight * 0.16, 100);
-      targetScreenX = THREE.MathUtils.clamp(
-        targetScreenX,
-        -panLimitX,
-        panLimitX,
-      );
-      targetScreenY = THREE.MathUtils.clamp(
-        targetScreenY,
-        -panLimitY,
-        panLimitY,
-      );
-      updateProjection();
       renderer.setSize(viewportWidth, viewportHeight, false);
+      updateThreeCamera();
+      reportProjection();
     },
     setZoom(nextZoom) {
       setZoom(nextZoom);
     },
-    setCustomerCount(count) {
-      requestedCount = Math.min(Math.max(Math.floor(count), 0), units.length);
+    setDistrictStates(states) {
+      city.setDistrictStates(states);
     },
     dispose() {
       disposed = true;
@@ -305,18 +279,20 @@ export function createCityScene(
       canvas.removeEventListener("pointerup", endDrag);
       canvas.removeEventListener("pointercancel", endDrag);
       canvas.removeEventListener("wheel", onWheel);
+      const geometries = new Set<THREE.BufferGeometry>();
+      const materials = new Set<THREE.Material>();
       scene.traverse((object) => {
-        if (object instanceof THREE.Mesh) {
-          object.geometry.dispose();
-          const materials = Array.isArray(object.material)
+        if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
+          geometries.add(object.geometry);
+          const objectMaterials = Array.isArray(object.material)
             ? object.material
             : [object.material];
-          for (const material of materials) material.dispose();
+          for (const material of objectMaterials) materials.add(material);
         }
-        if (object instanceof THREE.LineSegments) object.geometry.dispose();
       });
+      for (const geometry of geometries) geometry.dispose();
+      for (const material of materials) material.dispose();
       gradient.dispose();
-      ink.dispose();
       renderer.dispose();
     },
   };
