@@ -85,7 +85,7 @@
   cursor: not-allowed;
 }
 
-.product-type-option:nth-child(2) {
+.product-type-option.deposit-product-option {
   background: var(--green);
 }
 

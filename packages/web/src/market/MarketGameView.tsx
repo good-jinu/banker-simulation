@@ -394,7 +394,7 @@ export function MarketGameView({
                           <button
                             type="button"
                             role="menuitem"
-                            className="product-type-option"
+                            className="product-type-option loan-product-option"
                             disabled={!productLessonReady && !hasLoanProduct}
                             onClick={() => {
                               setShowProductPicker(false);
@@ -409,7 +409,7 @@ export function MarketGameView({
                           <button
                             type="button"
                             role="menuitem"
-                            className="product-type-option"
+                            className="product-type-option deposit-product-option"
                             onClick={() => {
                               setShowProductPicker(false);
                               onOpenDepositProductBuilder();

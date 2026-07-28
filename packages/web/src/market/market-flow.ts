@@ -69,14 +69,19 @@ export function flowForEvent(
   labels: FlowLabels,
 ): Omit<FlowAnimation, "id"> | null {
   const customerPoint = (customer: Customer): MapPoint => customer;
+  const productCustomerPoint = (customer: Customer): MapPoint =>
+    customer.productId ? pointFor(customer.productId) : customer;
   const depositorPoint = (depositor: Depositor): MapPoint => depositor;
   const lenderPoint = (lender: Funding): MapPoint => lender;
   switch (event.type) {
     case "transfer": {
       const fundingIn = event.to === "banker";
       const automated = event.from !== "banker" && event.to !== "banker";
-      const from = pointFor(event.from);
-      const to = pointFor(event.to);
+      // Product customers are hidden from the map. Represent the automated
+      // leg on the visible product node instead of sending the token to the
+      // customer's now-empty map coordinates.
+      const from = automated ? pointFor("banker") : pointFor(event.from);
+      const to = automated ? pointFor(event.from) : pointFor(event.to);
       return {
         from,
         to,
@@ -113,12 +118,12 @@ export function flowForEvent(
         label: labels.cashIn,
       };
     case "product-cash-in":
-      // Stamp the product, not the borrower: product customers never render on
-      // the map, so their coordinates are bare ground. The product node is the
-      // only thing the player can see earning here.
+      // Product customers never render on the map, so their coordinates are
+      // bare ground. Show the product returning the collected cash to the
+      // bank, while keeping the result stamp on the product that earned it.
       return {
-        from: customerPoint(event.customer),
-        to: pointFor(event.product.id),
+        from: pointFor(event.product.id),
+        to: pointFor("banker"),
         stampAt: pointFor(event.product.id),
         amount: event.amount,
         kind: "product-cash-in",
@@ -144,9 +149,9 @@ export function flowForEvent(
       };
     case "default":
       return {
-        from: customerPoint(event.customer),
+        from: productCustomerPoint(event.customer),
         to: pointFor("banker"),
-        stampAt: customerPoint(event.customer),
+        stampAt: productCustomerPoint(event.customer),
         amount: event.customer.amount,
         kind: "default",
         label: labels.defaulted,
