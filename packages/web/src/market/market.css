@@ -3508,6 +3508,18 @@ button {
   border-top: 2px dashed var(--ink);
 }
 
+/* The run turns on one number, so the rail carries its reason. */
+.trust-rail-reason {
+  position: relative;
+  z-index: 1;
+  margin: 8px 0 0;
+  color: #4a3a12;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-align: center;
+}
+
 .trust-rail-scale {
   display: flex;
   flex-direction: column;

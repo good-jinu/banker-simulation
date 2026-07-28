@@ -54,7 +54,7 @@ export function riskAdjustmentForSegment(
   );
 }
 
-/** Alerts are the only news that may automatically hold a guarded line. */
+/** Alerts mark the segments the map should flag as under pressure. */
 export function hasMarketAlertForSegment(
   news: readonly MarketNews[],
   segment: MarketSegment | undefined,

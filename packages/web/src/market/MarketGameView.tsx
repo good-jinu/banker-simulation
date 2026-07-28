@@ -32,6 +32,7 @@ import {
   type MarketSegment,
   type MarketWorld,
   type Product,
+  type TrustReason,
 } from "./market-world.ts";
 import {
   hasMarketAlertForSegment,
@@ -58,6 +59,7 @@ type MarketGameViewProps = {
   stamps: FlowStamp[];
   loanRequestNotice: Customer | null;
   trustPulse: "up" | "down" | null;
+  trustReason: TrustReason | null;
   clockView: ClockView;
   modalOpen: boolean;
   hasDraggedMap: boolean;
@@ -89,6 +91,7 @@ export function MarketGameView({
   stamps,
   loanRequestNotice,
   trustPulse,
+  trustReason,
   clockView,
   modalOpen,
   hasDraggedMap,
@@ -161,8 +164,8 @@ export function MarketGameView({
   const showDepositProductLesson = onboarding === "deposits";
   // Trust walks toward its target in fractional steps; the rail shows whole
   // points so a slow climb doesn't read as jitter. Floor, not round: the
-  // mission-clear check needs the raw value at 100, and rounding 99.5+ up
-  // to "100" would show the goal as met a step before it actually is.
+  // mission-clear check reads the raw value, and rounding up would show the
+  // goal as met a step before it actually is.
   const displayedTrust = Math.floor(trust);
   const visibleCustomers = customers.filter((customer) => {
     if (customer.appears > day) return false;
@@ -298,6 +301,10 @@ export function MarketGameView({
                 <small>0</small>
               </div>
             </div>
+            {/* The run turns on one number, so it has to say why it moved. */}
+            {trustReason && (
+              <p className="trust-rail-reason">{m.trustReason[trustReason]}</p>
+            )}
           </aside>
         )}
         <div className="map-world-layer" ref={mapWorldRef}>

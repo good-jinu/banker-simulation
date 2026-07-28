@@ -7,6 +7,7 @@ import type {
   Product,
 } from "./market-product-types.ts";
 import { LOAN_PRODUCT_MODULE_CAPACITY } from "./market-product-types.ts";
+import { recordActivity } from "./market-trust.ts";
 import type {
   Customer,
   Depositor,
@@ -99,6 +100,9 @@ function acceptDeposit(
     depositors: world.depositors.map((item) =>
       item.id === accepted.id ? accepted : item,
     ),
+    // Taking a deposit is business the market can see, so it holds standing up
+    // the same way a loan does.
+    reputation: recordActivity(world.reputation),
     stats: {
       ...world.stats,
       depositsAccepted: world.stats.depositsAccepted + 1,
@@ -175,6 +179,7 @@ function automateLoans(world: MarketWorld): MarketWorld {
     ...world,
     cash: currentCash,
     customers: nextCustomers,
+    reputation: recordActivity(world.reputation, automatedIssued),
     loanCount,
     cumulativeLent,
     thirdLoanDay,

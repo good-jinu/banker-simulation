@@ -179,17 +179,17 @@ export function MarketApp({
     setNotice,
     stamps,
     trustPulse,
+    trustReason,
   } = useMarketEffects({
     world,
     locale,
-    onOpenProductBuilder: openProductBuilder,
     onOpenFunding: openFunding,
   });
   // A finished run has nothing left to brief; the result report takes over.
   const activeBriefing =
-    world.missionCleared || world.insolvent ? null : (briefings[0] ?? null);
+    world.missionCleared || world.runFailed ? null : (briefings[0] ?? null);
   const modalOpen = Boolean(
-    overlay || activeBriefing || world.missionCleared || world.insolvent,
+    overlay || activeBriefing || world.missionCleared || world.runFailed,
   );
   const dismissBriefing = useCallback(() => {
     setBriefings((current) => current.slice(1));
@@ -212,7 +212,7 @@ export function MarketApp({
     !productPickerOpen &&
     !activeBriefing &&
     !world.missionCleared &&
-    !world.insolvent
+    !world.runFailed
       ? pendingCoachmark
       : null;
   const coachmarkDefinition = activeCoachmark
@@ -327,6 +327,7 @@ export function MarketApp({
         stamps={stamps}
         loanRequestNotice={loanRequestNotice}
         trustPulse={trustPulse}
+        trustReason={trustReason}
         clockView={clockView}
         modalOpen={modalOpen}
         hasDraggedMap={ui.hasDraggedMap}
@@ -388,7 +389,13 @@ export function MarketApp({
         overlay={overlay}
         consultation={consultation}
         onCloseOverlay={() => setOverlay(null)}
-        onConsultationProgress={setConsultation}
+        onConsultationProgress={(answers) =>
+          setConsultation({
+            ...answers,
+            customerId:
+              overlay?.kind === "customer" ? overlay.customerId : null,
+          })
+        }
         onConsultationQuestionAsked={(question) => {
           if (question === "purpose" && world.onboarding === "first-customer")
             markCoachmarkCompleted("first-customer");

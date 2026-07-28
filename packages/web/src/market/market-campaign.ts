@@ -8,12 +8,24 @@ import type {
 import type { MarketNewsDefinition } from "./market-news.ts";
 
 export type MarketGoals = {
+  /**
+   * Full trust wins the stage; zero loses it. Nothing else ends a run, and the
+   * pressure to keep moving comes from the score itself — standing decays with
+   * the bank's transaction volume, so a player who stops trading runs it down
+   * to zero on their own.
+   */
   trustTarget: number;
 };
 
 export type CustomerGenerationConfig = {
   termMin: number;
   termRange: number;
+  /**
+   * Days a generated applicant waits before taking their business elsewhere.
+   * The visible-customer cap is a queue, not a warehouse: without an exit the
+   * cap fills with requests nobody will fund and new arrivals stop forever.
+   */
+  patienceDays: number;
   incomeMin: number;
   incomeStep: number;
   incomeRange: number;
@@ -135,7 +147,9 @@ const firstYieldConfig: MarketStageConfig = {
         ko: "자영업자 라인에서 지속 가능한 기회를 살펴보세요.",
       },
       affectedSegments: ["small-business"],
-      riskAdjustment: -4,
+      // Riverside never rolls for default, so any adjustment here is inert.
+      // Kept at zero rather than pretending to move a number nobody rolls.
+      riskAdjustment: 0,
     },
     {
       id: "riverside-orders-outcome",
@@ -241,6 +255,7 @@ const firstYieldConfig: MarketStageConfig = {
   customerGeneration: {
     termMin: 9,
     termRange: 10,
+    patienceDays: 7,
     incomeMin: 1_800,
     incomeStep: 200,
     incomeRange: 22,
@@ -347,8 +362,8 @@ const creditUnderPressureConfig: MarketStageConfig = {
         ko: "배달·불안정 노동 고객군에서 현금흐름 압박이 뚜렷해지고 있습니다.",
       },
       action: {
-        en: "Guard or pause exposed automated lines while you reassess them.",
-        ko: "재검토하는 동안 노출된 자동화 라인에 안전장치를 연결하거나 중단하세요.",
+        en: "Pause exposed automated lines, or fit them with a credit check or guarantor rule.",
+        ko: "노출된 자동화 라인을 중단하거나, 신용조회·보증인 모듈을 장착하세요.",
       },
       affectedSegments: ["delivery", "low-credit"],
       riskAdjustment: 12,
@@ -462,12 +477,17 @@ const creditUnderPressureConfig: MarketStageConfig = {
   customerGeneration: {
     termMin: 6,
     termRange: 7,
-    incomeMin: 900,
+    patienceDays: 5,
+    // North Yard is meant to be survivable by good judgment, so the pool has
+    // to contain enough genuinely sound applicants to build a book from. The
+    // old range ran to $2,100 against incomes from $900, which made most of the
+    // queue a bad bet at any price and left careful play with nothing to fund.
+    incomeMin: 1_300,
     incomeStep: 200,
     incomeRange: 16,
     amountMin: 300,
     amountStep: 100,
-    amountRange: 19,
+    amountRange: 13,
     rateMin: 10,
     rateRange: 11,
   },

@@ -10,7 +10,7 @@ import {
   type MarketWorld,
   withdrawalEventFor,
 } from "../market/market-world.ts";
-import { isReputation } from "../market/market-trust.ts";
+import { isReputation, openingReputation } from "../market/market-trust.ts";
 import { isOnboardingStep } from "../market/market-onboarding.ts";
 import {
   inferredCompletedCoachmarks,
@@ -213,10 +213,6 @@ function migrateProducts(value: unknown): MarketWorld["products"] {
   }) as MarketWorld["products"];
 }
 
-function emptyConsultation(): ConsultationProgress {
-  return { asked: [], lastQuestion: null, expression: "requesting" };
-}
-
 function migrateMarketRunStats(value: unknown): MarketRunStats {
   const fallback = emptyMarketRunStats();
   if (!isRecord(value)) return fallback;
@@ -230,6 +226,18 @@ function migrateMarketRunStats(value: unknown): MarketRunStats {
   ) as MarketRunStats;
 }
 
+/**
+ * Fills in reputation terms a save predates. `activity` is new, and a returning
+ * player should resume with the market's attention rather than at the standing
+ * of a bank that has not traded in weeks.
+ */
+function migrateReputation(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  return typeof value.activity === "number" && Number.isFinite(value.activity)
+    ? value
+    : { ...value, activity: openingReputation().activity };
+}
+
 export function migrateMarketSession(
   value: unknown,
   stageId: string,
@@ -241,7 +249,9 @@ export function migrateMarketSession(
     value.stageId !== stageId
   )
     return null;
-  const rawWorld = value.world;
+  const rawWorld = isRecord(value.world)
+    ? { ...value.world, reputation: migrateReputation(value.world.reputation) }
+    : value.world;
   if (
     !isRecord(rawWorld) ||
     typeof rawWorld.day !== "number" ||
@@ -258,7 +268,9 @@ export function migrateMarketSession(
     (rawWorld.failureReason !== null &&
       rawWorld.failureReason !== "cash" &&
       rawWorld.failureReason !== "trust") ||
-    typeof rawWorld.insolvent !== "boolean" ||
+    // `insolvent` is the older name for the same flag, from before a lost run
+    // could mean anything but running out of money.
+    typeof (rawWorld.runFailed ?? rawWorld.insolvent) !== "boolean" ||
     !rawWorld.funding.every(
       (lender) => isRecord(lender) && typeof lender.defaulted === "boolean",
     )
@@ -275,6 +287,10 @@ export function migrateMarketSession(
     rawConsultation.lastQuestion === "purpose" ||
     rawConsultation.lastQuestion === "income"
       ? rawConsultation.lastQuestion
+      : null;
+  const consultationCustomerId =
+    typeof rawConsultation.customerId === "string"
+      ? rawConsultation.customerId
       : null;
   const expression =
     rawConsultation.expression === "neutral" ||
@@ -368,6 +384,7 @@ export function migrateMarketSession(
       ...(rawWorld as MarketWorld),
       level: config.level,
       config,
+      runFailed: (rawWorld.runFailed ?? rawWorld.insolvent) === true,
       // Existing saved runs predate the guided lesson. Keep their earned
       // systems visible rather than moving a returning player backwards.
       onboarding,
@@ -384,7 +401,12 @@ export function migrateMarketSession(
       stats: migrateMarketRunStats(rawWorld.stats),
       events: [],
     },
-    consultation: { asked, lastQuestion, expression },
+    consultation: {
+      customerId: consultationCustomerId,
+      asked,
+      lastQuestion,
+      expression,
+    },
     clock: { paused: rawClock.paused !== false, speed },
     ui: {
       ...initialMarketUiState(),

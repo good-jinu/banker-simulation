@@ -19,6 +19,7 @@ import {
   type MarketWorld,
 } from "../market/market-world.ts";
 import type { ClockView } from "../market/hooks/useMarketModalClock.ts";
+import { initialConsultationProgress } from "../market/market-consultation.ts";
 import {
   initialMarketUiState,
   type MarketUiState,
@@ -53,7 +54,7 @@ export function MarketDevTools({
       stageId: stage.id,
       phase: "map",
       world: { ...world, events: [] },
-      consultation: { asked: [], lastQuestion: null, expression: "requesting" },
+      consultation: initialConsultationProgress(),
       clock: clockView,
       ui,
       savedAt: Date.now(),

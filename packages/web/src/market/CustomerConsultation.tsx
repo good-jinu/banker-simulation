@@ -8,7 +8,7 @@ import { ConsultationQuestions } from "./ConsultationQuestions.tsx";
 import { LoanDecisionActions } from "./LoanDecisionActions.tsx";
 import {
   CONSULTATION_QUESTIONS,
-  type ConsultationProgress,
+  type ConsultationAnswers,
   type ConsultationQuestionId,
 } from "./market-consultation.ts";
 import {
@@ -54,8 +54,8 @@ export function CustomerConsultation({
   /** The first customer teaches information gathering before a decision. */
   requireQuestionsBeforeDecision?: boolean;
   forceApproval?: boolean;
-  initialProgress?: ConsultationProgress;
-  onProgressChange?: (progress: ConsultationProgress) => void;
+  initialProgress?: ConsultationAnswers;
+  onProgressChange?: (answers: ConsultationAnswers) => void;
   onQuestionAsked?: (question: ConsultationQuestionId) => void;
 }) {
   const m = messagesFor(locale).market;

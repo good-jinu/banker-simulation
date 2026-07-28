@@ -10,7 +10,7 @@ import {
   type FlowLabels,
   type FlowStamp,
 } from "../market-flow.ts";
-import type { Customer, MarketWorld } from "../market-world.ts";
+import type { Customer, MarketWorld, TrustReason } from "../market-world.ts";
 
 /** Result stamps stay put long after their token has landed — the flow queue
  * advances every second or so, which is far too quick to read a label. */
@@ -19,14 +19,12 @@ const STAMP_LIFETIME_MS = 3_200;
 type UseMarketEffectsOptions = {
   world: MarketWorld;
   locale: Locale;
-  onOpenProductBuilder: () => void;
   onOpenFunding: () => void;
 };
 
 export function useMarketEffects({
   world,
   locale,
-  onOpenProductBuilder,
   onOpenFunding,
 }: UseMarketEffectsOptions) {
   const m = messagesFor(locale).market;
@@ -38,6 +36,9 @@ export function useMarketEffects({
   const [activeFlow, setActiveFlow] = useState<FlowAnimation | null>(null);
   const [stamps, setStamps] = useState<FlowStamp[]>([]);
   const [trustPulse, setTrustPulse] = useState<"up" | "down" | null>(null);
+  /** Unlike the pulse this is not cleared on a timer: it is the standing answer
+   * to "why is my trust where it is", so it stays until the next day moves it. */
+  const [trustReason, setTrustReason] = useState<TrustReason | null>(null);
   const flowId = useRef(0);
   const stampTimers = useRef<number[]>([]);
 
@@ -54,8 +55,11 @@ export function useMarketEffects({
               money(event.customer.amount),
             ),
           );
-          if (!world.products.some((product) => product.kind === "loan"))
-            onOpenProductBuilder();
+          break;
+        case "applicant-left":
+          setNotice(
+            m.noticeApplicantLeft(localize(event.customer.name, locale)),
+          );
           break;
         case "customer-repayment":
           setNotice(
@@ -117,27 +121,13 @@ export function useMarketEffects({
           break;
         case "trust-shift":
           setTrustPulse(event.direction);
-          break;
-        case "insolvent":
-          setNotice(
-            world.failureReason === "trust"
-              ? m.trustFailureTitle
-              : m.noticeInsolvent,
-          );
+          setTrustReason(event.reason);
           break;
         default:
           break;
       }
     }
-  }, [
-    locale,
-    m,
-    onOpenFunding,
-    onOpenProductBuilder,
-    world.events,
-    world.failureReason,
-    world.products,
-  ]);
+  }, [locale, m, onOpenFunding, world.events]);
 
   useEffect(() => {
     const pointFor = (id: string) =>
@@ -237,5 +227,6 @@ export function useMarketEffects({
     setNotice,
     stamps,
     trustPulse,
+    trustReason,
   };
 }

@@ -82,6 +82,7 @@ describe("save migration", () => {
     expect(migrated?.world.trust).toBe(world.trust);
     expect(migrated?.world.funding[0]?.defaulted).toBe(false);
     expect(migrated?.consultation).toEqual({
+      customerId: null,
       asked: ["purpose", "income"],
       lastQuestion: "income",
       expression: "relieved",
@@ -286,5 +287,25 @@ describe("save migration", () => {
         config,
       ),
     ).toBeNull();
+  });
+
+  it("resumes a save written before transaction volume was tracked", () => {
+    const world = createWorld(1);
+    const { activity: _dropped, ...legacyReputation } = world.reputation;
+    const migrated = migrateMarketSession(
+      {
+        schemaVersion: 1,
+        stageId: "first-yield",
+        phase: "map",
+        world: { ...world, day: 4, reputation: legacyReputation },
+        savedAt: 1,
+      },
+      "first-yield",
+      marketCampaignStages[0]!.config,
+    );
+    // Accepted rather than discarded, and resumed with the market's attention
+    // instead of the standing of a bank that has not traded in weeks.
+    expect(migrated).not.toBeNull();
+    expect(migrated?.world.reputation.activity).toBeGreaterThan(0);
   });
 });

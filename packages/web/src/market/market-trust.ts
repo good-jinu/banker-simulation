@@ -40,6 +40,13 @@ export type Reputation = {
   /** The bank's own record as a borrower. */
   fundingHonored: number;
   fundingMissed: number;
+  /**
+   * Decayed count of business the bank has actually transacted — loans written,
+   * contracts resolved, deposits taken. This is the one number a player can
+   * never coast on: it fades faster than anything else here, so standing has to
+   * be re-earned by trading rather than held by past results.
+   */
+  activity: number;
 };
 
 export type TrustPillars = {
@@ -61,6 +68,8 @@ export type TrustAssessment = {
   /** The lowest active ceiling, 100 when none applies. */
   ceiling: number;
   ceilingCause: TrustCeilingCause;
+  /** How busy the bank is, 0-1. Scales the whole assessment. */
+  momentum: number;
   /** What the displayed score is walking toward. */
   target: number;
 };
@@ -91,6 +100,29 @@ const MASTERY_HEADROOM = 1.05;
  * so a single unlucky default does not lock the stage out of a full score. */
 const MEMORY_DECAY = 0.99;
 const LOSS_DECAY = 0.94;
+/**
+ * Business fades fastest of all. This is the stage's clock: a bank that stops
+ * trading watches its standing walk to zero in a few weeks, which is what keeps
+ * a player working the market instead of waiting out a timer.
+ */
+const ACTIVITY_DECAY = 0.93;
+/** Transactions the market expects of a bank worth rating. Expressed as the
+ * decayed level a steadily busy bank holds: roughly one deal every five days. */
+const ACTIVITY_FULL = 3;
+/**
+ * At or below this the bank is simply not trading, and momentum is exactly zero
+ * rather than a vanishing fraction. Decay is geometric, so without a floor the
+ * score would approach zero forever and never arrive — which is the whole
+ * reason the old model had to fail runs at 5 instead of 0.
+ */
+const ACTIVITY_UNRATED = 0.5;
+/**
+ * What a newly opened bank is credited with. Deliberately above `ACTIVITY_FULL`
+ * so day one is flat rather than an immediate slide, and so the first quiet week
+ * is a warning instead of a punishment. A bank that trades builds the same
+ * cushion for itself, which is why a busy player can pause without penalty.
+ */
+const OPENING_ACTIVITY = ACTIVITY_FULL * 2;
 
 /** Contracts repaid for full reach. Beyond this, volume stops paying. */
 const REACH_FULL = 8;
@@ -130,10 +162,13 @@ const REPAYMENT_PRIOR = 0.75;
 const REPAYMENT_FLOOR = 0.5;
 const REPAYMENT_EXCELLENT = 0.92;
 
-/** Below this the bank is finished. Not zero: as evidence decays, even a
- * ruined book drifts back toward the neutral prior, so an exact-zero failure
- * test would simply never fire. */
-export const TRUST_COLLAPSE = 5;
+/**
+ * Zero, and reachable: momentum multiplies the assessment, so a bank nobody is
+ * doing business with lands on exactly nothing however good its old book was.
+ * Without that factor the decaying priors floor the composite around 30 and an
+ * idle run could neither be won nor lost.
+ */
+export const TRUST_COLLAPSE = 0;
 
 /** Rates at or below this are ordinary market pricing; above it, the bank is
  * squeezing. Set above the generated request range so fairness measures what
@@ -164,7 +199,25 @@ export function emptyReputation(): Reputation {
     productDefaulted: 0,
     fundingHonored: 0,
     fundingMissed: 0,
+    activity: 0,
   };
+}
+
+/**
+ * What a bank that just opened its doors carries: no record, but the market's
+ * attention. The grace is real business credit the bank has not earned, so it
+ * decays like everything else — spend the first weeks trading or lose it.
+ */
+export function openingReputation(): Reputation {
+  return { ...emptyReputation(), activity: OPENING_ACTIVITY };
+}
+
+/** One transaction's worth of standing. */
+export function recordActivity(
+  reputation: Reputation,
+  transactions = 1,
+): Reputation {
+  return { ...reputation, activity: reputation.activity + transactions };
 }
 
 /** One day of forgetting. Called once per tick, before the day's events land. */
@@ -179,7 +232,16 @@ export function decayReputation(reputation: Reputation): Reputation {
     productDefaulted: reputation.productDefaulted * MEMORY_DECAY,
     fundingHonored: reputation.fundingHonored * MEMORY_DECAY,
     fundingMissed: reputation.fundingMissed * MEMORY_DECAY,
+    activity: reputation.activity * ACTIVITY_DECAY,
   };
+}
+
+/** How busy the bank looks to the market, 0-1. */
+export function trustMomentum(reputation: Reputation): number {
+  return clamp01(
+    (reputation.activity - ACTIVITY_UNRATED) /
+      (ACTIVITY_FULL - ACTIVITY_UNRATED),
+  );
 }
 
 /**
@@ -326,12 +388,19 @@ export function assessTrust(
   if (pillars.reliability < WEAK_RELIABILITY)
     limit(CEILING_WEAK_RELIABILITY, "weak-reliability");
 
+  // Momentum multiplies rather than averages: a bank the market has stopped
+  // trading with is not "somewhat trusted", it is unrated. This is the only
+  // term that can carry the score all the way to zero, and it is why standing
+  // has to be worked for continuously instead of banked.
+  const momentum = trustMomentum(reputation);
+
   return {
     pillars,
     composite,
     ceiling,
     ceilingCause,
-    target: Math.min(composite, ceiling),
+    momentum,
+    target: Math.min(composite, ceiling) * momentum,
   };
 }
 
@@ -341,7 +410,7 @@ export function assessTrust(
  * would show a phantom drop as trust corrected toward its real target.
  */
 export function openingTrust(startingCash: number): number {
-  return assessTrust(emptyReputation(), {
+  return assessTrust(openingReputation(), {
     netWorth: startingCash,
     startingCash,
     hasUnpaidObligation: false,
@@ -358,33 +427,39 @@ export function approachTrust(current: number, target: number): number {
   return current;
 }
 
-export type OpinionBand = "low" | "mid" | "high";
+/** Names the cause the player just watched happen, in priority order: a broken
+ * promise outranks a customer default, which outranks ordinary drift. An active
+ * ceiling is reported as the cause even on a day with no bad news, because "why
+ * won't this go up" is the question it exists to answer. */
+export type TrustReason =
+  | "contracts-completing"
+  | "earnings-sustainable"
+  | "defaults-weakened-book"
+  | "obligation-unpaid"
+  | "market-quiet"
+  | "book-thinning";
 
-/**
- * The public-facing read on the bank: three broad assessments, no numbers.
- * This is everything the player is entitled to know about the calculation.
- */
-export type MarketOpinion = {
-  reach: OpinionBand;
-  strength: OpinionBand;
-  reliability: OpinionBand;
-  ceilingCause: TrustCeilingCause;
-  /** True when the composite is actually being held down, not merely capped. */
-  ceilingBinding: boolean;
-};
+/** Below this, being unrated is the bank's biggest problem by far. */
+const QUIET_MOMENTUM = 0.85;
 
-function band(value: number): OpinionBand {
-  return value >= 0.75 ? "high" : value >= 0.4 ? "mid" : "low";
-}
-
-export function marketOpinion(assessment: TrustAssessment): MarketOpinion {
-  return {
-    reach: band(assessment.pillars.reach),
-    strength: band(assessment.pillars.strength),
-    reliability: band(assessment.pillars.reliability),
-    ceilingCause: assessment.ceilingCause,
-    ceilingBinding: assessment.composite > assessment.ceiling,
-  };
+export function trustReasonFor(
+  assessment: TrustAssessment,
+  direction: "up" | "down",
+  today: { fundingDefault: boolean; customerDefault: boolean; repaid: boolean },
+): TrustReason {
+  const binding = assessment.composite > assessment.ceiling;
+  if (
+    today.fundingDefault ||
+    (binding && assessment.ceilingCause === "unpaid-obligation")
+  )
+    return "obligation-unpaid";
+  if (today.customerDefault) return "defaults-weakened-book";
+  // Reported ahead of ordinary drift: too few deals is the one cause a player
+  // cannot diagnose from the map, and the only one that ends the run at zero.
+  if (assessment.momentum < QUIET_MOMENTUM) return "market-quiet";
+  if (binding) return "defaults-weakened-book";
+  if (direction === "down") return "book-thinning";
+  return today.repaid ? "contracts-completing" : "earnings-sustainable";
 }
 
 export function isReputation(value: unknown): value is Reputation {

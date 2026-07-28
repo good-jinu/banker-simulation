@@ -87,7 +87,7 @@ describe("customer deposits", () => {
     });
   });
 
-  it("does not announce a zero-value withdrawal before deposits exist", () => {
+  it("waits rather than spending its one withdrawal on an empty deposit book", () => {
     let world: MarketWorld = {
       ...createWorld(1),
       depositors: [],
@@ -98,13 +98,16 @@ describe("customer deposits", () => {
         status: "scheduled",
       },
     };
-    world = marketReducer(world, { type: "advance-day" });
-    expect(world.news).toHaveLength(0);
-    world = marketReducer(world, { type: "advance-day" });
+    world = run(world, ...days(6));
+    expect(
+      world.news.some((article) => article.threadId === "deposit-withdrawal"),
+    ).toBe(false);
     expect(world.events).not.toContainEqual(
       expect.objectContaining({ type: "deposit-withdrawal" }),
     );
-    expect(world.withdrawalEvent?.status).toBe("settled");
+    // Still armed: letting the date lapse would hand a player who launches
+    // savings late a run with no liquidity test in it at all.
+    expect(world.withdrawalEvent?.status).toBe("scheduled");
   });
 
   it("still warns a saver who arrives after the scheduled warning day", () => {
@@ -156,7 +159,11 @@ describe("customer deposits", () => {
     expect(
       world.news.some((article) => article.threadId === "deposit-withdrawal"),
     ).toBe(true);
-    world = marketReducer(world, { type: "advance-day" });
+    // Arming fixes the withdrawal to the full notice period from today, so the
+    // saver always gets the warning days the stage promises.
+    const { warningDays } = world.config.withdrawalPressure!;
+    expect(world.withdrawalEvent?.withdrawalDay).toBe(world.day + warningDays);
+    world = run(world, ...days(warningDays));
     expect(world.depositors[0]?.status).toBe("withdrawn");
     expect(world.stats.depositPrincipalWithdrawn).toBe(depositor.amount);
     expect(world.stats.depositInterestPaid).toBeCloseTo(

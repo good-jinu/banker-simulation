@@ -8,7 +8,6 @@ import {
   marketReducer,
   summarize,
   upcomingRepayment,
-  worldOpinion,
   type Depositor,
   type MarketAction,
   type MarketWorld,
@@ -329,7 +328,7 @@ describe("funding", () => {
     expect(world.funding.find((item) => item.id === lender.id)).toBeUndefined();
     expect(world.reputation.fundingHonored).toBe(1);
     expect(world.reputation.fundingMissed).toBe(0);
-    expect(world.insolvent).toBe(false);
+    expect(world.runFailed).toBe(false);
     expect(world.events).toContainEqual(
       expect.objectContaining({ type: "funding-repayment" }),
     );
@@ -550,7 +549,7 @@ describe("level two credit risk", () => {
       world.funding.find((lender) => lender.id === civic.id)?.defaulted,
     ).toBe(true);
     expect(world.reputation.fundingMissed).toBe(1);
-    expect(world.insolvent).toBe(false);
+    expect(world.runFailed).toBe(false);
     expect(world.events.some((event) => event.type === "funding-default")).toBe(
       true,
     );
@@ -598,7 +597,7 @@ describe("level two credit risk", () => {
     // A broken promise is the strongest negative signal, but it is a ceiling
     // and a reliability hit — not an instant loss.
     expect(world.reputation.fundingMissed).toBe(1);
-    expect(world.insolvent).toBe(false);
+    expect(world.runFailed).toBe(false);
     expect(assessWorldTrust(world).ceilingCause).toBe("unpaid-obligation");
   });
 
@@ -627,7 +626,7 @@ describe("level two credit risk", () => {
     world = run(world, ...days(6));
 
     expect(world.trust).toBeLessThanOrEqual(TRUST_COLLAPSE);
-    expect(world.insolvent).toBe(true);
+    expect(world.runFailed).toBe(true);
     expect(world.failureReason).toBe("trust");
   });
 });
@@ -649,6 +648,9 @@ describe("bank trust", () => {
       // the funding record back under full marks.
       fundingHonored: 8,
       fundingMissed: 0,
+      // Momentum scales the whole assessment, so a bank being scored on its
+      // book has to be a bank that is actually trading.
+      activity: 10,
     };
   }
 
@@ -764,6 +766,7 @@ describe("bank trust", () => {
         defaulted: 30,
         realizedProfit: 100_000,
         fairness: 30,
+        activity: 10,
       },
     };
     const assessment = assessWorldTrust(world);
@@ -817,23 +820,17 @@ describe("bank trust", () => {
       ...createWorld(1),
       reputation: { ...masteryReputation(), openLoss: 400 },
     };
-    const damaged = assessWorldTrust(world).target;
+    const damaged = assessWorldTrust(world);
+    expect(damaged.ceilingCause).toBe("open-losses");
     world = run(world, ...days(60));
-    expect(assessWorldTrust(world).target).toBeGreaterThan(damaged);
-  });
-
-  it("reports opinion as bands rather than numbers", () => {
-    const opinion = worldOpinion({
-      ...createWorld(1),
-      cash: 1_400,
-      reputation: masteryReputation(),
+    // Compared at equal momentum: the point is that the write-off stops
+    // holding the bank down, not that an idle bank keeps its standing.
+    const healed = assessWorldTrust({
+      ...world,
+      reputation: { ...world.reputation, activity: 10 },
     });
-    expect(opinion).toMatchObject({
-      reach: "high",
-      strength: "high",
-      reliability: "high",
-      ceilingCause: null,
-    });
+    expect(healed.ceilingCause).toBeNull();
+    expect(healed.target).toBeGreaterThan(damaged.target);
   });
 
   it("explains a downward move without naming a number", () => {
@@ -857,13 +854,17 @@ describe("bank trust", () => {
 
   it("can actually be won by underwriting carefully", () => {
     // Guards the property that is easy to lose when retuning weights: a
-    // composite whose pillars crest at different moments can sit at 97 forever
-    // and quietly make the stage unwinnable.
+    // composite whose pillars crest at different moments can sit just under the
+    // target forever and quietly make the stage unwinnable.
     let world = marketReducer(
       { ...createWorld(1), onboarding: "full" },
       { type: "begin" },
     );
-    for (let day = 0; day < 200 && !world.missionCleared; day++) {
+    for (
+      let day = 0;
+      day < 200 && !world.missionCleared && !world.runFailed;
+      day++
+    ) {
       for (const customer of world.customers) {
         if (customer.status !== "waiting") continue;
         if (defaultRisk(customer) > 22) continue;
@@ -875,7 +876,7 @@ describe("bank trust", () => {
       }
       world = marketReducer(world, { type: "advance-day" });
     }
-    expect(world.insolvent).toBe(false);
+    expect(world.runFailed).toBe(false);
     expect(world.missionCleared).toBe(true);
     expect(world.trust).toBe(100);
   });

@@ -1,9 +1,31 @@
 import { Coins, SlidersHorizontal, X } from "lucide-react";
-import { useState } from "react";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
 import type { LoanProductRules } from "./market-world.ts";
+
+/**
+ * The bank's standard lending policy. Fixed, not authored: this dialog is a
+ * confirmation of the terms the stage teaches, so the rules live here as a
+ * constant rather than behind a setter no control ever calls.
+ */
+const STANDARD_LOAN_RULES: LoanProductRules = {
+  minimumIncome: 1_500,
+  occupation: "employed",
+  // Priced to sit inside the market's ordinary band — customers ask 7–20% and
+  // the trust model only calls a rate unfair above 22. At 10% an automated line
+  // earned less than the same loans written by hand, which made the stage's own
+  // automation the worse move.
+  interestRate: 14,
+  // Reaches the first stage's small requests, which start at $80. A $300 floor
+  // matched only 14% of the applicants the generator actually produces.
+  minimumAmount: 100,
+  maximumAmount: 1_000,
+  minimumTerm: 6,
+  // Wide enough to cover both stages' generated terms. A 12-day ceiling left
+  // the line blind to 40% of Riverside's applicants, who then piled up unfunded.
+  maximumTerm: 16,
+};
 
 type ProductBuilderProps = {
   locale: Locale;
@@ -19,17 +41,7 @@ export function ProductBuilder({
   onClose,
 }: ProductBuilderProps) {
   const m = messagesFor(locale).market;
-  const [rules, setRules] = useState<LoanProductRules>({
-    minimumIncome: 1_500,
-    occupation: "employed",
-    interestRate: 10,
-    // Reaches the first stage's small requests, which start at $80. A $300 floor
-    // matched only 14% of the applicants the generator actually produces.
-    minimumAmount: 100,
-    maximumAmount: 1_000,
-    minimumTerm: 6,
-    maximumTerm: 12,
-  });
+  const rules = STANDARD_LOAN_RULES;
   return (
     <section
       className="product-builder guided-product-builder"

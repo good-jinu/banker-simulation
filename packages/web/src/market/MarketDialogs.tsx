@@ -4,6 +4,7 @@ import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CustomerConsultation } from "./CustomerConsultation.tsx";
 import type {
+  ConsultationAnswers,
   ConsultationProgress,
   ConsultationQuestionId,
 } from "./market-consultation.ts";
@@ -31,7 +32,7 @@ type MarketDialogsProps = {
   overlay: MarketOverlay | null;
   consultation: ConsultationProgress;
   onCloseOverlay: () => void;
-  onConsultationProgress: (progress: ConsultationProgress) => void;
+  onConsultationProgress: (answers: ConsultationAnswers) => void;
   onConsultationQuestionAsked: (question: ConsultationQuestionId) => void;
   onApprove: (customer: Customer) => void;
   onReject: (customer: Customer) => void;
@@ -146,6 +147,7 @@ export function MarketDialogs({
               <X />
             </button>
             <CustomerConsultation
+              key={selected.id}
               customer={selected}
               locale={locale}
               showRiskEstimate={world.config.randomizeDefaultRisk}
@@ -173,7 +175,11 @@ export function MarketDialogs({
                 world.onboarding === "first-customer" &&
                 selected.id === world.config.introCustomerId
               }
-              initialProgress={consultation}
+              // Only this customer's own answers seed the dialog; anyone
+              // else's are a different conversation.
+              {...(consultation.customerId === selected.id
+                ? { initialProgress: consultation }
+                : {})}
               onProgressChange={onConsultationProgress}
               onQuestionAsked={onConsultationQuestionAsked}
             />
@@ -247,7 +253,7 @@ export function MarketDialogs({
           />
         </div>
       )}
-      {world.insolvent && (
+      {world.runFailed && (
         <div
           className="mission-clear-backdrop loss-backdrop"
           role="dialog"

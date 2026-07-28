@@ -8,15 +8,16 @@ import {
   approachTrust,
   assessTrust,
   decayReputation,
-  emptyReputation,
-  marketOpinion,
+  openingReputation,
+  recordActivity,
   openingTrust,
   rateFairness,
+  trustReasonFor,
   TRUST_COLLAPSE,
-  type MarketOpinion,
   type Reputation,
   type TrustAssessment,
   type TrustContext,
+  type TrustReason,
 } from "./market-trust.ts";
 import {
   publishMarketNews,
@@ -93,6 +94,11 @@ export type Customer = {
   term: number;
   dueDay: number;
   appears: number;
+  /**
+   * The day this applicant stops waiting and takes their request elsewhere.
+   * Absent on scripted customers, who wait as long as the story needs them to.
+   */
+  expires?: number;
   x: number;
   y: number;
   avatar: string;
@@ -147,17 +153,7 @@ export type Funding = {
   defaulted: boolean;
 };
 
-/**
- * Why the bank's standing moved today. Derived from the day's events rather
- * than from a stored diff, so the message always names a cause the player just
- * watched happen. Deliberately qualitative: no point values are ever surfaced.
- */
-export type TrustReason =
-  | "contracts-completing"
-  | "earnings-sustainable"
-  | "defaults-weakened-book"
-  | "obligation-unpaid"
-  | "book-thinning";
+export type { TrustReason } from "./market-trust.ts";
 
 /** Permanent run totals. Unlike reputation, these never decay and are safe to report. */
 export type MarketRunStats = {
@@ -205,6 +201,7 @@ export type MarketEvent =
       risk: number;
     }
   | { type: "loan-request"; customer: Customer }
+  | { type: "applicant-left"; customer: Customer }
   | { type: "deposit-accepted"; depositor: Depositor }
   | { type: "deposit-withdrawal"; amount: number }
   | { type: "transfer"; from: string; to: string; amount: number }
@@ -231,7 +228,7 @@ export type MarketEvent =
   | { type: "funding-unlocked" }
   | { type: "market-news"; news: MarketNews }
   | { type: "trust-shift"; direction: "up" | "down"; reason: TrustReason }
-  | { type: "insolvent" }
+  | { type: "run-failed" }
   | { type: "mission-clear" };
 
 export type MarketWorld = {
@@ -249,7 +246,8 @@ export type MarketWorld = {
   cumulativeLent: number;
   thirdLoanDay: number | null;
   missionCleared: boolean;
-  insolvent: boolean;
+  /** The run is over and lost — out of cash, out of trust, or out of days. */
+  runFailed: boolean;
   failureReason: FailureReason;
   /** The displayed score. Never added to directly — it walks toward the
    * composite computed from `reputation` once per day. */
@@ -417,12 +415,12 @@ export function createWorld(
     cumulativeLent: 0,
     thirdLoanDay: null,
     missionCleared: false,
-    insolvent: false,
+    runFailed: false,
     failureReason: null,
     // An unknown bank opens at the same standing its empty record implies:
     // no reach, no earnings, and a neutral prior on reliability.
     trust: openingTrust(config.startingCash),
-    reputation: emptyReputation(),
+    reputation: openingReputation(),
     fundingAnnounced: false,
     withdrawalEvent,
     news: [],
@@ -450,11 +448,6 @@ export function trustContext(world: MarketWorld): TrustContext {
 
 export function assessWorldTrust(world: MarketWorld): TrustAssessment {
   return assessTrust(world.reputation, trustContext(world));
-}
-
-/** The three broad bands shown to the player, and nothing more. */
-export function worldOpinion(world: MarketWorld): MarketOpinion {
-  return marketOpinion(assessWorldTrust(world));
 }
 
 export function avatarFor(
@@ -592,7 +585,7 @@ export function marketReducer(
   action: MarketAction,
 ): MarketWorld {
   if (action.type === "restore") return { ...action.world, events: [] };
-  if (world.insolvent || world.missionCleared) return { ...world, events: [] };
+  if (world.runFailed || world.missionCleared) return { ...world, events: [] };
   switch (action.type) {
     case "advance-day":
       return withDerivedEvents(advanceDay(world));
@@ -607,16 +600,18 @@ export function marketReducer(
         ),
       );
     case "reject":
-      return advanceOnboardingAfterCustomerDecision(
-        world,
-        {
-          ...world,
-          customers: world.customers.filter(
-            (customer) => customer.id !== action.customerId,
-          ),
-          events: [],
-        },
-        action.customerId,
+      return withDerivedEvents(
+        advanceOnboardingAfterCustomerDecision(
+          world,
+          {
+            ...world,
+            customers: world.customers.filter(
+              (customer) => customer.id !== action.customerId,
+            ),
+            events: [],
+          },
+          action.customerId,
+        ),
       );
     case "borrow":
       return withDerivedEvents(borrow(world, action.lenderId));
@@ -654,11 +649,11 @@ function withDerivedEvents(world: MarketWorld): MarketWorld {
   const summary = summarize(world);
   const goals = goalsFor(world);
   let { missionCleared, fundingAnnounced, events } = world;
-  if (!world.insolvent && !missionCleared && world.trust >= goals.trustTarget) {
+  if (!world.runFailed && !missionCleared && world.trust >= goals.trustTarget) {
     missionCleared = true;
     events = [...events, { type: "mission-clear" }];
   }
-  if (!world.insolvent && !fundingAnnounced && summary.fundingEligible) {
+  if (!world.runFailed && !fundingAnnounced && summary.fundingEligible) {
     fundingAnnounced = true;
     events = [...events, { type: "funding-unlocked" }];
   }
@@ -748,22 +743,22 @@ function advanceDay(world: MarketWorld): MarketWorld {
   let withdrawalEvent = world.withdrawalEvent;
   let depositors = world.depositors;
   let onboarding = world.onboarding;
-  // The warning opens on its scheduled day but stays open until the withdrawal
-  // itself, because savers arrive on the deposit product's schedule rather than
-  // at the start of the run. Checking the warning day exactly would let a saver
-  // who joined a day later take the full withdrawal with no notice at all. The
-  // `scheduled` guard keeps it one-shot; settlement runs before new depositors
-  // spawn, so a saver arriving on the withdrawal day is never caught unwarned.
+  // The warning arms on the first day the bank actually holds savings, on or
+  // after its scheduled day, and fixes the withdrawal to the notice period from
+  // that moment. Savers arrive on the deposit product's own schedule, so a
+  // fixed date would either give a late-joining saver no notice at all, or —
+  // if the date simply passed with an empty deposit book — let a player skip
+  // the stage's only liquidity test by launching savings a few days later.
   if (
     withdrawalEvent?.status === "scheduled" &&
     day >= withdrawalEvent.warningDay &&
-    day < withdrawalEvent.withdrawalDay &&
     depositors.some((depositor) => depositor.status === "accepted")
   ) {
     const pressure = world.config.withdrawalPressure;
     if (pressure) {
+      const withdrawalDay = day + Math.max(1, pressure.warningDays);
       const withdrawalNews: MarketNews = {
-        id: `withdrawal-warning-${withdrawalEvent.withdrawalDay}`,
+        id: `withdrawal-warning-${withdrawalDay}`,
         threadId: "deposit-withdrawal",
         day,
         publishedDay: day,
@@ -778,14 +773,30 @@ function advanceDay(world: MarketWorld): MarketWorld {
       };
       news = [...news, withdrawalNews];
       events.push({ type: "market-news", news: withdrawalNews });
-      withdrawalEvent = { ...withdrawalEvent, status: "warned" };
+      withdrawalEvent = { ...withdrawalEvent, withdrawalDay, status: "warned" };
     }
   }
   // A day of forgetting happens before the day's events are recorded, so
   // today's outcomes are weighed at full value against a fading history.
   const reputation = decayReputation(world.reputation);
+  // The market cannot lose interest in a bank that has not opened for general
+  // business yet. The guided lesson is scripted rather than traded — its long
+  // wait for the first repayment is not the player standing still.
+  if (world.onboarding !== "full")
+    reputation.activity = world.reputation.activity;
   let seed = world.seed;
   let customers = world.customers.filter((customer) => {
+    // An applicant nobody funded eventually goes elsewhere. Held back until the
+    // full market opens so a tutorial customer can never walk out mid-lesson.
+    if (
+      customer.status === "waiting" &&
+      world.onboarding === "full" &&
+      customer.expires !== undefined &&
+      day >= customer.expires
+    ) {
+      events.push({ type: "applicant-left", customer });
+      return false;
+    }
     if (customer.status === "accepted" && customer.dueDay === day) {
       const baseRisk =
         customer.id === world.config.introCustomerId &&
@@ -809,6 +820,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
         // Severity, not a flat penalty: the write-off hits realized profit and
         // open losses in proportion to the principal actually lost.
         reputation.defaulted += 1;
+        reputation.activity += 1;
         reputation.openLoss += customer.amount;
         reputation.realizedProfit -= customer.amount;
         if (customer.productId) reputation.productDefaulted += 1;
@@ -837,6 +849,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
       // A customer counts as served only here, at repayment — never at
       // approval — and the loan's size buys no extra credit.
       reputation.repaid += 1;
+      reputation.activity += 1;
       reputation.realizedProfit += customer.amount * (customer.rate / 100);
       reputation.fairness += rateFairness(customer.rate);
       if (customer.productId) reputation.productRepaid += 1;
@@ -936,9 +949,9 @@ function advanceDay(world: MarketWorld): MarketWorld {
         ? { ...lender, defaulted: true }
         : lender,
     );
+  // Only a warned event settles: an unarmed one is still waiting for savers.
   if (
-    withdrawalEvent &&
-    withdrawalEvent.status !== "settled" &&
+    withdrawalEvent?.status === "warned" &&
     withdrawalEvent.withdrawalDay === day
   ) {
     const payout = withdrawalAmount(
@@ -993,21 +1006,24 @@ function advanceDay(world: MarketWorld): MarketWorld {
   });
   const trust = approachTrust(world.trust, assessment.target);
   if (Math.abs(trust - world.trust) >= 0.5) {
+    const direction = trust > world.trust ? "up" : "down";
     events.push({
       type: "trust-shift",
-      direction: trust > world.trust ? "up" : "down",
-      reason: trustReasonFor(
-        events,
-        trust > world.trust ? "up" : "down",
-        assessment,
-      ),
+      direction,
+      reason: trustReasonFor(assessment, direction, {
+        fundingDefault: events.some(
+          (event) => event.type === "funding-default",
+        ),
+        customerDefault: events.some((event) => event.type === "default"),
+        repaid: events.some((event) => event.type === "customer-repayment"),
+      }),
     });
   }
 
-  const insolvent = cash < 0 || trust <= TRUST_COLLAPSE;
+  const runFailed = cash < 0 || trust <= TRUST_COLLAPSE;
   const failureReason: FailureReason =
     trust <= TRUST_COLLAPSE ? "trust" : cash < 0 ? "cash" : null;
-  if (insolvent) events.push({ type: "insolvent" });
+  if (runFailed) events.push({ type: "run-failed" });
   if (
     onboarding === "full" &&
     day % world.config.spawnEveryDays === 0 &&
@@ -1070,7 +1086,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
     depositors,
     funding: normalizedFunding,
     seed,
-    insolvent,
+    runFailed,
     failureReason,
     trust,
     reputation,
@@ -1096,31 +1112,6 @@ function withdrawalAmount(
         depositor.balance * withdrawalShare * (1 + depositor.rate / 100),
       0,
     );
-}
-
-/**
- * Names the cause the player just watched happen, in priority order: a broken
- * promise outranks a customer default, which outranks ordinary drift. An
- * active ceiling is reported as the cause even on a day with no bad news,
- * because "why won't this go up" is the question it exists to answer.
- */
-function trustReasonFor(
-  events: MarketEvent[],
-  direction: "up" | "down",
-  assessment: TrustAssessment,
-): TrustReason {
-  const binding = assessment.composite > assessment.ceiling;
-  if (
-    events.some((event) => event.type === "funding-default") ||
-    (binding && assessment.ceilingCause === "unpaid-obligation")
-  )
-    return "obligation-unpaid";
-  if (events.some((event) => event.type === "default") || binding)
-    return "defaults-weakened-book";
-  if (direction === "down") return "book-thinning";
-  return events.some((event) => event.type === "customer-repayment")
-    ? "contracts-completing"
-    : "earnings-sustainable";
 }
 
 function randomCustomer(
@@ -1159,6 +1150,7 @@ function randomCustomer(
     term,
     dueDay: day + term,
     appears: day,
+    expires: day + generation.patienceDays,
     x: position.x,
     y: position.y,
     avatar: RANDOM_AVATARS[roll(RANDOM_AVATARS.length)]!,
@@ -1233,27 +1225,11 @@ function begin(world: MarketWorld): MarketWorld {
     first.status !== "waiting"
   )
     return { ...world, events: [] };
+  // The scripted loan is a real loan: it goes through the same path so it books
+  // the same cash, contract and business record as one the player writes.
   return advanceOnboardingAfterCustomerDecision(
     world,
-    {
-      ...world,
-      cash: world.cash - first.amount,
-      customers: world.customers.map((customer) =>
-        customer.id === first.id
-          ? { ...customer, status: "accepted" }
-          : customer,
-      ),
-      loanCount: world.loanCount + 1,
-      cumulativeLent: world.cumulativeLent + first.amount,
-      events: [
-        {
-          type: "transfer",
-          from: "banker",
-          to: first.id,
-          amount: first.amount,
-        },
-      ],
-    },
+    lend(world, first),
     first.id,
   );
 }
@@ -1299,6 +1275,10 @@ function lend(
     customers: world.customers.map((item) =>
       item.id === customer.id ? acceptedCustomer : item,
     ),
+    // Writing the loan is business the moment it happens: standing should
+    // respond to a bank that is working, not only to contracts that have
+    // already run their term.
+    reputation: recordActivity(world.reputation),
     loanCount,
     cumulativeLent: world.cumulativeLent + customer.amount,
     thirdLoanDay: loanCount === 3 ? world.day : world.thirdLoanDay,

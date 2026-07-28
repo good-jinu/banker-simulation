@@ -1,13 +1,14 @@
-import { Banknote, Equal, Landmark, Plus, Wallet, X } from "lucide-react";
+import { Banknote, Equal, Landmark, Minus, Wallet, X } from "lucide-react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
-import type {
-  Customer,
-  Depositor,
-  Funding,
-  MarketWorld,
+import {
+  summarize,
+  type Customer,
+  type Depositor,
+  type Funding,
+  type MarketWorld,
 } from "./market-world.ts";
 
 export function MarketAssetsDialog({
@@ -21,25 +22,17 @@ export function MarketAssetsDialog({
 }) {
   const m = messagesFor(locale).market;
   const { cash, day, customers, depositors, funding, trust } = world;
-  const loanReceivables = customers
-    .filter((customer) => customer.status === "accepted")
-    .reduce((total, customer) => total + customer.amount, 0);
-  const totalAssets = cash + loanReceivables;
-  const fundingLiabilities = funding
-    .filter((lender) => lender.accepted)
-    .reduce((total, lender) => total + lender.amount, 0);
-  const depositLiabilities = depositors
-    .filter((depositor) => depositor.status === "accepted")
-    .reduce((total, depositor) => total + depositor.balance, 0);
-  const netWorth = totalAssets - fundingLiabilities - depositLiabilities;
-  const trustBand =
-    trust >= 80
-      ? "strong"
-      : trust >= 60
-        ? "steady"
-        : trust >= 30
-          ? "at-risk"
-          : "blocked";
+  // The balance sheet the simulation actually scores the bank on. Re-deriving
+  // it here once let the panel and the trust model disagree.
+  const {
+    loanReceivables,
+    totalAssets,
+    fundingLiabilities,
+    depositLiabilities,
+    netWorth,
+    trustBand,
+  } = summarize(world);
+  const totalLiabilities = fundingLiabilities + depositLiabilities;
   const trustLabel =
     trustBand === "strong"
       ? m.trustStrong
@@ -84,29 +77,40 @@ export function MarketAssetsDialog({
             <dt>{m.loanReceivables}</dt>
             <dd>{money(loanReceivables)}</dd>
           </div>
-          <div>
-            <dt>{m.depositLiabilities}</dt>
-            <dd>{money(depositLiabilities)}</dd>
-          </div>
           <div className="total">
             <dt>{m.totalAssets}</dt>
             <dd>{money(totalAssets)}</dd>
           </div>
         </dl>
+        <h3>{m.liabilities}</h3>
+        <dl className="asset-rows">
+          <div>
+            <dt>{m.depositLiabilities}</dt>
+            <dd>{money(depositLiabilities)}</dd>
+          </div>
+          <div>
+            <dt>{m.bankRepaymentObligation}</dt>
+            <dd>{money(fundingLiabilities)}</dd>
+          </div>
+          <div className="total">
+            <dt>{m.totalLiabilities}</dt>
+            <dd>{money(totalLiabilities)}</dd>
+          </div>
+        </dl>
         <div className="asset-equation" aria-hidden="true">
           <span>
-            <Wallet />
-            <small>{m.cash}</small>
-          </span>
-          <Plus className="eq-op" />
-          <span>
             <Banknote />
-            <small>{m.loanReceivables}</small>
+            <small>{m.totalAssets}</small>
+          </span>
+          <Minus className="eq-op" />
+          <span>
+            <Wallet />
+            <small>{m.totalLiabilities}</small>
           </span>
           <Equal className="eq-op" />
           <span>
             <Landmark />
-            <small>{m.totalAssets}</small>
+            <small>{m.netWorth}</small>
           </span>
         </div>
         <PortfolioDetails
