@@ -158,13 +158,18 @@
 
 .product-node {
   z-index: 8;
-  width: 44px;
-  height: 44px;
-  min-width: 0;
+  width: auto;
+  min-width: 44px;
   padding: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+
+/* The icon and its module dock share one positioning context so the `+` can
+   hang off the icon's corner without the chips row below shifting it. */
+.product-node-core {
+  position: relative;
 }
 
 .product-icon,
@@ -181,6 +186,9 @@
   width: 42px;
   height: 42px;
   margin: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease;
 }
 
 .deposit-product-node .product-icon {
@@ -209,11 +217,16 @@
 }
 .product-node {
   cursor: pointer;
-  transition: transform 0.15s ease;
 }
-.product-node:hover,
-.product-node:focus-visible {
-  transform: translate(-50%, -50%) translateY(-3px);
+/* Lift the icon rather than the whole node: the module menu is a child, and
+   hovering it must not drag the line it belongs to. */
+.product-icon:hover,
+.product-icon:focus-visible {
+  transform: translateY(-3px);
+}
+/* An open menu has to clear neighbouring product nodes, which share z-index 8. */
+.product-node.menu-open {
+  z-index: 12;
 }
 .product-node.paused {
   opacity: 0.6;
@@ -300,6 +313,186 @@
 .product-toggle-button:hover {
   color: var(--paper);
   background: var(--red);
+}
+
+.product-modules {
+  margin-top: 12px;
+  padding: 12px;
+  border: 3px solid var(--ink);
+  background: #dff1d2;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.product-modules > strong {
+  display: block;
+  font-size: 12px;
+}
+
+.product-modules > p {
+  margin: 4px 0 10px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.product-modules-empty {
+  margin: 0;
+  color: #514527;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.product-module-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.product-module {
+  padding: 9px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+
+.product-module strong {
+  display: block;
+  font-size: 11px;
+}
+
+.product-module p {
+  margin: 4px 0 0;
+  color: #514527;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+/* Module dock on the map node — the assembly surface. */
+.product-module-wrap {
+  position: absolute;
+  right: -11px;
+  bottom: -9px;
+  z-index: 9;
+}
+
+.product-module-button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 2px 2px 0 var(--ink);
+  cursor: pointer;
+}
+
+.product-module-button svg {
+  width: 12px;
+}
+
+.product-module-menu {
+  position: absolute;
+  z-index: 11;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  width: max-content;
+  max-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 3px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 5px 5px 0 var(--ink);
+  text-align: left;
+  transform: translateX(-50%);
+}
+
+/* Colours and sizes are stated outright: `.map-node strong/small` otherwise
+   reaches in and restyles anything nested inside a map node. */
+.product-module-menu-title {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+}
+
+.product-module-menu-slots {
+  margin-top: -3px;
+  color: #6b5c33;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.product-module-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  box-shadow: 2px 2px 0 var(--ink);
+  font-size: 10px;
+  font-weight: 950;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.product-module-option svg {
+  width: 13px;
+  flex-shrink: 0;
+}
+
+.product-module-option:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+}
+
+.product-module-option.installed {
+  background: var(--green);
+}
+
+.product-module-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.product-module-check {
+  margin-left: auto;
+}
+
+.product-module-chips {
+  display: flex;
+  gap: 3px;
+  margin-top: 5px;
+}
+
+.product-module-chip {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: var(--green);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+
+.product-module-chip svg {
+  width: 11px;
+}
+
+.credit-score-readout {
+  margin: -2px 0 12px;
+  padding: 7px 9px;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  background: #dff1d2;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .product-connections {

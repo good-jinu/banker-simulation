@@ -52,6 +52,8 @@ export type MarketStageCopy = {
   districtLabel: LocalText;
   missionCompleteLabel: LocalText;
   learnCustomerHint: LocalText;
+  /** Shown once, as a dialog, before the stage's clock is allowed to run. */
+  introBody: LocalText;
 };
 
 export type MarketStageConfig = {
@@ -109,7 +111,9 @@ const firstYieldConfig: MarketStageConfig = {
   productCreationCost: 100,
   introCustomerId: "mina",
   introApprovesAutomatically: true,
-  randomizeDefaultRisk: true,
+  // Stage one is a calm growth lesson: every customer repays so funding and
+  // deposit choices can be learned without credit-loss pressure.
+  randomizeDefaultRisk: false,
   fundingRepaymentsEnabled: true,
   newsSchedule: [
     {
@@ -280,6 +284,10 @@ const firstYieldConfig: MarketStageConfig = {
     learnCustomerHint: {
       en: "Get to know the customer before lending.",
       ko: "대출하기 전에 고객을 알아보세요.",
+    },
+    introBody: {
+      en: "You have opened a small bank on Riverside. Listen to each customer, lend what you can afford, and let repayments grow the book. Nobody defaults here yet — this is where you learn the rhythm of the market.",
+      ko: "리버사이드에 작은 은행을 열었습니다. 고객의 이야기를 듣고, 감당할 수 있는 만큼 빌려주고, 상환으로 자산을 키우세요. 아직 이곳에서는 아무도 돈을 떼먹지 않습니다 — 시장의 흐름을 익히는 단계입니다.",
     },
   },
 };
@@ -480,6 +488,10 @@ const creditUnderPressureConfig: MarketStageConfig = {
     learnCustomerHint: {
       en: "Income relative to the loan amount determines repayment risk.",
       ko: "소득 대비 대출 금액이 상환 위험을 결정합니다.",
+    },
+    introBody: {
+      en: "North Yard runs on irregular work, and this time customers can default. Watch the market wire, keep cash for the depositors who will come asking, and remember that borrowed money has to be paid back on its due day.",
+      ko: "노스 야드는 불규칙한 일자리로 돌아가고, 이번에는 고객이 돈을 갚지 못할 수 있습니다. 시장 뉴스를 주시하고, 찾아올 예금자를 위한 현금을 남겨두고, 빌린 돈에는 만기가 있다는 점을 잊지 마세요.",
     },
   },
 };

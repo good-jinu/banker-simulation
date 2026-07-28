@@ -39,7 +39,6 @@ type MarketDialogsProps = {
   onCreateProduct: (rules: LoanProductRules) => void;
   onCreateDepositProduct: () => void;
   onToggleProduct: (productId: string, active: boolean) => void;
-  onToggleProductAlertGuard: (productId: string, enabled: boolean) => void;
   onShowNewsSegment: (segment: MarketSegment) => void;
   onBorrow: (lender: Funding) => void;
   onComplete: () => void;
@@ -61,7 +60,6 @@ export function MarketDialogs({
   onCreateProduct,
   onCreateDepositProduct,
   onToggleProduct,
-  onToggleProductAlertGuard,
   onShowNewsSegment,
   onBorrow,
   onComplete,
@@ -151,6 +149,11 @@ export function MarketDialogs({
               customer={selected}
               locale={locale}
               showRiskEstimate={world.config.randomizeDefaultRisk}
+              showCreditScore={world.products.some(
+                (product) =>
+                  product.kind === "loan" &&
+                  product.modules?.includes("credit-check"),
+              )}
               learnCustomerHint={localize(
                 stage.config.copy.learnCustomerHint,
                 locale,
@@ -187,7 +190,6 @@ export function MarketDialogs({
             depositors={selectedProductDepositors}
             onClose={onCloseOverlay}
             onToggleActive={onToggleProduct}
-            onToggleAlertGuard={onToggleProductAlertGuard}
           />
         </div>
       )}

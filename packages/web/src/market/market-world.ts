@@ -23,9 +23,11 @@ import {
   riskAdjustmentForSegment,
   type MarketNews,
 } from "./market-news.ts";
+import { defaultRisk, guaranteedDefaultRisk } from "./market-credit.ts";
 import type {
   DepositProduct,
   LoanProduct,
+  LoanProductModule,
   OccupationRule,
   Product,
 } from "./market-product-types.ts";
@@ -34,7 +36,7 @@ import {
   createProduct,
   productForCustomer,
   setProductActive,
-  setProductAlertGuard,
+  setProductModule,
 } from "./market-products.ts";
 import { advanceOnboarding, type OnboardingStep } from "./market-onboarding.ts";
 
@@ -42,11 +44,13 @@ export type { OnboardingStep } from "./market-onboarding.ts";
 export type {
   DepositProduct,
   LoanProduct,
+  LoanProductModule,
   LoanProductRules,
   OccupationRule,
   Product,
   ProductKind,
 } from "./market-product-types.ts";
+export { defaultRisk } from "./market-credit.ts";
 
 /**
  * Pure simulation core for the open-market level. The world is plain data,
@@ -97,6 +101,12 @@ export type Customer = {
   status: CustomerStatus;
   /** Set only when the loan was issued by an automated product. */
   productId?: string;
+  /** A credit-bureau signal captured when an automated line checks it. */
+  creditScore?: number;
+  /** A qualifying guarantor was attached when this contract originated. */
+  guaranteed?: boolean;
+  /** Customers with a guarantor can qualify for the guarantor-backed line. */
+  guarantor?: LocalText;
 };
 
 /** A depositor is a first-class market participant, not free cash. */
@@ -265,7 +275,12 @@ export type MarketAction =
   | { type: "borrow"; lenderId: string }
   | { type: "create-product"; product: LoanProduct | DepositProduct }
   | { type: "set-product-active"; productId: string; active: boolean }
-  | { type: "set-product-alert-guard"; productId: string; enabled: boolean }
+  | {
+      type: "set-product-module";
+      productId: string;
+      module: LoanProductModule;
+      enabled: boolean;
+    }
   | { type: "read-market-news" };
 
 export const FIRST_CUSTOMER: Customer =
@@ -418,19 +433,6 @@ export function createWorld(
 
 export function goalsFor(world: MarketWorld) {
   return world.config.goals;
-}
-
-/**
- * Challenge-level default chance. A loan at or below one month of income is
- * precarious; applicants earning several times the requested amount are safer.
- */
-export function defaultRisk(customer: Customer, marketAdjustment = 0): number {
-  if (customer.income <= 0 || customer.occupation === "unemployed") return 100;
-  const incomeToLoan = customer.income / customer.amount;
-  return Math.min(
-    75,
-    Math.max(5, Math.round(62 - incomeToLoan * 18 + marketAdjustment)),
-  );
 }
 
 /** The world-derived half of the trust inputs. Net assets, not gross, so
@@ -629,9 +631,14 @@ export function marketReducer(
       return withDerivedEvents(
         setProductActive(world, action.productId, action.active),
       );
-    case "set-product-alert-guard":
+    case "set-product-module":
       return withDerivedEvents(
-        setProductAlertGuard(world, action.productId, action.enabled),
+        setProductModule(
+          world,
+          action.productId,
+          action.module,
+          action.enabled,
+        ),
       );
     case "read-market-news":
       return {
@@ -780,7 +787,7 @@ function advanceDay(world: MarketWorld): MarketWorld {
   let seed = world.seed;
   let customers = world.customers.filter((customer) => {
     if (customer.status === "accepted" && customer.dueDay === day) {
-      const risk =
+      const baseRisk =
         customer.id === world.config.introCustomerId &&
         world.onboarding === "first-repayment" &&
         world.config.introCustomerGuaranteedRepayment
@@ -789,6 +796,9 @@ function advanceDay(world: MarketWorld): MarketWorld {
               customer,
               riskAdjustmentForSegment(news, customer.segment),
             );
+      const risk = customer.guaranteed
+        ? guaranteedDefaultRisk(baseRisk)
+        : baseRisk;
       let roll = 100;
       if (world.config.randomizeDefaultRisk) {
         let random: number;
@@ -1128,6 +1138,11 @@ function randomCustomer(
   const generation = config.customerGeneration;
   const term = generation.termMin + roll(generation.termRange);
   const jobIndex = roll(RANDOM_JOBS.length);
+  const collateralIndex = roll(RANDOM_COLLATERAL.length);
+  const guarantor =
+    collateralIndex === 2
+      ? { en: "Workplace guarantor", ko: "직장 보증인" }
+      : undefined;
   const customer: Customer = {
     id: `customer-${day}`,
     name: RANDOM_NAMES[roll(RANDOM_NAMES.length)]!,
@@ -1151,9 +1166,10 @@ function randomCustomer(
       purpose: RANDOM_PURPOSES[roll(RANDOM_PURPOSES.length)]!,
       employment: RANDOM_EMPLOYMENT[roll(RANDOM_EMPLOYMENT.length)]!,
       debt: RANDOM_DEBT[roll(RANDOM_DEBT.length)]!,
-      collateral: RANDOM_COLLATERAL[roll(RANDOM_COLLATERAL.length)]!,
+      collateral: RANDOM_COLLATERAL[collateralIndex]!,
     },
     status: "waiting",
+    ...(guarantor ? { guarantor } : {}),
   };
   return [customer, seed];
 }

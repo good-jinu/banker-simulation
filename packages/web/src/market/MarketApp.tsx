@@ -12,8 +12,15 @@ import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { CLOCK_SPEEDS } from "../lib/game-clock.ts";
 import { CoachmarkSpotlight } from "./CoachmarkSpotlight.tsx";
+import { MarketBriefingDialog } from "./MarketBriefingDialog.tsx";
 import { MarketDialogs } from "./MarketDialogs.tsx";
 import { MarketGameView } from "./MarketGameView.tsx";
+import {
+  newsBriefingImage,
+  queueNewsBriefings,
+  type Briefing,
+} from "./market-briefing.ts";
+import { localize } from "../i18n/local-text.ts";
 import {
   initialConsultationProgress,
   type ConsultationProgress,
@@ -85,6 +92,7 @@ export function MarketApp({
     createWorld(Date.now() >>> 0, stage.config),
   );
   const [overlay, setOverlay] = useState<MarketOverlay | null>(null);
+  const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [productPickerOpen, setProductPickerOpen] = useState(false);
   const [highlightedSegment, setHighlightedSegment] =
     useState<MarketSegment | null>(null);
@@ -105,6 +113,8 @@ export function MarketApp({
     initialConsultationProgress,
   );
   const clockRef = useRef<GameClock | null>(null);
+  /** Every story ever shown, so a dismissed briefing cannot come back. */
+  const handledBriefings = useRef(new Set<string>());
   const openedFirstConsultation = useRef(false);
   const previousOnboarding = useRef(world.onboarding);
   const session = useMarketSession({
@@ -141,6 +151,18 @@ export function MarketApp({
     world.onboarding,
   ]);
   useMarketClock(session.sessionReady, dispatch, clockRef);
+  // The stage briefing is queued ahead of anything the world publishes, so a
+  // day-0 article never opens before the player knows where they are.
+  useEffect(() => {
+    if (!session.sessionReady || ui.seenStageIntro) return;
+    setUi((current) => ({ ...current, seenStageIntro: true }));
+    setBriefings((current) => [{ kind: "stage-intro" }, ...current]);
+  }, [session.sessionReady, ui.seenStageIntro]);
+  useEffect(() => {
+    setBriefings((current) =>
+      queueNewsBriefings(current, world.events, handledBriefings.current),
+    );
+  }, [world.events]);
   const openProductBuilder = useCallback(
     () => setOverlay({ kind: "product-builder", productKind: "loan" }),
     [],
@@ -163,7 +185,18 @@ export function MarketApp({
     onOpenProductBuilder: openProductBuilder,
     onOpenFunding: openFunding,
   });
-  const modalOpen = Boolean(overlay || world.missionCleared || world.insolvent);
+  // A finished run has nothing left to brief; the result report takes over.
+  const activeBriefing =
+    world.missionCleared || world.insolvent ? null : (briefings[0] ?? null);
+  const modalOpen = Boolean(
+    overlay || activeBriefing || world.missionCleared || world.insolvent,
+  );
+  const dismissBriefing = useCallback(() => {
+    setBriefings((current) => current.slice(1));
+    // Reading an article in its own dialog is reading it: the wire badge must
+    // not keep claiming it is unread.
+    if (activeBriefing?.kind === "news") dispatch({ type: "read-market-news" });
+  }, [activeBriefing]);
   const markCoachmarkIntroduced = useCallback((id: CoachmarkId) => {
     setUi((current) => introduceCoachmark(current, id));
   }, []);
@@ -177,6 +210,7 @@ export function MarketApp({
   const activeCoachmark =
     overlay?.kind !== "product-builder" &&
     !productPickerOpen &&
+    !activeBriefing &&
     !world.missionCleared &&
     !world.insolvent
       ? pendingCoachmark
@@ -314,6 +348,9 @@ export function MarketApp({
         onSelectProduct={(product) =>
           setOverlay({ kind: "product", productId: product.id })
         }
+        onToggleProductModule={(productId, module, enabled) =>
+          dispatch({ type: "set-product-module", productId, module, enabled })
+        }
         onOpenFunding={openFunding}
         onToggleClock={toggleClock}
         onCycleSpeed={cycleSpeed}
@@ -366,9 +403,6 @@ export function MarketApp({
         onToggleProduct={(productId, active) =>
           dispatch({ type: "set-product-active", productId, active })
         }
-        onToggleProductAlertGuard={(productId, enabled) =>
-          dispatch({ type: "set-product-alert-guard", productId, enabled })
-        }
         onShowNewsSegment={(segment) => {
           setHighlightedSegment(segment);
           setOverlay(null);
@@ -377,6 +411,29 @@ export function MarketApp({
         onComplete={() => (onComplete ? onComplete() : onBack())}
         onBack={onBack}
       />
+      {activeBriefing && (
+        <div className="modal-backdrop briefing-backdrop">
+          {activeBriefing.kind === "stage-intro" ? (
+            <MarketBriefingDialog
+              locale={locale}
+              image={stage.image}
+              eyebrow={m.stageBriefingEyebrow(stage.number)}
+              title={localize(stage.title, locale)}
+              body={localize(stage.config.copy.introBody, locale)}
+              onClose={dismissBriefing}
+            />
+          ) : (
+            <MarketBriefingDialog
+              locale={locale}
+              image={newsBriefingImage(activeBriefing.article)}
+              eyebrow={m.newsDay(activeBriefing.article.publishedDay + 1)}
+              title={localize(activeBriefing.article.title, locale)}
+              body={localize(activeBriefing.article.body, locale)}
+              onClose={dismissBriefing}
+            />
+          )}
+        </div>
+      )}
       {activeCoachmark && (
         <CoachmarkSpotlight
           id={activeCoachmark}

@@ -88,6 +88,7 @@ describe("save migration", () => {
     });
     expect(migrated?.ui).toEqual({
       hasDraggedMap: false,
+      seenStageIntro: false,
       introducedCoachmarks: ["first-customer"],
       completedCoachmarks: ["first-customer"],
     });
@@ -112,9 +113,31 @@ describe("save migration", () => {
 
     expect(migrated?.ui).toEqual({
       hasDraggedMap: true,
+      seenStageIntro: false,
       introducedCoachmarks: ["drag-market-map"],
       completedCoachmarks: ["drag-market-map"],
     });
+  });
+
+  it("treats a run already underway as having seen its stage briefing", () => {
+    const config = marketCampaignStages[0]!.config;
+    const world = createWorld(7, config);
+    const migrated = migrateMarketSession(
+      {
+        schemaVersion: 1,
+        stageId: marketCampaignStages[0]!.id,
+        phase: "map",
+        // A save written before the briefing existed carries no flag at all.
+        world: { ...world, day: 4 },
+        consultation: {},
+        clock: {},
+        ui: {},
+      },
+      marketCampaignStages[0]!.id,
+      config,
+    );
+
+    expect(migrated?.ui.seenStageIntro).toBe(true);
   });
 
   it("hydrates deposit state for a session saved before deposits were introduced", () => {

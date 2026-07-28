@@ -9,6 +9,8 @@ import {
   type Depositor,
   type Product,
 } from "./market-world.ts";
+import { loanModuleCopy, loanModuleLabel } from "./market-modules.ts";
+import { LOAN_PRODUCT_MODULE_CAPACITY } from "./market-product-types.ts";
 
 type ProductDetailsProps = {
   locale: Locale;
@@ -18,7 +20,6 @@ type ProductDetailsProps = {
   depositors: Depositor[];
   onClose: () => void;
   onToggleActive: (productId: string, active: boolean) => void;
-  onToggleAlertGuard: (productId: string, enabled: boolean) => void;
 };
 
 export function ProductDetails({
@@ -29,7 +30,6 @@ export function ProductDetails({
   depositors,
   onClose,
   onToggleActive,
-  onToggleAlertGuard,
 }: ProductDetailsProps) {
   const m = messagesFor(locale).market;
   const isLoan = product.kind === "loan";
@@ -40,6 +40,7 @@ export function ProductDetails({
       : product.rules.occupation === "employed"
         ? m.productOccupationEmployed
         : m.productOccupationSelfEmployed;
+  const modules = isLoan ? (product.modules ?? []) : [];
 
   return (
     <section
@@ -117,19 +118,27 @@ export function ProductDetails({
         {product.active ? m.pauseProduct : m.resumeProduct}
       </button>
       {isLoan && (
-        <div className="product-alert-guard">
-          <strong>{m.alertGuard}</strong>
-          <p>{m.alertGuardCopy}</p>
-          <button
-            onClick={() =>
-              onToggleAlertGuard(product.id, !product.pauseOnMarketAlert)
-            }
-          >
-            {product.pauseOnMarketAlert
-              ? m.disconnectAlertGuard
-              : m.connectAlertGuard}
-          </button>
-        </div>
+        <section
+          className="product-modules"
+          aria-labelledby="product-modules-title"
+        >
+          <strong id="product-modules-title">{m.productModules}</strong>
+          <p>
+            {m.productModuleSlots(modules.length, LOAN_PRODUCT_MODULE_CAPACITY)}
+          </p>
+          {modules.length === 0 ? (
+            <p className="product-modules-empty">{m.productModulesEmpty}</p>
+          ) : (
+            <ul className="product-module-list">
+              {modules.map((module) => (
+                <li className="product-module" key={module}>
+                  <strong>{loanModuleLabel(m, module)}</strong>
+                  <p>{loanModuleCopy(m, module)}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
       <div className="product-connections">
         <strong>

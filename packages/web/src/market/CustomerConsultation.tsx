@@ -3,6 +3,7 @@ import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
 import { money } from "./market-format.ts";
+import { creditScoreFor } from "./market-credit.ts";
 import { ConsultationQuestions } from "./ConsultationQuestions.tsx";
 import { LoanDecisionActions } from "./LoanDecisionActions.tsx";
 import {
@@ -22,6 +23,7 @@ export function CustomerConsultation({
   customer,
   locale,
   showRiskEstimate,
+  showCreditScore = false,
   learnCustomerHint,
   mode,
   sceneLabel,
@@ -40,6 +42,7 @@ export function CustomerConsultation({
   locale: Locale;
   /** Adjust the opening dialogue for stages with randomized defaults. */
   showRiskEstimate: boolean;
+  showCreditScore?: boolean;
   learnCustomerHint: string;
   mode: ConversationMode;
   sceneLabel: string;
@@ -131,6 +134,11 @@ export function CustomerConsultation({
           <strong>{money(customer.amount)}</strong>
         </div>
         <p className="action-guide">{learnCustomerHint}</p>
+        {showCreditScore && (
+          <p className="credit-score-readout">
+            {m.creditScoreValue(creditScoreFor(customer))}
+          </p>
+        )}
         <ConsultationQuestions
           asked={consultation}
           locale={locale}

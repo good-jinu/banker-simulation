@@ -11,6 +11,7 @@ describe("initialMarketUiState", () => {
   it("shows the map drag tutorial for a new run", () => {
     expect(initialMarketUiState()).toEqual({
       hasDraggedMap: false,
+      seenStageIntro: false,
       introducedCoachmarks: [],
       completedCoachmarks: [],
     });

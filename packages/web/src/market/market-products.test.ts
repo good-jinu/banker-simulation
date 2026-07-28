@@ -5,6 +5,7 @@ import {
   buildLoanProduct,
   createProduct,
   customerMatchesLoanProduct,
+  setProductModule,
 } from "./market-products.ts";
 import { createWorld, type Depositor } from "./market-world.ts";
 
@@ -37,6 +38,53 @@ describe("market products", () => {
         rules: { ...rules, minimumIncome: customer.income + 1 },
       }),
     ).toBe(false);
+  });
+
+  it("uses credit checks to screen risk while guarantors reopen eligible cases", () => {
+    const world = createWorld(7, "credit-under-pressure");
+    const customer = {
+      ...world.customers[0]!,
+      id: "credit-rebuild",
+      occupation: "employed" as const,
+      income: 900,
+      amount: 900,
+      guarantor: { en: "Aunt Mira", ko: "미라 이모" },
+    };
+    const product = buildLoanProduct([], "Loans", {
+      ...rules,
+      minimumIncome: 1_500,
+    });
+    const creditChecked = { ...product, modules: ["credit-check" as const] };
+
+    expect(customerMatchesLoanProduct(customer, creditChecked)).toBe(false);
+    expect(
+      customerMatchesLoanProduct(customer, {
+        ...creditChecked,
+        modules: ["credit-check", "guarantor"],
+      }),
+    ).toBe(true);
+  });
+
+  it("limits each lending line to two policy modules", () => {
+    const base = createWorld(7, "credit-under-pressure");
+    const product = buildLoanProduct([], "Loans", rules);
+    const withProduct = { ...base, products: [product] };
+    const withCreditCheck = setProductModule(
+      withProduct,
+      product.id,
+      "credit-check",
+      true,
+    );
+    const withGuarantor = setProductModule(
+      withCreditCheck,
+      product.id,
+      "guarantor",
+      true,
+    );
+
+    expect(withGuarantor.products[0]).toMatchObject({
+      modules: ["credit-check", "guarantor"],
+    });
   });
 
   it("charges creation cost and activates matching deposits", () => {

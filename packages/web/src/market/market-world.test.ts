@@ -216,6 +216,32 @@ describe("campaign configuration", () => {
     expect(world.customers[0]?.amount).toBe(420);
     expect(world.funding[0]?.amount).toBe(600);
   });
+
+  it("keeps first-stage lending free of customer defaults", () => {
+    const start = createWorld(1, "first-yield");
+    const customer = {
+      ...start.customers[0]!,
+      id: "peaceful-customer",
+      income: 1,
+      amount: 100,
+      dueDay: 1,
+      status: "accepted" as const,
+    };
+    const world = marketReducer(
+      { ...start, customers: [customer] },
+      {
+        type: "advance-day",
+      },
+    );
+
+    expect(defaultRisk(customer)).toBeGreaterThan(0);
+    expect(world.events).toContainEqual(
+      expect.objectContaining({ type: "customer-repayment", customer }),
+    );
+    expect(world.events).not.toContainEqual(
+      expect.objectContaining({ type: "default", customer }),
+    );
+  });
 });
 
 describe("customer spawning", () => {
@@ -378,59 +404,6 @@ describe("level two credit risk", () => {
     );
     expect(world.stats.automatedIssued).toBe(1);
     expect(world.cash).toBe(300); // $900 start − $100 setup − $500 loan
-  });
-
-  it("holds an alert-affected customer when an automated line has a guard", () => {
-    const start = createWorld(1, "credit-under-pressure");
-    const product = {
-      id: "guarded-line",
-      kind: "loan" as const,
-      name: "Guarded line",
-      x: 50,
-      y: 26,
-      active: false,
-      rules: {
-        minimumIncome: 1_500,
-        occupation: "employed" as const,
-        interestRate: 10,
-        minimumAmount: 100,
-        maximumAmount: 1_000,
-        minimumTerm: 6,
-        maximumTerm: 12,
-      },
-    };
-    const withProduct = marketReducer(
-      { ...start, customers: [] },
-      { type: "create-product", product },
-    );
-    const guarded = marketReducer(withProduct, {
-      type: "set-product-alert-guard",
-      productId: product.id,
-      enabled: true,
-    });
-    const warning = start.config.newsSchedule.find(
-      (article) => article.id === "yard-gigs-warning",
-    )!;
-    const applicant = {
-      ...start.customers[0]!,
-      id: "delivery-applicant",
-      income: 2_500,
-      occupation: "employed" as const,
-      segment: "delivery" as const,
-      amount: 400,
-      term: 8,
-      status: "waiting" as const,
-    };
-    const held = marketReducer(
-      {
-        ...guarded,
-        news: [{ ...warning, publishedDay: 8, read: true }],
-        customers: [applicant],
-      },
-      { type: "set-product-active", productId: product.id, active: true },
-    );
-
-    expect(held.customers[0]?.status).toBe("waiting");
   });
 
   it("contracts every matching same-day customer when cash is available", () => {
@@ -910,7 +883,10 @@ describe("bank trust", () => {
   it("no longer lets a handful of cheap repeat loans win the stage", () => {
     // Under the old accumulator this exact loop was worth +12 a contract:
     // six of them took a bank from 30 to 100.
-    let world = createWorld(1);
+    let world = createWorld(1, {
+      ...marketCampaignStages[0]!.config,
+      randomizeDefaultRisk: true,
+    });
     const mina = world.customers[0]!;
     for (let round = 0; round < 8; round++) {
       world = {

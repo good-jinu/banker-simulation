@@ -1,11 +1,15 @@
 import {
   ArrowLeft,
+  Check,
+  Gauge,
   Landmark,
   Newspaper,
   Pause,
   Play,
   Plus,
   SlidersHorizontal,
+  UserCheck,
+  type LucideIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { localize } from "../i18n/local-text.ts";
@@ -33,6 +37,18 @@ import {
   hasMarketAlertForSegment,
   unreadMarketNewsCount,
 } from "./market-news.ts";
+import { loanModuleCopy, loanModuleLabel } from "./market-modules.ts";
+import {
+  LOAN_PRODUCT_MODULES,
+  LOAN_PRODUCT_MODULE_CAPACITY,
+  type LoanProductModule,
+} from "./market-product-types.ts";
+
+/** Each module carries a glyph so a configured line reads at map scale. */
+const MODULE_ICONS: Record<LoanProductModule, LucideIcon> = {
+  "credit-check": Gauge,
+  guarantor: UserCheck,
+};
 
 type MarketGameViewProps = {
   stage: MarketCampaignStage;
@@ -54,6 +70,11 @@ type MarketGameViewProps = {
   onProductPickerOpenChange: (open: boolean) => void;
   onSelectCustomer: (customer: Customer) => void;
   onSelectProduct: (product: Product) => void;
+  onToggleProductModule: (
+    productId: string,
+    module: LoanProductModule,
+    enabled: boolean,
+  ) => void;
   onOpenFunding: () => void;
   onToggleClock: () => void;
   onCycleSpeed: () => void;
@@ -80,6 +101,7 @@ export function MarketGameView({
   onProductPickerOpenChange,
   onSelectCustomer,
   onSelectProduct,
+  onToggleProductModule,
   onOpenFunding,
   onToggleClock,
   onCycleSpeed,
@@ -88,6 +110,9 @@ export function MarketGameView({
   const m = messagesFor(locale).market;
   const [showPlayPrompt, setShowPlayPrompt] = useState(false);
   const [showProductPicker, setShowProductPicker] = useState(false);
+  const [moduleMenuProductId, setModuleMenuProductId] = useState<string | null>(
+    null,
+  );
   useEffect(() => {
     onProductPickerOpenChange(showProductPicker);
   }, [showProductPicker, onProductPickerOpenChange]);
@@ -432,28 +457,126 @@ export function MarketGameView({
               .filter(
                 (product): product is LoanProduct => product.kind === "loan",
               )
-              .map((product) => (
-                <div
-                  key={product.id}
-                  className={`product-node map-node${product.active ? "" : " paused"}${product.pauseOnMarketAlert ? " guarded" : ""}`}
-                  style={{ left: `${product.x}%`, top: `${product.y}%` }}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
-                  title={`${product.name} (${product.active ? m.productActive : m.productPaused})`}
-                  onClick={() => onSelectProduct(product)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      onSelectProduct(product);
-                    }
-                  }}
-                >
-                  <span className="product-icon">
-                    <SlidersHorizontal aria-hidden="true" />
-                  </span>
-                </div>
-              ))}
+              .map((product) => {
+                const statusLabel = `${product.name} (${product.active ? m.productActive : m.productPaused})`;
+                const installed = product.modules ?? [];
+                const slotLabel = m.productModuleSlots(
+                  installed.length,
+                  LOAN_PRODUCT_MODULE_CAPACITY,
+                );
+                const menuOpen = moduleMenuProductId === product.id;
+                return (
+                  <div
+                    key={product.id}
+                    className={`product-node map-node${product.active ? "" : " paused"}${menuOpen ? " menu-open" : ""}`}
+                    style={{ left: `${product.x}%`, top: `${product.y}%` }}
+                  >
+                    <div className="product-node-core">
+                      <button
+                        type="button"
+                        className="product-icon"
+                        aria-label={statusLabel}
+                        title={statusLabel}
+                        onClick={() => onSelectProduct(product)}
+                      >
+                        <SlidersHorizontal aria-hidden="true" />
+                      </button>
+                      <div className="product-module-wrap">
+                        <button
+                          type="button"
+                          className="product-module-button"
+                          aria-label={m.openModuleMenu(product.name)}
+                          aria-expanded={menuOpen}
+                          title={slotLabel}
+                          onClick={() =>
+                            setModuleMenuProductId(menuOpen ? null : product.id)
+                          }
+                        >
+                          <Plus aria-hidden="true" />
+                        </button>
+                        {menuOpen && (
+                          <>
+                            <div
+                              className="product-picker-backdrop"
+                              onMouseDown={() => setModuleMenuProductId(null)}
+                            />
+                            <div
+                              className="product-module-menu"
+                              role="menu"
+                              aria-label={m.productModules}
+                              onMouseDown={(event) => event.stopPropagation()}
+                            >
+                              <span className="product-module-menu-title">
+                                {m.productModules}
+                              </span>
+                              <span className="product-module-menu-slots">
+                                {slotLabel}
+                              </span>
+                              {LOAN_PRODUCT_MODULES.map((module) => {
+                                const isInstalled = installed.includes(module);
+                                const ModuleIcon = MODULE_ICONS[module];
+                                const label = loanModuleLabel(m, module);
+                                return (
+                                  <button
+                                    key={module}
+                                    type="button"
+                                    role="menuitem"
+                                    className={`product-module-option${isInstalled ? " installed" : ""}`}
+                                    disabled={
+                                      !isInstalled &&
+                                      installed.length >=
+                                        LOAN_PRODUCT_MODULE_CAPACITY
+                                    }
+                                    title={loanModuleCopy(m, module)}
+                                    aria-label={
+                                      isInstalled
+                                        ? m.removeModuleNamed(label)
+                                        : m.installModuleNamed(label)
+                                    }
+                                    aria-pressed={isInstalled}
+                                    onClick={() =>
+                                      onToggleProductModule(
+                                        product.id,
+                                        module,
+                                        !isInstalled,
+                                      )
+                                    }
+                                  >
+                                    <ModuleIcon aria-hidden="true" />
+                                    <span>{label}</span>
+                                    {isInstalled && (
+                                      <Check
+                                        className="product-module-check"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {installed.length > 0 && (
+                      <span className="product-module-chips">
+                        {installed.map((module) => {
+                          const ModuleIcon = MODULE_ICONS[module];
+                          return (
+                            <span
+                              key={module}
+                              className="product-module-chip"
+                              title={loanModuleLabel(m, module)}
+                            >
+                              <ModuleIcon aria-hidden="true" />
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
           {showDeposits &&
             products
               .filter((product) => product.kind === "deposit")

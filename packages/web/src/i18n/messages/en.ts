@@ -286,13 +286,22 @@ export const en = {
       "No depositors yet — matching deposits will appear here.",
     pauseProduct: "Pause product",
     resumeProduct: "Resume product",
-    alertGuard: "Alert guard",
-    alertGuardEnabled: "Guard connected",
-    alertGuardDisabled: "No guard connected",
-    alertGuardCopy:
-      "A guarded line holds new loans for customer groups under an active market alert.",
-    connectAlertGuard: "Connect alert guard",
-    disconnectAlertGuard: "Disconnect alert guard",
+    productModules: "Policy modules",
+    productModulesEmpty: "No modules connected.",
+    productModuleSlots: (used: number, capacity: number) =>
+      `${used} / ${capacity} slots connected`,
+    creditCheckModule: "Credit check",
+    creditCheckModuleCopy:
+      "Checks a customer's credit score and holds high-risk automatic loans below 620.",
+    guarantorModule: "Guarantor",
+    guarantorModuleCopy:
+      "A qualified guarantor can satisfy the income rule and cuts that contract's default risk.",
+    openModuleMenu: (product: string) => `Connect a module to ${product}`,
+    installModuleNamed: (module: string) => `Connect ${module}`,
+    removeModuleNamed: (module: string) => `Disconnect ${module}`,
+    creditScoreValue: (score: number) => `Credit score: ${score}`,
+    briefingDismiss: "Got it",
+    stageBriefingEyebrow: (number: number) => `STAGE ${number}`,
     marketWire: "MARKET WIRE",
     openMarketWire: "Open market wire",
     unreadNews: (count: number) =>

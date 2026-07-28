@@ -77,6 +77,8 @@ const COACHMARKS_BY_STEP: Record<OnboardingStep, readonly CoachmarkId[]> = {
 
 export type MarketUiState = {
   hasDraggedMap: boolean;
+  /** The stage briefing is a one-time opening, not a per-reload interruption. */
+  seenStageIntro: boolean;
   introducedCoachmarks: CoachmarkId[];
   completedCoachmarks: CoachmarkId[];
 };
@@ -84,6 +86,7 @@ export type MarketUiState = {
 export function initialMarketUiState(): MarketUiState {
   return {
     hasDraggedMap: false,
+    seenStageIntro: false,
     introducedCoachmarks: [],
     completedCoachmarks: [],
   };

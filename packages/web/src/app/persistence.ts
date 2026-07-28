@@ -338,6 +338,11 @@ export function migrateMarketSession(
   if (onboarding === "products" && !hasDepositProduct) onboarding = "deposits";
   const rawUi = isRecord(value.ui) ? value.ui : {};
   const hasDraggedMap = rawUi.hasDraggedMap === true;
+  // Saves predating the stage briefing carry no flag. A run already past day 0
+  // has clearly started, so replaying its opening would be an interruption.
+  const seenStageIntro =
+    rawUi.seenStageIntro === true ||
+    (typeof rawWorld.day === "number" && rawWorld.day > 0);
   const savedIntroduced = Array.isArray(rawUi.introducedCoachmarks)
     ? rawUi.introducedCoachmarks.filter(isCoachmarkId)
     : [];
@@ -384,6 +389,7 @@ export function migrateMarketSession(
     ui: {
       ...initialMarketUiState(),
       hasDraggedMap,
+      seenStageIntro,
       introducedCoachmarks,
       completedCoachmarks,
     },

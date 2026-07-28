@@ -1,10 +1,12 @@
-import { hasMarketAlertForSegment } from "./market-news.ts";
+import { creditScoreFor } from "./market-credit.ts";
 import type {
   DepositProduct,
   LoanProduct,
+  LoanProductModule,
   LoanProductRules,
   Product,
 } from "./market-product-types.ts";
+import { LOAN_PRODUCT_MODULE_CAPACITY } from "./market-product-types.ts";
 import type {
   Customer,
   Depositor,
@@ -49,17 +51,31 @@ export function customerMatchesLoanProduct(
   product: LoanProduct,
 ): boolean {
   const { rules } = product;
+  const hasGuarantor =
+    hasLoanProductModule(product, "guarantor") && Boolean(customer.guarantor);
+  const scorePasses =
+    !hasLoanProductModule(product, "credit-check") ||
+    creditScoreFor(customer) >= 620 ||
+    hasGuarantor;
   const occupationMatches =
     rules.occupation === "any" || customer.occupation === rules.occupation;
   return (
     customer.status === "waiting" &&
-    customer.income >= rules.minimumIncome &&
+    (customer.income >= rules.minimumIncome || hasGuarantor) &&
     occupationMatches &&
+    scorePasses &&
     customer.amount >= rules.minimumAmount &&
     customer.amount <= rules.maximumAmount &&
     customer.term >= rules.minimumTerm &&
     customer.term <= rules.maximumTerm
   );
+}
+
+export function hasLoanProductModule(
+  product: LoanProduct,
+  module: LoanProductModule,
+): boolean {
+  return product.modules?.includes(module) ?? false;
 }
 
 function acceptDeposit(
@@ -120,11 +136,6 @@ function automateLoans(world: MarketWorld): MarketWorld {
     for (let index = 0; index < nextCustomers.length; index += 1) {
       const customer = nextCustomers[index]!;
       if (!customerMatchesLoanProduct(customer, product)) continue;
-      if (
-        product.pauseOnMarketAlert &&
-        hasMarketAlertForSegment(world.news, customer.segment)
-      )
-        continue;
       if (currentCash < customer.amount) continue;
 
       loanCount += 1;
@@ -139,6 +150,12 @@ function automateLoans(world: MarketWorld): MarketWorld {
         dueDay: world.day + customer.term,
         productId: product.id,
         rate: product.rules.interestRate,
+        ...(hasLoanProductModule(product, "credit-check")
+          ? { creditScore: creditScoreFor(customer) }
+          : {}),
+        ...(hasLoanProductModule(product, "guarantor") && customer.guarantor
+          ? { guaranteed: true }
+          : {}),
       };
       nextCustomers[index] = acceptedCustomer;
       newEvents.push(
@@ -204,26 +221,35 @@ export function setProductActive(
   return active ? automateProducts(nextWorld) : nextWorld;
 }
 
-export function setProductAlertGuard(
+export function setProductModule(
   world: MarketWorld,
   productId: string,
+  module: LoanProductModule,
   enabled: boolean,
 ): MarketWorld {
   const product = world.products.find(
     (item): item is LoanProduct =>
       item.kind === "loan" && item.id === productId,
   );
-  if (!product || Boolean(product.pauseOnMarketAlert) === enabled)
+  if (!product) return { ...world, events: [] };
+  const modules = product.modules ?? [];
+  const hasModule = modules.includes(module);
+  if (hasModule === enabled) return { ...world, events: [] };
+  if (enabled && modules.length >= LOAN_PRODUCT_MODULE_CAPACITY)
     return { ...world, events: [] };
-  return {
+  const nextModules = enabled
+    ? [...modules, module]
+    : modules.filter((candidate) => candidate !== module);
+  const nextWorld = {
     ...world,
     products: world.products.map((item) =>
       item.id === productId && item.kind === "loan"
-        ? { ...item, pauseOnMarketAlert: enabled }
+        ? { ...item, modules: nextModules }
         : item,
     ),
     events: [],
   };
+  return product.active ? automateProducts(nextWorld) : nextWorld;
 }
 
 export function productForCustomer(

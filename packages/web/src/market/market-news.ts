@@ -11,6 +11,8 @@ export type MarketNewsDefinition = {
   title: LocalText;
   body: LocalText;
   action: LocalText;
+  /** Overrides the severity artwork used by the news briefing dialog. */
+  image?: string;
   affectedSegments: readonly MarketSegment[];
   /** Applied to affected customers' hidden default-risk estimate. */
   riskAdjustment: number;

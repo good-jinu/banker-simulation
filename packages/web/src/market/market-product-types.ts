@@ -1,6 +1,10 @@
 export type ProductKind = "loan" | "deposit";
 export type OccupationRule = "any" | "employed" | "self-employed";
 
+export const LOAN_PRODUCT_MODULES = ["credit-check", "guarantor"] as const;
+export type LoanProductModule = (typeof LOAN_PRODUCT_MODULES)[number];
+export const LOAN_PRODUCT_MODULE_CAPACITY = 2;
+
 export type LoanProductRules = {
   minimumIncome: number;
   occupation: OccupationRule;
@@ -18,8 +22,8 @@ export type LoanProduct = {
   x: number;
   y: number;
   active: boolean;
-  /** A visible safety module: alert-affected customers wait until the line is safe. */
-  pauseOnMarketAlert?: boolean;
+  /** Installed policy modules affect only contracts originated by this line. */
+  modules?: LoanProductModule[];
   rules: LoanProductRules;
 };
 
