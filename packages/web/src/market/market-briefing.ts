@@ -1,5 +1,4 @@
 import type { MarketNews } from "./market-news.ts";
-import type { MarketEvent } from "./market-world.ts";
 
 /**
  * A full-stop interruption: the clock holds while the player reads it. Kept as
@@ -27,25 +26,23 @@ export function briefingKey(briefing: Briefing): string {
 }
 
 /**
- * Appends a briefing for every article published by this batch of events.
+ * Appends a briefing for every unread article in the market wire.
  *
  * `handled` holds the key of every story ever enqueued — not just the ones
- * still waiting. Deduping against the live queue alone would resurrect an
- * article the moment its dialog was dismissed while the publishing event was
- * still sitting in `world.events`. Mutated in place with each new key so the
- * caller's record survives re-renders.
+ * still waiting. Mutated in place with each new key so the caller's record
+ * survives re-renders and a read article cannot be re-enqueued.
  *
  * Returns `queue` itself when nothing was published, so React can bail out.
  */
 export function queueNewsBriefings(
   queue: Briefing[],
-  events: readonly MarketEvent[],
+  news: readonly MarketNews[],
   handled: Set<string>,
 ): Briefing[] {
   const added: Briefing[] = [];
-  for (const event of events) {
-    if (event.type !== "market-news") continue;
-    const briefing: Briefing = { kind: "news", article: event.news };
+  for (const article of news) {
+    if (article.read) continue;
+    const briefing: Briefing = { kind: "news", article };
     const key = briefingKey(briefing);
     if (handled.has(key)) continue;
     handled.add(key);

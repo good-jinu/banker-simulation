@@ -247,6 +247,7 @@ export function MarketDialogs({
         <div className="modal-backdrop" onMouseDown={onCloseOverlay}>
           <MarketNewsDesk
             locale={locale}
+            stage={stage}
             world={world}
             onClose={onCloseOverlay}
             onShowSegment={onShowNewsSegment}

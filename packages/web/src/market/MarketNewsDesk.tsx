@@ -2,10 +2,12 @@ import { MapPin, Newspaper, X } from "lucide-react";
 import { localize } from "../i18n/local-text.ts";
 import type { Locale } from "../i18n/locale.ts";
 import { messagesFor } from "../i18n/messages/index.ts";
+import type { MarketCampaignStage } from "./market-campaign.ts";
 import type { MarketSegment, MarketWorld } from "./market-world.ts";
 
 type MarketNewsDeskProps = {
   locale: Locale;
+  stage: MarketCampaignStage;
   world: MarketWorld;
   onClose: () => void;
   onShowSegment: (segment: MarketSegment) => void;
@@ -41,6 +43,7 @@ function severityLabel(
 
 export function MarketNewsDesk({
   locale,
+  stage,
   world,
   onClose,
   onShowSegment,
@@ -67,40 +70,47 @@ export function MarketNewsDesk({
           <h2 id="market-news-title">{m.marketWire}</h2>
         </div>
       </header>
-      {news.length === 0 ? (
-        <p className="market-news-empty">{m.noMarketNews}</p>
-      ) : (
-        <div className="market-news-list">
-          {news.map((article) => (
-            <article
-              key={article.id}
-              className={`market-news-${article.severity}`}
-            >
-              <div className="market-news-meta">
-                <span>{m.newsDay(article.publishedDay + 1)}</span>
-                <b>{severityLabel(article.severity, locale)}</b>
-              </div>
-              <h3>{localize(article.title, locale)}</h3>
-              <p>{localize(article.body, locale)}</p>
-              <div className="market-news-tags">
-                {article.affectedSegments.map((segment) => (
-                  <span key={segment}>{segmentLabel(segment, locale)}</span>
-                ))}
-              </div>
-              <p className="market-news-action">
-                {localize(article.action, locale)}
-              </p>
-              {article.affectedSegments[0] && (
-                <button
-                  onClick={() => onShowSegment(article.affectedSegments[0]!)}
-                >
-                  <MapPin aria-hidden="true" /> {m.showOnMap}
-                </button>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
+      <div className="market-news-list">
+        <article className="market-news-watch">
+          <div className="market-news-meta">
+            <span>{m.stageBriefingEyebrow(stage.number)}</span>
+            <b>{m.newsWatch}</b>
+          </div>
+          <h3>{localize(stage.title, locale)}</h3>
+          <p>{localize(stage.config.copy.introBody, locale)}</p>
+          <p className="market-news-action">
+            {localize(stage.config.copy.learnCustomerHint, locale)}
+          </p>
+        </article>
+        {news.map((article) => (
+          <article
+            key={article.id}
+            className={`market-news-${article.severity}`}
+          >
+            <div className="market-news-meta">
+              <span>{m.newsDay(article.publishedDay + 1)}</span>
+              <b>{severityLabel(article.severity, locale)}</b>
+            </div>
+            <h3>{localize(article.title, locale)}</h3>
+            <p>{localize(article.body, locale)}</p>
+            <div className="market-news-tags">
+              {article.affectedSegments.map((segment) => (
+                <span key={segment}>{segmentLabel(segment, locale)}</span>
+              ))}
+            </div>
+            <p className="market-news-action">
+              {localize(article.action, locale)}
+            </p>
+            {article.affectedSegments[0] && (
+              <button
+                onClick={() => onShowSegment(article.affectedSegments[0]!)}
+              >
+                <MapPin aria-hidden="true" /> {m.showOnMap}
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

@@ -159,10 +159,11 @@ export function MarketApp({
     setBriefings((current) => [{ kind: "stage-intro" }, ...current]);
   }, [session.sessionReady, ui.seenStageIntro]);
   useEffect(() => {
+    if (!session.sessionReady) return;
     setBriefings((current) =>
-      queueNewsBriefings(current, world.events, handledBriefings.current),
+      queueNewsBriefings(current, world.news, handledBriefings.current),
     );
-  }, [world.events]);
+  }, [session.sessionReady, world.news]);
   const openProductBuilder = useCallback(
     () => setOverlay({ kind: "product-builder", productKind: "loan" }),
     [],
@@ -185,9 +186,8 @@ export function MarketApp({
     locale,
     onOpenFunding: openFunding,
   });
-  // A finished run has nothing left to brief; the result report takes over.
-  const activeBriefing =
-    world.missionCleared || world.runFailed ? null : (briefings[0] ?? null);
+  // A result report can wait behind a news briefing published on the same day.
+  const activeBriefing = briefings[0] ?? null;
   const modalOpen = Boolean(
     overlay || activeBriefing || world.missionCleared || world.runFailed,
   );

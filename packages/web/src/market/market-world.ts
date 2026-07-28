@@ -585,6 +585,13 @@ export function marketReducer(
   action: MarketAction,
 ): MarketWorld {
   if (action.type === "restore") return { ...action.world, events: [] };
+  if (action.type === "read-market-news") {
+    return {
+      ...world,
+      news: world.news.map((article) => ({ ...article, read: true })),
+      events: [],
+    };
+  }
   if (world.runFailed || world.missionCleared) return { ...world, events: [] };
   switch (action.type) {
     case "advance-day":
@@ -635,12 +642,6 @@ export function marketReducer(
           action.enabled,
         ),
       );
-    case "read-market-news":
-      return {
-        ...world,
-        news: world.news.map((article) => ({ ...article, read: true })),
-        events: [],
-      };
   }
 }
 

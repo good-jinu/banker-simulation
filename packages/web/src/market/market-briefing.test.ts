@@ -6,7 +6,6 @@ import {
   type Briefing,
 } from "./market-briefing.ts";
 import type { MarketNews } from "./market-news.ts";
-import type { MarketEvent } from "./market-world.ts";
 
 function article(id: string, overrides: Partial<MarketNews> = {}): MarketNews {
   return {
@@ -26,15 +25,11 @@ function article(id: string, overrides: Partial<MarketNews> = {}): MarketNews {
   };
 }
 
-function newsEvent(news: MarketNews): MarketEvent {
-  return { type: "market-news", news };
-}
-
 describe("market briefings", () => {
   it("queues one briefing per published article, in publication order", () => {
     const queued = queueNewsBriefings(
       [],
-      [newsEvent(article("first")), newsEvent(article("second"))],
+      [article("first"), article("second")],
       new Set(),
     );
 
@@ -43,29 +38,34 @@ describe("market briefings", () => {
 
   it("ignores articles already waiting so a re-render cannot duplicate a story", () => {
     const handled = new Set<string>();
-    const event = newsEvent(article("first"));
-    const first = queueNewsBriefings([], [event], handled);
-    const again = queueNewsBriefings(first, [event], handled);
+    const news = [article("first")];
+    const first = queueNewsBriefings([], news, handled);
+    const again = queueNewsBriefings(first, news, handled);
 
     expect(again.map(briefingKey)).toEqual(["news:first"]);
   });
 
   it("does not resurrect a story that was queued and then dismissed", () => {
     const handled = new Set<string>();
-    const event = newsEvent(article("first"));
-    const queued = queueNewsBriefings([], [event], handled);
+    const news = [article("first")];
+    const queued = queueNewsBriefings([], news, handled);
     const dismissed = queued.slice(1);
 
-    // The publishing event is still in world.events at this point.
-    expect(queueNewsBriefings(dismissed, [event], handled)).toEqual([]);
+    expect(queueNewsBriefings(dismissed, news, handled)).toEqual([]);
   });
 
-  it("keeps briefings unrelated to news untouched, without a new array", () => {
+  it("does not queue articles already read in the market wire", () => {
+    expect(
+      queueNewsBriefings([], [article("read", { read: true })], new Set()),
+    ).toEqual([]);
+  });
+
+  it("keeps the queue untouched when there is no unread news", () => {
     const intro: Briefing = { kind: "stage-intro" };
     const queue = [intro];
     const queued = queueNewsBriefings(
       queue,
-      [{ type: "repayment", amount: 100 }],
+      [article("read", { read: true })],
       new Set(),
     );
 
