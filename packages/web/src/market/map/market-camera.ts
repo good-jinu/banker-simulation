@@ -88,30 +88,81 @@ export function projectMapPoint(
   };
 }
 
+/**
+ * Inverts the projection for a screen-pixel offset, returning the ground-plane
+ * vector that spans it. Null when the basis is degenerate.
+ */
+function groundOffsetForPixels(
+  map: MarketMapDefinition,
+  projection: MapProjection,
+  offsetPixels: MapPoint,
+): MapPoint | null {
+  if (!Number.isFinite(offsetPixels.x) || !Number.isFinite(offsetPixels.y))
+    return null;
+  const pixelsPerUnit =
+    Math.max(1, projection.viewport.height) /
+    (map.camera.baseViewSize / projection.camera.zoom);
+  if (!Number.isFinite(pixelsPerUnit) || pixelsPerUnit <= 0) return null;
+  const screenX = offsetPixels.x / pixelsPerUnit;
+  const screenY = offsetPixels.y / pixelsPerUnit;
+  const a = CAMERA_RIGHT.x;
+  const b = CAMERA_RIGHT.z;
+  const c = -CAMERA_UP.x;
+  const d = -CAMERA_UP.z;
+  const determinant = a * d - b * c;
+  if (Math.abs(determinant) < 0.0001) return null;
+  return {
+    x: (d * screenX - b * screenY) / determinant,
+    y: (-c * screenX + a * screenY) / determinant,
+  };
+}
+
 /** Converts a drag in pixels to a ground-plane camera movement. */
 export function panMarketCamera(
   map: MarketMapDefinition,
   projection: MapProjection,
   deltaPixels: MapPoint,
 ): MarketCamera {
-  const pixelsPerUnit =
-    Math.max(1, projection.viewport.height) /
-    (map.camera.baseViewSize / projection.camera.zoom);
-  const screenX = deltaPixels.x / pixelsPerUnit;
-  const screenY = deltaPixels.y / pixelsPerUnit;
-  const a = CAMERA_RIGHT.x;
-  const b = CAMERA_RIGHT.z;
-  const c = -CAMERA_UP.x;
-  const d = -CAMERA_UP.z;
-  const determinant = a * d - b * c;
-  if (Math.abs(determinant) < 0.0001) return projection.camera;
-  const groundX = (d * screenX - b * screenY) / determinant;
-  const groundZ = (-c * screenX + a * screenY) / determinant;
+  const ground = groundOffsetForPixels(map, projection, deltaPixels);
+  if (!ground) return projection.camera;
   return clampMarketCamera(map, {
     ...projection.camera,
     center: {
-      x: projection.camera.center.x - groundX,
-      y: projection.camera.center.y - groundZ,
+      x: projection.camera.center.x - ground.x,
+      y: projection.camera.center.y - ground.y,
+    },
+  });
+}
+
+/**
+ * Zooms while holding the ground point under `anchorPixels` in place, so the
+ * district beneath the cursor or the pinch midpoint stays where the player is
+ * looking. Without an anchor the zoom stays centered on the viewport, which is
+ * what the on-screen zoom buttons want.
+ */
+export function zoomMarketCameraAt(
+  map: MarketMapDefinition,
+  projection: MapProjection,
+  nextZoom: number,
+  anchorPixels?: MapPoint,
+): MarketCamera {
+  const camera = projection.camera;
+  const zoomed = clampMarketCamera(map, { ...camera, zoom: nextZoom });
+  if (!anchorPixels) return zoomed;
+  // Clamping can swallow the whole step at a zoom limit; the anchor must not
+  // drift the camera when the zoom itself did not change.
+  const ratio = camera.zoom / zoomed.zoom;
+  if (!Number.isFinite(ratio) || ratio === 1) return zoomed;
+  const offset = groundOffsetForPixels(map, projection, {
+    x: anchorPixels.x - projection.viewport.width / 2,
+    y: anchorPixels.y - projection.viewport.height / 2,
+  });
+  if (!offset) return zoomed;
+  return clampMarketCamera(map, {
+    zoom: zoomed.zoom,
+    center: {
+      x: camera.center.x + offset.x * (1 - ratio),
+      y: camera.center.y + offset.y * (1 - ratio),
     },
   });
 }

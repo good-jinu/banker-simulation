@@ -7,16 +7,28 @@ import {
 } from "./market-building.ts";
 
 describe("market building assembly", () => {
-  it("creates an independent deterministic model for every lot and the bank", () => {
+  it("creates an independent deterministic model for every open lot and the bank", () => {
     const first = buildMarketBuildings(METRO_REGION_MAP, 1962);
     const again = buildMarketBuildings(METRO_REGION_MAP, 1962);
+    const openLots = METRO_REGION_MAP.lots.filter((lot) => !lot.reserved);
 
     expect(first).toEqual(again);
-    expect(first).toHaveLength(METRO_REGION_MAP.lots.length + 1);
+    expect(openLots.length).toBeLessThan(METRO_REGION_MAP.lots.length);
+    expect(first).toHaveLength(openLots.length + 1);
     expect(new Set(first.map((building) => building.id)).size).toBe(
       first.length,
     );
     expect(first.every((building) => building.parts.length > 0)).toBe(true);
+  });
+
+  it("leaves the blocks the bank and lenders stand on empty", () => {
+    const buildings = buildMarketBuildings(METRO_REGION_MAP, 1962);
+    const reserved = new Set(
+      METRO_REGION_MAP.lots.filter((lot) => lot.reserved).map((lot) => lot.id),
+    );
+
+    expect(reserved.size).toBeGreaterThan(0);
+    expect(buildings.some((building) => reserved.has(building.id))).toBe(false);
   });
 
   it("keeps the city grayscale without sales and colors buildings sequentially", () => {

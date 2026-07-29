@@ -246,8 +246,8 @@ export function buildMarketCity(
   for (const district of map.districts) {
     const halfWidth = district.bounds.width / 2;
     const halfHeight = district.bounds.height / 2;
-    const centerX = district.center.x - map.size.width / 2;
-    const centerZ = district.center.y - map.size.height / 2;
+    const centerX = district.bounds.x + halfWidth - map.size.width / 2;
+    const centerZ = district.bounds.y + halfHeight - map.size.height / 2;
     const corners = [
       new THREE.Vector3(centerX - halfWidth, 0.18, centerZ - halfHeight),
       new THREE.Vector3(centerX + halfWidth, 0.18, centerZ - halfHeight),

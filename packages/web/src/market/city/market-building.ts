@@ -213,28 +213,32 @@ export function buildMarketBuildings(
   map: MarketMapDefinition,
   seed: number,
 ): MarketBuilding[] {
-  const buildings: MarketBuilding[] = map.lots.map((lot) => {
-    const district = map.districts.find(
-      (candidate) => candidate.id === lot.districtId,
-    );
-    const distance = district
-      ? Math.hypot(
-          lot.point.x - district.center.x,
-          lot.point.y - district.center.y,
-        )
-      : 0;
-    return {
-      id: lot.id,
-      districtId: lot.districtId,
-      kind: lot.buildingKind,
-      point: lot.point,
-      order: distance + randomUnit(`${seed}:${lot.id}:order`) * 0.25,
-      parts:
-        lot.buildingKind === "park"
-          ? parkParts(lot, seed)
-          : ordinaryBuildingParts(lot, seed),
-    } satisfies MarketBuilding;
-  });
+  // Reserved lots are the blocks the bank, products, and lenders stand on.
+  // Filling them would push an ordinary building through those models.
+  const buildings: MarketBuilding[] = map.lots
+    .filter((lot) => !lot.reserved)
+    .map((lot) => {
+      const district = map.districts.find(
+        (candidate) => candidate.id === lot.districtId,
+      );
+      const distance = district
+        ? Math.hypot(
+            lot.point.x - district.center.x,
+            lot.point.y - district.center.y,
+          )
+        : 0;
+      return {
+        id: lot.id,
+        districtId: lot.districtId,
+        kind: lot.buildingKind,
+        point: lot.point,
+        order: distance + randomUnit(`${seed}:${lot.id}:order`) * 0.25,
+        parts:
+          lot.buildingKind === "park"
+            ? parkParts(lot, seed)
+            : ordinaryBuildingParts(lot, seed),
+      } satisfies MarketBuilding;
+    });
   const bank = bankBuilding(map);
   if (bank) buildings.push(bank);
   return buildings.sort(

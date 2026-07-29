@@ -1,9 +1,9 @@
 import type { LocalText } from "../i18n/local-text.ts";
+import type { MarketLocationRef } from "./map/market-map.ts";
 import {
   allocateMarketLot,
   occupiedMarketLocations,
-  type MarketLocationRef,
-} from "./map/market-map.ts";
+} from "./map/market-map-lots.ts";
 import type { MarketSegment } from "./market-segment.ts";
 import {
   marketStageByLevel,

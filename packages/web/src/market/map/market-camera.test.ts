@@ -4,6 +4,7 @@ import {
   mapLod,
   panMarketCamera,
   projectMapPoint,
+  zoomMarketCameraAt,
 } from "./market-camera.ts";
 import type { MarketMapDefinition } from "./market-map.ts";
 
@@ -53,6 +54,47 @@ describe("market camera", () => {
 
     expect(movedCenter.x).toBeCloseTo(580, 5);
     expect(movedCenter.y).toBeCloseTo(255, 5);
+  });
+
+  it("holds the anchored ground point under the cursor while zooming", () => {
+    const camera = initialMarketCamera(map.camera);
+    const viewport = { width: 1_000, height: 600 };
+    const before = { camera, viewport };
+    // An off-center block the player points at, and the pixel it currently
+    // occupies — that pixel is what the cursor is sitting on.
+    const anchored = { x: 92, y: 17 };
+    const anchor = projectMapPoint(map, before, anchored);
+
+    const zoomedIn = zoomMarketCameraAt(map, before, camera.zoom * 1.8, anchor);
+    const projectedAfter = projectMapPoint(
+      map,
+      { camera: zoomedIn, viewport },
+      anchored,
+    );
+
+    expect(zoomedIn.zoom).toBeCloseTo(camera.zoom * 1.8, 5);
+    expect(zoomedIn.center).not.toEqual(camera.center);
+    expect(projectedAfter.x).toBeCloseTo(anchor.x, 5);
+    expect(projectedAfter.y).toBeCloseTo(anchor.y, 5);
+  });
+
+  it("zooms about the viewport center when no anchor is given", () => {
+    const camera = initialMarketCamera(map.camera);
+    const projection = { camera, viewport: { width: 1_000, height: 600 } };
+
+    expect(zoomMarketCameraAt(map, projection, 2)).toEqual({
+      center: camera.center,
+      zoom: 2,
+    });
+  });
+
+  it("does not drift the camera when the zoom step is clamped away", () => {
+    const camera = { center: { x: 60, y: 40 }, zoom: map.camera.maxZoom };
+    const projection = { camera, viewport: { width: 1_000, height: 600 } };
+    const next = zoomMarketCameraAt(map, projection, 99, { x: 900, y: 20 });
+
+    expect(next.zoom).toBe(map.camera.maxZoom);
+    expect(next.center).toEqual(camera.center);
   });
 
   it("uses authored LOD thresholds", () => {

@@ -1,9 +1,10 @@
-import {
-  createDistrictLots,
-  type MarketDistrict,
-  type MarketLot,
-  type MarketMapDefinition,
+import type {
+  MarketDistrict,
+  MarketLot,
+  MarketMapDefinition,
+  MarketMapNode,
 } from "./market-map.ts";
+import { createDistrictLots, reserveLotsForNodes } from "./market-map-lots.ts";
 
 function compactLots(
   districtId: string,
@@ -19,6 +20,44 @@ function compactLots(
 }
 
 function compactMap(id: string, district: MarketDistrict): MarketMapDefinition {
+  const nodes: MarketMapNode[] = [
+    {
+      id: `${id}-bank`,
+      kind: "bank",
+      districtId: district.id,
+      point: { x: 50, y: 49 },
+    },
+    {
+      id: `${id}-loan-product`,
+      kind: "loan-product",
+      districtId: district.id,
+      point: { x: 50, y: 26 },
+    },
+    {
+      id: `${id}-deposit-product`,
+      kind: "deposit-product",
+      districtId: district.id,
+      point: { x: 50, y: 68 },
+    },
+    {
+      id: `${id}-funding-west`,
+      kind: "funding",
+      districtId: district.id,
+      point: { x: 9, y: 50 },
+    },
+    {
+      id: `${id}-funding-south`,
+      kind: "funding",
+      districtId: district.id,
+      point: { x: 50, y: 88 },
+    },
+    {
+      id: `${id}-funding-east`,
+      kind: "funding",
+      districtId: district.id,
+      point: { x: 91, y: 50 },
+    },
+  ];
   const lots = compactLots(district.id, [
     { x: 19, y: 21 },
     { x: 81, y: 21 },
@@ -35,45 +74,8 @@ function compactMap(id: string, district: MarketDistrict): MarketMapDefinition {
     id,
     size: { width: 100, height: 100 },
     districts: [district],
-    lots,
-    nodes: [
-      {
-        id: `${id}-bank`,
-        kind: "bank",
-        districtId: district.id,
-        point: { x: 50, y: 49 },
-      },
-      {
-        id: `${id}-loan-product`,
-        kind: "loan-product",
-        districtId: district.id,
-        point: { x: 50, y: 26 },
-      },
-      {
-        id: `${id}-deposit-product`,
-        kind: "deposit-product",
-        districtId: district.id,
-        point: { x: 50, y: 68 },
-      },
-      {
-        id: `${id}-funding-west`,
-        kind: "funding",
-        districtId: district.id,
-        point: { x: 9, y: 50 },
-      },
-      {
-        id: `${id}-funding-south`,
-        kind: "funding",
-        districtId: district.id,
-        point: { x: 50, y: 88 },
-      },
-      {
-        id: `${id}-funding-east`,
-        kind: "funding",
-        districtId: district.id,
-        point: { x: 91, y: 50 },
-      },
-    ],
+    lots: reserveLotsForNodes(lots, nodes),
+    nodes,
     edges: [
       {
         id: `${id}-bank-${district.id}`,
@@ -220,52 +222,59 @@ const metroDistricts: readonly MarketDistrict[] = [
   },
 ];
 
+const metroNodes: MarketMapNode[] = [
+  {
+    id: "metro-bank",
+    kind: "bank",
+    districtId: "civic-heights",
+    point: { x: 60, y: 42 },
+  },
+  {
+    id: "metro-loan-product",
+    kind: "loan-product",
+    districtId: "tech-quarter",
+    point: { x: 55, y: 34 },
+  },
+  {
+    id: "metro-deposit-product",
+    kind: "deposit-product",
+    districtId: "civic-heights",
+    point: { x: 65, y: 50 },
+  },
+  {
+    id: "metro-funding-west",
+    kind: "funding",
+    districtId: "cedar-homes",
+    point: { x: 5, y: 52 },
+  },
+  {
+    id: "metro-funding-south",
+    kind: "funding",
+    districtId: "civic-heights",
+    point: { x: 60, y: 76 },
+  },
+  {
+    id: "metro-funding-east",
+    kind: "funding",
+    districtId: "south-works",
+    point: { x: 115, y: 52 },
+  },
+];
+
 export const METRO_REGION_MAP: MarketMapDefinition = {
   id: "metro-region",
   size: { width: 120, height: 80 },
   districts: metroDistricts,
   // Six districts × forty-eight lots is the authored 288-lot simulation board.
-  lots: metroDistricts.flatMap((district) =>
-    createDistrictLots(district, 8, 6, 2.2),
+  // The blocks the bank, products, and lenders stand on are reserved, not
+  // removed, so the road grid still derives from the full lattice.
+  lots: reserveLotsForNodes(
+    metroDistricts.flatMap((district) =>
+      createDistrictLots(district, 8, 6, 2.2),
+    ),
+    metroNodes,
   ),
-  nodes: [
-    {
-      id: "metro-bank",
-      kind: "bank",
-      districtId: "civic-heights",
-      point: { x: 60, y: 42 },
-    },
-    {
-      id: "metro-loan-product",
-      kind: "loan-product",
-      districtId: "tech-quarter",
-      point: { x: 55, y: 34 },
-    },
-    {
-      id: "metro-deposit-product",
-      kind: "deposit-product",
-      districtId: "civic-heights",
-      point: { x: 65, y: 50 },
-    },
-    {
-      id: "metro-funding-west",
-      kind: "funding",
-      districtId: "cedar-homes",
-      point: { x: 5, y: 52 },
-    },
-    {
-      id: "metro-funding-south",
-      kind: "funding",
-      districtId: "civic-heights",
-      point: { x: 60, y: 76 },
-    },
-    {
-      id: "metro-funding-east",
-      kind: "funding",
-      districtId: "south-works",
-      point: { x: 115, y: 52 },
-    },
-  ],
+  nodes: metroNodes,
   edges: [
     {
       id: "old-market-tech-quarter",

@@ -3,10 +3,16 @@ import {
   CAMERA_DIRECTION,
   clampMarketCamera,
   panMarketCamera,
+  zoomMarketCameraAt,
   type MapProjection,
   type MarketCamera,
 } from "../map/market-camera.ts";
-import type { MarketMapDefinition } from "../map/market-map.ts";
+import {
+  initialMapDragGesture,
+  updateMapDragGesture,
+  wheelZoomFactor,
+} from "../map/market-map-gesture.ts";
+import type { MapPoint, MarketMapDefinition } from "../map/market-map.ts";
 import { INK, PAPER } from "./city-materials.ts";
 import {
   buildMarketCity,
@@ -89,6 +95,7 @@ export function createCityScene(
   let primaryPointerId = -1;
   let lastX = 0;
   let lastY = 0;
+  let dragGesture = initialMapDragGesture();
   let hasDragged = false;
   const pointers = new Map<number, { x: number; y: number }>();
   let pinchStartDistance = 0;
@@ -129,11 +136,26 @@ export function createCityScene(
     onProjectionChange(currentProjection());
   }
 
-  function setZoom(nextZoom: number, reportChange = false): void {
-    targetCamera = clampMarketCamera(map, {
-      ...targetCamera,
-      zoom: nextZoom,
-    });
+  /** Client coordinates are viewport-relative; the projection is canvas-relative. */
+  function canvasPoint(clientX: number, clientY: number): MapPoint {
+    const bounds = canvas.getBoundingClientRect();
+    return { x: clientX - bounds.left, y: clientY - bounds.top };
+  }
+
+  function setZoom(
+    nextZoom: number,
+    reportChange = false,
+    anchorPixels?: MapPoint,
+  ): void {
+    targetCamera = zoomMarketCameraAt(
+      map,
+      {
+        camera: targetCamera,
+        viewport: { width: viewportWidth, height: viewportHeight },
+      },
+      nextZoom,
+      anchorPixels,
+    );
     if (reportChange) onZoomChange(targetCamera.zoom);
   }
 
@@ -145,6 +167,14 @@ export function createCityScene(
     return Math.hypot(second.x - first.x, second.y - first.y);
   }
 
+  function midpointBetweenPointers(): MapPoint | undefined {
+    const activePointers = [...pointers.values()];
+    const first = activePointers[0];
+    const second = activePointers[1];
+    if (!first || !second) return undefined;
+    return canvasPoint((first.x + second.x) / 2, (first.y + second.y) / 2);
+  }
+
   function onPointerDown(event: PointerEvent): void {
     if (event.button !== 0) return;
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -152,6 +182,7 @@ export function createCityScene(
     primaryPointerId = event.pointerId;
     lastX = event.clientX;
     lastY = event.clientY;
+    if (pointers.size === 1) dragGesture = initialMapDragGesture();
     canvas.setPointerCapture(event.pointerId);
     canvas.classList.add("is-dragging");
     if (pointers.size === 2) {
@@ -166,13 +197,21 @@ export function createCityScene(
     if (pointers.size >= 2) {
       const distance = distanceBetweenPointers();
       if (pinchStartDistance > 0)
-        setZoom(pinchStartZoom * (distance / pinchStartDistance), true);
+        setZoom(
+          pinchStartZoom * (distance / pinchStartDistance),
+          true,
+          midpointBetweenPointers(),
+        );
       return;
     }
     if (!dragging || event.pointerId !== primaryPointerId) return;
     const deltaX = event.clientX - lastX;
     const deltaY = event.clientY - lastY;
-    if (!hasDragged && Math.hypot(deltaX, deltaY) >= 4) {
+    dragGesture = updateMapDragGesture(dragGesture, {
+      x: deltaX,
+      y: deltaY,
+    });
+    if (!hasDragged && dragGesture.recognized) {
       hasDragged = true;
       onFirstDrag();
     }
@@ -199,6 +238,7 @@ export function createCityScene(
       primaryPointerId = pointerId;
       lastX = point.x;
       lastY = point.y;
+      dragGesture = initialMapDragGesture();
       return;
     }
     dragging = false;
@@ -208,7 +248,13 @@ export function createCityScene(
 
   function onWheel(event: WheelEvent): void {
     event.preventDefault();
-    setZoom(targetCamera.zoom * (event.deltaY < 0 ? 1.12 : 0.88), true);
+    const factor = wheelZoomFactor(event);
+    if (factor === 1) return;
+    setZoom(
+      targetCamera.zoom * factor,
+      true,
+      canvasPoint(event.clientX, event.clientY),
+    );
   }
 
   canvas.addEventListener("pointerdown", onPointerDown);

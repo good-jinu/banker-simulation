@@ -29,13 +29,17 @@ export function MapViewport({
   showNavigation?: boolean;
 }) {
   const [zoom, setZoom] = useState(map.camera.initialZoom);
+  // The world RNG advances as applicants and outcomes are generated. The city
+  // seed is visual state, so keep its opening value for this mounted map rather
+  // than rebuilding the renderer and resetting its camera on every RNG change.
+  const [citySeed] = useState(seed);
   const zoomStep = (map.camera.maxZoom - map.camera.minZoom) / 8;
 
   return (
     <>
       <CityBackground
         map={map}
-        seed={seed}
+        seed={citySeed}
         districtStates={districtStates}
         zoom={zoom}
         dragHint={dragHint}
